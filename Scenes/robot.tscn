@@ -1,0 +1,46 @@
+[gd_scene format=3 uid="uid://b4cj2ah5o5cyv"]
+
+[ext_resource type="Script" uid="uid://dbu12wx8l23yq" path="res://Scripts/robot.gd" id="1_n2f4s"]
+[ext_resource type="Script" uid="uid://du7tsqkj524ta" path="res://Scripts/ai_controller.gd" id="2_5tv1n"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_s4f2k"]
+size = Vector2(40, 40)
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_j7a3x"]
+radius = 150.0
+
+[node name="Robot" type="CharacterBody2D" unique_id=1108290126]
+collision_mask = 0
+script = ExtResource("1_n2f4s")
+
+[node name="ColorRect" type="ColorRect" parent="." unique_id=2139778465]
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+color = Color(0.203922, 0.537255, 0.921569, 1)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=904036428]
+shape = SubResource("RectangleShape2D_s4f2k")
+
+[node name="Muzzle" type="Marker2D" parent="." unique_id=1313900873]
+position = Vector2(22, 0)
+
+[node name="LifespanTimer" type="Timer" parent="." unique_id=2054496244]
+
+[node name="Radar" type="Area2D" parent="." unique_id=210557732]
+collision_layer = 0
+collision_mask = 2
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Radar" unique_id=2066493974]
+shape = SubResource("CircleShape2D_j7a3x")
+
+[node name="AIController" type="Node" parent="." unique_id=1701098870]
+script = ExtResource("2_5tv1n")
+
+[node name="TickTimer" type="Timer" parent="AIController" unique_id=555221412]
+
+[connection signal="timeout" from="LifespanTimer" to="." method="_on_lifespan_timer_timeout"]
+[connection signal="body_entered" from="Radar" to="." method="_on_radar_body_entered"]
+[connection signal="body_exited" from="Radar" to="." method="_on_radar_body_exited"]
+[connection signal="timeout" from="AIController/TickTimer" to="AIController" method="_on_tick_timer_timeout"]
