@@ -75,40 +75,44 @@ func _configure_stage_four_logic(robot: CharacterBody2D) -> void:
 	if controller == null:
 		return
 
-	var rules: Array = []
-	var retreat_rule := AI_RULE_SCRIPT.new() as Resource
+	var rules: Array[AIRule] = []
+	var retreat_rule := AI_RULE_SCRIPT.new() as AIRule
 	retreat_rule.set("subject", AI_RULE_SCRIPT.Subject.SELF)
 	retreat_rule.set("match_mode", AI_RULE_SCRIPT.MatchMode.MATCH_ALL)
 	retreat_rule.set("action", AI_RULE_SCRIPT.Action.FLEE)
-	retreat_rule.conditions = [_make_condition(AI_CONDITION_SCRIPT.Type.HP_LESS_PERCENT, "30")]
+	var retreat_conditions: Array[AICondition] = [_make_condition(AI_CONDITION_SCRIPT.Type.HP_LESS_PERCENT, "30")]
+	retreat_rule.conditions = retreat_conditions
 	if enable_low_hp_retreat_rule:
 		rules.append(retreat_rule)
 
-	var fire_rule := AI_RULE_SCRIPT.new() as Resource
+	var fire_rule := AI_RULE_SCRIPT.new() as AIRule
 	fire_rule.set("subject", AI_RULE_SCRIPT.Subject.TARGET_NEAREST)
 	fire_rule.set("match_mode", AI_RULE_SCRIPT.MatchMode.MATCH_ALL)
 	fire_rule.set("action", AI_RULE_SCRIPT.Action.FIRE_MAIN)
-	fire_rule.conditions = [_make_condition(AI_CONDITION_SCRIPT.Type.DISTANCE_LESS, "140")]
+	var fire_conditions: Array[AICondition] = [_make_condition(AI_CONDITION_SCRIPT.Type.DISTANCE_LESS, "140")]
+	fire_rule.conditions = fire_conditions
 	rules.append(fire_rule)
 
-	var chase_rule := AI_RULE_SCRIPT.new() as Resource
+	var chase_rule := AI_RULE_SCRIPT.new() as AIRule
 	chase_rule.set("subject", AI_RULE_SCRIPT.Subject.TARGET_NEAREST)
 	chase_rule.set("match_mode", AI_RULE_SCRIPT.MatchMode.MATCH_ALL)
 	chase_rule.set("action", AI_RULE_SCRIPT.Action.APPROACH)
-	chase_rule.conditions = [_make_condition(AI_CONDITION_SCRIPT.Type.DISTANCE_LESS, "99999")]
+	var chase_conditions: Array[AICondition] = [_make_condition(AI_CONDITION_SCRIPT.Type.DISTANCE_LESS, "99999")]
+	chase_rule.conditions = chase_conditions
 	rules.append(chase_rule)
 
-	var fallback_rule := AI_RULE_SCRIPT.new() as Resource
+	var fallback_rule := AI_RULE_SCRIPT.new() as AIRule
 	fallback_rule.set("subject", AI_RULE_SCRIPT.Subject.SELF)
 	fallback_rule.set("match_mode", AI_RULE_SCRIPT.MatchMode.MATCH_ALL)
 	fallback_rule.set("action", AI_RULE_SCRIPT.Action.STOP_ACTION)
-	fallback_rule.conditions = []
+	var fallback_conditions: Array[AICondition] = []
+	fallback_rule.conditions = fallback_conditions
 	rules.append(fallback_rule)
 
 	controller.set("logic_rules", rules)
 
-func _make_condition(condition_type: AI_CONDITION_SCRIPT.Type, param: String) -> Resource:
-	var cond := AI_CONDITION_SCRIPT.new() as Resource
+func _make_condition(condition_type: AI_CONDITION_SCRIPT.Type, param: String) -> AICondition:
+	var cond := AI_CONDITION_SCRIPT.new() as AICondition
 	if cond == null:
 		return null
 	cond.set("type", condition_type)

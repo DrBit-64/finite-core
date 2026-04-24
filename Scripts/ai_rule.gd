@@ -21,5 +21,5 @@ enum Action {
 
 @export var subject: Subject = Subject.TARGET_NEAREST
 @export var match_mode: MatchMode = MatchMode.MATCH_ALL
-@export var conditions: Array = []
+@export var conditions: Array[AICondition] = []
 @export var action: Action = Action.STOP_ACTION
