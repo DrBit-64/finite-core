@@ -1,0 +1,40 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Scripts/ui/rule_block_ui.gd" id="1_j34mw"]
+
+[node name="RuleBlockUI" type="VBoxContainer"]
+size_flags_horizontal = 3
+script = ExtResource("1_j34mw")
+
+[node name="Header" type="HBoxContainer" parent="."]
+size_flags_horizontal = 3
+
+[node name="BtnUp" type="Button" parent="Header"]
+text = "Up"
+
+[node name="BtnDown" type="Button" parent="Header"]
+text = "Down"
+
+[node name="SubjectOption" type="OptionButton" parent="Header"]
+size_flags_horizontal = 2
+
+[node name="MatchModeOption" type="OptionButton" parent="Header"]
+size_flags_horizontal = 2
+
+[node name="ActionOption" type="OptionButton" parent="Header"]
+size_flags_horizontal = 2
+
+[node name="BtnRemoveRule" type="Button" parent="Header"]
+text = "Remove"
+
+[node name="Body" type="VBoxContainer" parent="."]
+size_flags_horizontal = 3
+
+[node name="ConditionsBox" type="VBoxContainer" parent="Body"]
+size_flags_horizontal = 3
+
+[node name="Footer" type="HBoxContainer" parent="."]
+size_flags_horizontal = 3
+
+[node name="BtnAddCondition" type="Button" parent="Footer"]
+text = "+ Add Condition"

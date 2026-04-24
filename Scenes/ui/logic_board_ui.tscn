@@ -1,0 +1,21 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Scripts/ui/logic_board_ui.gd" id="1_t2x8k"]
+
+[node name="LogicBoardUI" type="VBoxContainer"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("1_t2x8k")
+
+[node name="RulesContainer" type="VBoxContainer" parent="."]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Controls" type="HBoxContainer" parent="."]
+size_flags_horizontal = 3
+
+[node name="BtnAddRule" type="Button" parent="Controls"]
+text = "+ Add Rule"
+
+[node name="BtnExportRules" type="Button" parent="Controls"]
+text = "Export Rules"
