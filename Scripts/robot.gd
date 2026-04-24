@@ -4,6 +4,7 @@ class_name RobotUnit
 @export var max_hp: int = 100
 @export var speed: float = 80.0
 @export_enum("Team_A", "Team_B") var team: String = "Team_A"
+@export var tags: Array[String] = []
 @export var lifespan_seconds: float = 5.0
 @export var pool_name: String = "robot_basic"
 @export var radar_radius: float = 1000.0
@@ -25,7 +26,19 @@ var _last_fire_time: float = -9999.0
 @onready var muzzle: Marker2D = $Muzzle
 
 func _ready() -> void:
+	_sync_runtime_groups()
 	reset_state()
+
+func _sync_runtime_groups() -> void:
+	if team == "Team_A":
+		add_to_group("team_a")
+		remove_from_group("team_b")
+	else:
+		add_to_group("team_b")
+		remove_from_group("team_a")
+	for tag in tags:
+		if not tag.is_empty():
+			add_to_group(tag)
 
 func _physics_process(_delta: float) -> void:
 	if _is_dead:
@@ -38,6 +51,7 @@ func reset_state() -> void:
 	velocity = Vector2.ZERO
 	enemies_in_range.clear()
 	_last_fire_time = -9999.0
+	_sync_runtime_groups()
 	_configure_team_collision()
 	_configure_radar()
 	if lifespan_timer:
@@ -104,6 +118,31 @@ func get_current_enemy() -> CharacterBody2D:
 			nearest_dist_sq = dist_sq
 	return nearest
 
+func get_lowest_hp_enemy() -> CharacterBody2D:
+	_cleanup_enemy_list()
+	if enemies_in_range.is_empty():
+		return null
+	var target := enemies_in_range[0]
+	var lowest_ratio: float = target.hp_ratio() if target.has_method("hp_ratio") else 1.0
+	for i in range(1, enemies_in_range.size()):
+		var candidate := enemies_in_range[i]
+		if candidate == null or not is_instance_valid(candidate):
+			continue
+		if not candidate.has_method("hp_ratio"):
+			continue
+		var ratio: float = candidate.hp_ratio()
+		if ratio < lowest_ratio:
+			target = candidate
+			lowest_ratio = ratio
+	return target
+
+func get_radar_targets() -> Array[Node2D]:
+	_cleanup_enemy_list()
+	var targets: Array[Node2D] = []
+	for enemy in enemies_in_range:
+		targets.append(enemy)
+	return targets
+
 func is_current_enemy_in_fire_range() -> bool:
 	var enemy := get_current_enemy()
 	if enemy == null:
@@ -120,35 +159,46 @@ func move_away_from_current_enemy() -> void:
 	if enemy == null:
 		stop_and_idle()
 		return
-	var dir := global_position - enemy.global_position
-	if dir.length() < 0.001:
-		dir = Vector2.RIGHT
-	velocity = dir.normalized() * speed
+	flee_from(enemy.global_position)
 
 func move_towards_nearest_enemy() -> void:
 	var enemy := get_current_enemy()
 	if enemy == null:
 		stop_and_idle()
 		return
-	var dir := enemy.global_position - global_position
+	move_towards(enemy.global_position)
+
+func move_towards(target_pos: Vector2) -> void:
+	var dir := target_pos - global_position
 	if dir.length() < 0.001:
 		stop_and_idle()
 		return
+	velocity = dir.normalized() * speed
+
+func flee_from(target_pos: Vector2) -> void:
+	var dir := global_position - target_pos
+	if dir.length() < 0.001:
+		dir = Vector2.RIGHT
 	velocity = dir.normalized() * speed
 
 func stop_and_idle() -> void:
 	velocity = Vector2.ZERO
 
 func fire_main_weapon() -> void:
-	if not is_current_enemy_in_fire_range():
+	var enemy := get_current_enemy()
+	if enemy == null:
+		return
+	fire_weapon(enemy)
+
+func fire_weapon(target: Node2D) -> void:
+	if target == null:
+		return
+	if global_position.distance_to(target.global_position) > fire_range:
 		return
 	var now := Time.get_ticks_msec() / 1000.0
 	if now - _last_fire_time < fire_cooldown_seconds:
 		return
 	_last_fire_time = now
-	var enemy := get_current_enemy()
-	if enemy == null:
-		return
 
 	var spawn_parent := get_tree().current_scene
 	if spawn_parent == null:
@@ -160,7 +210,7 @@ func fire_main_weapon() -> void:
 	if bullet == null:
 		return
 	bullet.global_position = muzzle.global_position if muzzle else global_position
-	var shot_dir: Vector2 = (enemy.global_position - bullet.global_position).normalized()
+	var shot_dir: Vector2 = (target.global_position - bullet.global_position).normalized()
 	if bullet.has_method("setup"):
 		bullet.setup(team, bullet_damage, shot_dir)
 

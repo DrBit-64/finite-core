@@ -1,5 +1,8 @@
 extends Node2D
 
+const AI_RULE_SCRIPT := preload("res://Scripts/ai_rule.gd")
+const AI_CONDITION_SCRIPT := preload("res://Scripts/ai_condition.gd")
+
 @export var robot_scene: PackedScene = preload("res://Scenes/robot.tscn")
 @export var team_a_count: int = 5
 @export var team_b_count: int = 5
@@ -20,12 +23,12 @@ func _ready() -> void:
 
 func spawn_robots_for_radar_test() -> void:
 	var team_a_positions := _generate_clustered_positions("Team_A", team_a_count)
-	for position in team_a_positions:
-		_spawn_team_robot("Team_A", position)
+	for spawn_point in team_a_positions:
+		_spawn_team_robot("Team_A", spawn_point)
 
 	var team_b_positions := _generate_clustered_positions("Team_B", team_b_count)
-	for position in team_b_positions:
-		_spawn_team_robot("Team_B", position)
+	for spawn_point in team_b_positions:
+		_spawn_team_robot("Team_B", spawn_point)
 
 func _generate_clustered_positions(team: String, unit_count: int) -> Array[Vector2]:
 	var positions: Array[Vector2] = []
@@ -56,13 +59,13 @@ func _generate_clustered_positions(team: String, unit_count: int) -> Array[Vecto
 
 	return positions
 
-func _spawn_team_robot(team: String, position: Vector2) -> void:
+func _spawn_team_robot(team: String, spawn_point: Vector2) -> void:
 	var robot := ObjectPool.get_instance(robot_scene, self, pool_name) as CharacterBody2D
 	if robot == null:
 		return
 	robot.set("team", team)
 	robot.set("lifespan_seconds", match_lifespan_seconds)
-	robot.global_position = position
+	robot.global_position = spawn_point
 	if robot.has_method("reset_state"):
 		robot.reset_state()
 	_configure_stage_four_logic(robot)
@@ -72,26 +75,42 @@ func _configure_stage_four_logic(robot: CharacterBody2D) -> void:
 	if controller == null:
 		return
 
-	var rules: Array[AIRule] = []
-	var retreat_rule := AIRule.new()
-	retreat_rule.condition = AIRule.Condition.HP_BELOW_30
-	retreat_rule.action = AIRule.Action.MOVE_AWAY
+	var rules: Array = []
+	var retreat_rule := AI_RULE_SCRIPT.new() as Resource
+	retreat_rule.set("subject", AI_RULE_SCRIPT.Subject.SELF)
+	retreat_rule.set("match_mode", AI_RULE_SCRIPT.MatchMode.MATCH_ALL)
+	retreat_rule.set("action", AI_RULE_SCRIPT.Action.FLEE)
+	retreat_rule.conditions = [_make_condition(AI_CONDITION_SCRIPT.Type.HP_LESS_PERCENT, "30")]
 	if enable_low_hp_retreat_rule:
 		rules.append(retreat_rule)
 
-	var fire_rule := AIRule.new()
-	fire_rule.condition = AIRule.Condition.ENEMY_IN_FIRE_RANGE
-	fire_rule.action = AIRule.Action.FIRE_MAIN_WEAPON
+	var fire_rule := AI_RULE_SCRIPT.new() as Resource
+	fire_rule.set("subject", AI_RULE_SCRIPT.Subject.TARGET_NEAREST)
+	fire_rule.set("match_mode", AI_RULE_SCRIPT.MatchMode.MATCH_ALL)
+	fire_rule.set("action", AI_RULE_SCRIPT.Action.FIRE_MAIN)
+	fire_rule.conditions = [_make_condition(AI_CONDITION_SCRIPT.Type.DISTANCE_LESS, "140")]
 	rules.append(fire_rule)
 
-	var chase_rule := AIRule.new()
-	chase_rule.condition = AIRule.Condition.ENEMY_IN_RANGE
-	chase_rule.action = AIRule.Action.APPROACH_NEAREST_ENEMY
+	var chase_rule := AI_RULE_SCRIPT.new() as Resource
+	chase_rule.set("subject", AI_RULE_SCRIPT.Subject.TARGET_NEAREST)
+	chase_rule.set("match_mode", AI_RULE_SCRIPT.MatchMode.MATCH_ALL)
+	chase_rule.set("action", AI_RULE_SCRIPT.Action.APPROACH)
+	chase_rule.conditions = [_make_condition(AI_CONDITION_SCRIPT.Type.DISTANCE_LESS, "99999")]
 	rules.append(chase_rule)
 
-	var fallback_rule := AIRule.new()
-	fallback_rule.condition = AIRule.Condition.ALWAYS
-	fallback_rule.action = AIRule.Action.STOP_AND_IDLE
+	var fallback_rule := AI_RULE_SCRIPT.new() as Resource
+	fallback_rule.set("subject", AI_RULE_SCRIPT.Subject.SELF)
+	fallback_rule.set("match_mode", AI_RULE_SCRIPT.MatchMode.MATCH_ALL)
+	fallback_rule.set("action", AI_RULE_SCRIPT.Action.STOP_ACTION)
+	fallback_rule.conditions = []
 	rules.append(fallback_rule)
 
 	controller.set("logic_rules", rules)
+
+func _make_condition(condition_type: AI_CONDITION_SCRIPT.Type, param: String) -> Resource:
+	var cond := AI_CONDITION_SCRIPT.new() as Resource
+	if cond == null:
+		return null
+	cond.set("type", condition_type)
+	cond.set("param", param)
+	return cond

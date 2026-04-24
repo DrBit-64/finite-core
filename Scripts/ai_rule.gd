@@ -1,19 +1,25 @@
 extends Resource
 class_name AIRule
 
-enum Condition {
-	ENEMY_IN_RANGE,
-	ENEMY_IN_FIRE_RANGE,
-	HP_BELOW_30,
-	ALWAYS,
+enum Subject {
+	SELF,
+	TARGET_NEAREST,
+	TARGET_LOWEST_HP,
+}
+
+enum MatchMode {
+	MATCH_ALL,
+	MATCH_ANY,
 }
 
 enum Action {
-	FIRE_MAIN_WEAPON,
-	APPROACH_NEAREST_ENEMY,
-	MOVE_AWAY,
-	STOP_AND_IDLE,
+	APPROACH,
+	FLEE,
+	FIRE_MAIN,
+	STOP_ACTION,
 }
 
-@export var condition: Condition = Condition.ALWAYS
-@export var action: Action = Action.STOP_AND_IDLE
+@export var subject: Subject = Subject.TARGET_NEAREST
+@export var match_mode: MatchMode = MatchMode.MATCH_ALL
+@export var conditions: Array = []
+@export var action: Action = Action.STOP_ACTION
