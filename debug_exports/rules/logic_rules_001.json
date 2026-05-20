@@ -1,0 +1,94 @@
+{
+	"generated_at": "2026-05-20T00:20:31",
+	"rule_count": 3,
+	"rules": [
+		{
+			"action": {
+				"code": "FLEE",
+				"id": 1,
+				"label": "远离"
+			},
+			"conditions": [
+				{
+					"index": 0,
+					"param": "30",
+					"type": {
+						"code": "HP_LESS_PERCENT",
+						"id": 1,
+						"label": "血量 % <"
+					}
+				}
+			],
+			"match_mode": {
+				"code": "MATCH_ALL",
+				"id": 0,
+				"label": "全部满足"
+			},
+			"priority": 3,
+			"subject": {
+				"code": "TARGET_NEAREST",
+				"id": 1,
+				"label": "最近敌人"
+			}
+		},
+		{
+			"action": {
+				"code": "FIRE_MAIN",
+				"id": 2,
+				"label": "开火"
+			},
+			"conditions": [
+				{
+					"index": 0,
+					"param": "140",
+					"type": {
+						"code": "DISTANCE_LESS",
+						"id": 0,
+						"label": "距离 <"
+					}
+				}
+			],
+			"match_mode": {
+				"code": "MATCH_ALL",
+				"id": 0,
+				"label": "全部满足"
+			},
+			"priority": 1,
+			"subject": {
+				"code": "TARGET_NEAREST",
+				"id": 1,
+				"label": "最近敌人"
+			}
+		},
+		{
+			"action": {
+				"code": "APPROACH",
+				"id": 0,
+				"label": "接近"
+			},
+			"conditions": [
+				{
+					"index": 0,
+					"param": "999999",
+					"type": {
+						"code": "DISTANCE_LESS",
+						"id": 0,
+						"label": "距离 <"
+					}
+				}
+			],
+			"match_mode": {
+				"code": "MATCH_ALL",
+				"id": 0,
+				"label": "全部满足"
+			},
+			"priority": 2,
+			"subject": {
+				"code": "TARGET_NEAREST",
+				"id": 1,
+				"label": "最近敌人"
+			}
+		}
+	],
+	"schema_version": 1
+}

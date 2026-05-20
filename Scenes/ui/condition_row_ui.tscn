@@ -3,15 +3,22 @@
 [ext_resource type="Script" path="res://Scripts/ui/condition_row_ui.gd" id="1_6lg2q"]
 
 [node name="ConditionRowUI" type="HBoxContainer"]
+theme_override_constants/separation = 8
 size_flags_horizontal = 3
 script = ExtResource("1_6lg2q")
 
+[node name="BranchLabel" type="Label" parent="."]
+custom_minimum_size = Vector2(24, 0)
+text = "└"
+horizontal_alignment = 1
+
 [node name="TypeOption" type="OptionButton" parent="."]
-size_flags_horizontal = 1
+custom_minimum_size = Vector2(120, 0)
 
 [node name="ParamInput" type="LineEdit" parent="."]
 size_flags_horizontal = 3
-placeholder_text = "Param"
+placeholder_text = "数值或标签"
 
 [node name="RemoveButton" type="Button" parent="."]
-text = "-"
+custom_minimum_size = Vector2(32, 0)
+text = "×"

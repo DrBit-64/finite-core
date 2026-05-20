@@ -29,21 +29,21 @@ func _ready() -> void:
 
 func _populate_header_options() -> void:
 	subject_option.clear()
-	subject_option.add_item("SELF", AI_RULE_SCRIPT.Subject.SELF)
-	subject_option.add_item("TARGET_NEAREST", AI_RULE_SCRIPT.Subject.TARGET_NEAREST)
-	subject_option.add_item("TARGET_LOWEST_HP", AI_RULE_SCRIPT.Subject.TARGET_LOWEST_HP)
+	subject_option.add_item("自己", AI_RULE_SCRIPT.Subject.SELF)
+	subject_option.add_item("最近敌人", AI_RULE_SCRIPT.Subject.TARGET_NEAREST)
+	subject_option.add_item("低血敌人", AI_RULE_SCRIPT.Subject.TARGET_LOWEST_HP)
 	subject_option.select(1)
 
 	match_mode_option.clear()
-	match_mode_option.add_item("MATCH_ALL", AI_RULE_SCRIPT.MatchMode.MATCH_ALL)
-	match_mode_option.add_item("MATCH_ANY", AI_RULE_SCRIPT.MatchMode.MATCH_ANY)
+	match_mode_option.add_item("全部满足", AI_RULE_SCRIPT.MatchMode.MATCH_ALL)
+	match_mode_option.add_item("任一满足", AI_RULE_SCRIPT.MatchMode.MATCH_ANY)
 	match_mode_option.select(0)
 
 	action_option.clear()
-	action_option.add_item("APPROACH", AI_RULE_SCRIPT.Action.APPROACH)
-	action_option.add_item("FLEE", AI_RULE_SCRIPT.Action.FLEE)
-	action_option.add_item("FIRE_MAIN", AI_RULE_SCRIPT.Action.FIRE_MAIN)
-	action_option.add_item("STOP_ACTION", AI_RULE_SCRIPT.Action.STOP_ACTION)
+	action_option.add_item("接近", AI_RULE_SCRIPT.Action.APPROACH)
+	action_option.add_item("远离", AI_RULE_SCRIPT.Action.FLEE)
+	action_option.add_item("开火", AI_RULE_SCRIPT.Action.FIRE_MAIN)
+	action_option.add_item("停止", AI_RULE_SCRIPT.Action.STOP_ACTION)
 	action_option.select(0)
 
 func _on_add_condition_pressed() -> void:

@@ -16,6 +16,8 @@ const AI_CONDITION_SCRIPT := preload("res://Scripts/ai_condition.gd")
 @export var match_lifespan_seconds: float = 30.0
 @export var enable_low_hp_retreat_rule: bool = false
 @export var pool_name: String = "robot_basic"
+@export_file("*.json") var team_a_logic_rules_path: String = "res://debug_exports/rules/logic_rules_001.json"
+@export_file("*.json") var team_b_logic_rules_path: String = "res://debug_exports/rules/logic_rules_002.json"
 
 func _ready() -> void:
 	randomize()
@@ -68,13 +70,163 @@ func _spawn_team_robot(team: String, spawn_point: Vector2) -> void:
 	robot.global_position = spawn_point
 	if robot.has_method("reset_state"):
 		robot.reset_state()
-	_configure_stage_four_logic(robot)
+	_configure_logic_for_team(robot, team)
+
+func _configure_logic_for_team(robot: CharacterBody2D, team: String) -> void:
+	var rules := _load_team_logic_rules(team)
+	if rules.is_empty():
+		_configure_stage_four_logic(robot)
+		return
+	_apply_logic_rules(robot, rules)
+
+func _load_team_logic_rules(team: String) -> Array[AIRule]:
+	var path := team_a_logic_rules_path if team == "Team_A" else team_b_logic_rules_path
+	if path.is_empty():
+		return []
+	var rules := _load_logic_rules_from_json(path)
+	if rules.is_empty():
+		push_warning("Falling through to hard-coded logic rules for %s. Could not load valid rules from %s." % [team, path])
+	return rules
+
+func _load_logic_rules_from_json(path: String) -> Array[AIRule]:
+	if not FileAccess.file_exists(path):
+		push_warning("Logic rules JSON does not exist: %s" % path)
+		return []
+
+	var json_text := FileAccess.get_file_as_string(path)
+	var parsed: Variant = JSON.parse_string(json_text)
+	if not (parsed is Dictionary):
+		push_warning("Logic rules JSON root must be a Dictionary: %s" % path)
+		return []
+
+	var rule_entries_variant: Variant = parsed.get("rules", [])
+	if not (rule_entries_variant is Array):
+		push_warning("Logic rules JSON has no rules array: %s" % path)
+		return []
+
+	var rule_entries: Array = rule_entries_variant
+	rule_entries.sort_custom(_sort_rule_entries_by_priority)
+
+	var rules: Array[AIRule] = []
+	for entry in rule_entries:
+		if not (entry is Dictionary):
+			continue
+		var rule := _rule_from_json_entry(entry)
+		if rule != null:
+			rules.append(rule)
+	return rules
+
+func _sort_rule_entries_by_priority(a: Variant, b: Variant) -> bool:
+	if not (a is Dictionary) or not (b is Dictionary):
+		return false
+	return int(a.get("priority", 0)) < int(b.get("priority", 0))
+
+func _rule_from_json_entry(entry: Dictionary) -> AIRule:
+	var rule := AI_RULE_SCRIPT.new() as AIRule
+	rule.set("subject", _subject_from_json_value(entry.get("subject", AI_RULE_SCRIPT.Subject.TARGET_NEAREST)))
+	rule.set("match_mode", _match_mode_from_json_value(entry.get("match_mode", AI_RULE_SCRIPT.MatchMode.MATCH_ALL)))
+	rule.set("action", _action_from_json_value(entry.get("action", AI_RULE_SCRIPT.Action.STOP_ACTION)))
+
+	var conditions: Array[AICondition] = []
+	var condition_entries_variant: Variant = entry.get("conditions", [])
+	if condition_entries_variant is Array:
+		var condition_entries: Array = condition_entries_variant
+		condition_entries.sort_custom(_sort_condition_entries_by_index)
+		for condition_entry in condition_entries:
+			if condition_entry is Dictionary:
+				var condition := _condition_from_json_entry(condition_entry)
+				if condition != null:
+					conditions.append(condition)
+	rule.conditions = conditions
+	return rule
+
+func _sort_condition_entries_by_index(a: Variant, b: Variant) -> bool:
+	if not (a is Dictionary) or not (b is Dictionary):
+		return false
+	return int(a.get("index", 0)) < int(b.get("index", 0))
+
+func _condition_from_json_entry(entry: Dictionary) -> AICondition:
+	var condition := AI_CONDITION_SCRIPT.new() as AICondition
+	condition.set("type", _condition_type_from_json_value(entry.get("type", AI_CONDITION_SCRIPT.Type.DISTANCE_LESS)))
+	condition.set("param", str(entry.get("param", "")))
+	return condition
+
+func _enum_code_from_json_value(value: Variant) -> String:
+	if value is Dictionary:
+		return str(value.get("code", ""))
+	if value is String:
+		return str(value)
+	return ""
+
+func _enum_id_from_json_value(value: Variant) -> int:
+	if value is Dictionary and value.has("id"):
+		return int(value.get("id"))
+	if typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT:
+		return int(value)
+	return -1
+
+func _subject_from_json_value(value: Variant) -> int:
+	match _enum_code_from_json_value(value):
+		"SELF":
+			return AI_RULE_SCRIPT.Subject.SELF
+		"TARGET_NEAREST":
+			return AI_RULE_SCRIPT.Subject.TARGET_NEAREST
+		"TARGET_LOWEST_HP":
+			return AI_RULE_SCRIPT.Subject.TARGET_LOWEST_HP
+	var id := _enum_id_from_json_value(value)
+	if id >= 0:
+		return id
+	return AI_RULE_SCRIPT.Subject.TARGET_NEAREST
+
+func _match_mode_from_json_value(value: Variant) -> int:
+	match _enum_code_from_json_value(value):
+		"MATCH_ALL":
+			return AI_RULE_SCRIPT.MatchMode.MATCH_ALL
+		"MATCH_ANY":
+			return AI_RULE_SCRIPT.MatchMode.MATCH_ANY
+	var id := _enum_id_from_json_value(value)
+	if id >= 0:
+		return id
+	return AI_RULE_SCRIPT.MatchMode.MATCH_ALL
+
+func _action_from_json_value(value: Variant) -> int:
+	match _enum_code_from_json_value(value):
+		"APPROACH":
+			return AI_RULE_SCRIPT.Action.APPROACH
+		"FLEE":
+			return AI_RULE_SCRIPT.Action.FLEE
+		"FIRE_MAIN":
+			return AI_RULE_SCRIPT.Action.FIRE_MAIN
+		"STOP_ACTION":
+			return AI_RULE_SCRIPT.Action.STOP_ACTION
+	var id := _enum_id_from_json_value(value)
+	if id >= 0:
+		return id
+	return AI_RULE_SCRIPT.Action.STOP_ACTION
+
+func _condition_type_from_json_value(value: Variant) -> int:
+	match _enum_code_from_json_value(value):
+		"DISTANCE_LESS":
+			return AI_CONDITION_SCRIPT.Type.DISTANCE_LESS
+		"HP_LESS_PERCENT":
+			return AI_CONDITION_SCRIPT.Type.HP_LESS_PERCENT
+		"HAS_TAG":
+			return AI_CONDITION_SCRIPT.Type.HAS_TAG
+	var id := _enum_id_from_json_value(value)
+	if id >= 0:
+		return id
+	return AI_CONDITION_SCRIPT.Type.DISTANCE_LESS
 
 func _configure_stage_four_logic(robot: CharacterBody2D) -> void:
+	_apply_logic_rules(robot, _build_stage_four_logic_rules())
+
+func _apply_logic_rules(robot: CharacterBody2D, rules: Array[AIRule]) -> void:
 	var controller := robot.get_node_or_null("AIController")
 	if controller == null:
 		return
+	controller.set("logic_rules", rules)
 
+func _build_stage_four_logic_rules() -> Array[AIRule]:
 	var rules: Array[AIRule] = []
 	var retreat_rule := AI_RULE_SCRIPT.new() as AIRule
 	retreat_rule.set("subject", AI_RULE_SCRIPT.Subject.SELF)
@@ -109,7 +261,7 @@ func _configure_stage_four_logic(robot: CharacterBody2D) -> void:
 	fallback_rule.conditions = fallback_conditions
 	rules.append(fallback_rule)
 
-	controller.set("logic_rules", rules)
+	return rules
 
 func _make_condition(condition_type: AI_CONDITION_SCRIPT.Type, param: String) -> AICondition:
 	var cond := AI_CONDITION_SCRIPT.new() as AICondition

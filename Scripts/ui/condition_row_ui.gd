@@ -15,9 +15,9 @@ func _ready() -> void:
 
 func _populate_type_options() -> void:
 	type_option.clear()
-	type_option.add_item("DISTANCE_LESS", AI_CONDITION_SCRIPT.Type.DISTANCE_LESS)
-	type_option.add_item("HP_LESS_PERCENT", AI_CONDITION_SCRIPT.Type.HP_LESS_PERCENT)
-	type_option.add_item("HAS_TAG", AI_CONDITION_SCRIPT.Type.HAS_TAG)
+	type_option.add_item("距离 <", AI_CONDITION_SCRIPT.Type.DISTANCE_LESS)
+	type_option.add_item("血量 % <", AI_CONDITION_SCRIPT.Type.HP_LESS_PERCENT)
+	type_option.add_item("拥有标签", AI_CONDITION_SCRIPT.Type.HAS_TAG)
 	type_option.select(0)
 
 func to_condition() -> AICondition:

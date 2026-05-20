@@ -3,38 +3,65 @@
 [ext_resource type="Script" path="res://Scripts/ui/rule_block_ui.gd" id="1_j34mw"]
 
 [node name="RuleBlockUI" type="VBoxContainer"]
+theme_override_constants/separation = 6
 size_flags_horizontal = 3
 script = ExtResource("1_j34mw")
 
 [node name="Header" type="HBoxContainer" parent="."]
+theme_override_constants/separation = 8
 size_flags_horizontal = 3
 
 [node name="BtnUp" type="Button" parent="Header"]
-text = "Up"
+custom_minimum_size = Vector2(32, 32)
+text = "↑"
 
-[node name="BtnDown" type="Button" parent="Header"]
-text = "Down"
+[node name="SubjectLabel" type="Label" parent="Header"]
+text = "目标"
+vertical_alignment = 1
 
 [node name="SubjectOption" type="OptionButton" parent="Header"]
-size_flags_horizontal = 2
+custom_minimum_size = Vector2(112, 0)
+
+[node name="MatchLabel" type="Label" parent="Header"]
+text = "条件"
+vertical_alignment = 1
 
 [node name="MatchModeOption" type="OptionButton" parent="Header"]
-size_flags_horizontal = 2
+custom_minimum_size = Vector2(112, 0)
+
+[node name="ActionLabel" type="Label" parent="Header"]
+text = "动作"
+vertical_alignment = 1
 
 [node name="ActionOption" type="OptionButton" parent="Header"]
-size_flags_horizontal = 2
+custom_minimum_size = Vector2(88, 0)
+
+[node name="HeaderFill" type="Control" parent="Header"]
+size_flags_horizontal = 3
+
+[node name="BtnDown" type="Button" parent="Header"]
+custom_minimum_size = Vector2(32, 32)
+text = "↓"
 
 [node name="BtnRemoveRule" type="Button" parent="Header"]
-text = "Remove"
+custom_minimum_size = Vector2(32, 32)
+text = "×"
 
-[node name="Body" type="VBoxContainer" parent="."]
+[node name="Body" type="MarginContainer" parent="."]
+theme_override_constants/margin_left = 32
+theme_override_constants/margin_top = 2
 size_flags_horizontal = 3
 
 [node name="ConditionsBox" type="VBoxContainer" parent="Body"]
+theme_override_constants/separation = 4
 size_flags_horizontal = 3
 
 [node name="Footer" type="HBoxContainer" parent="."]
+theme_override_constants/separation = 8
 size_flags_horizontal = 3
 
+[node name="FooterIndent" type="Control" parent="Footer"]
+custom_minimum_size = Vector2(32, 0)
+
 [node name="BtnAddCondition" type="Button" parent="Footer"]
-text = "+ Add Condition"
+text = "+ 条件"
