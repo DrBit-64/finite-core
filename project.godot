@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="Finite Core"
-run/main_scene="res://Scenes/main.tscn"
+run/main_scene="res://Scenes/mvp/mvp_test_map.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
 

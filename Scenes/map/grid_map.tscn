@@ -1,0 +1,24 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://Scripts/map/grid_map.gd" id="1_x1m0f"]
+[ext_resource type="Script" path="res://Scripts/map/grid_overlay.gd" id="2_vtvb7"]
+
+[node name="GridMap" type="Node2D"]
+script = ExtResource("1_x1m0f")
+
+[node name="TerrainLayer" type="Node2D" parent="."]
+
+[node name="GridOverlay" type="Node2D" parent="TerrainLayer"]
+script = ExtResource("2_vtvb7")
+
+[node name="ResourceLayer" type="Node2D" parent="."]
+
+[node name="BuildingLayer" type="Node2D" parent="."]
+
+[node name="RallyLayer" type="Node2D" parent="."]
+
+[node name="EnemyLayer" type="Node2D" parent="."]
+
+[node name="UnitLayer" type="Node2D" parent="."]
+
+[node name="ProjectileLayer" type="Node2D" parent="."]

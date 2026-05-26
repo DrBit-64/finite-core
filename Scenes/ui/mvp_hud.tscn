@@ -1,0 +1,132 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://Scripts/ui/hud.gd" id="1_jr80h"]
+[ext_resource type="Script" path="res://Scripts/ui/object_inspector.gd" id="2_w13sw"]
+[ext_resource type="Script" path="res://Scripts/ui/debug_event_panel.gd" id="3_5k6ks"]
+
+[node name="MvpHUD" type="CanvasLayer"]
+script = ExtResource("1_jr80h")
+
+[node name="Root" type="Control" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="TopBar" type="PanelContainer" parent="Root"]
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 12.0
+offset_top = 12.0
+offset_right = -12.0
+offset_bottom = 56.0
+grow_horizontal = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="Root/TopBar"]
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 8
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Root/TopBar/MarginContainer"]
+theme_override_constants/separation = 24
+
+[node name="ResourceSummaryLabel" type="Label" parent="Root/TopBar/MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "资源面板占位"
+
+[node name="CurrentGoalLabel" type="Label" parent="Root/TopBar/MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+horizontal_alignment = 2
+text = "目标：阶段 0"
+
+[node name="ObjectInspector" type="PanelContainer" parent="Root"]
+unique_name_in_owner = true
+anchors_preset = 0
+offset_left = 12.0
+offset_top = 72.0
+offset_right = 372.0
+offset_bottom = 720.0
+script = ExtResource("2_w13sw")
+
+[node name="MarginContainer" type="MarginContainer" parent="Root/ObjectInspector"]
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Root/ObjectInspector/MarginContainer"]
+theme_override_constants/separation = 8
+
+[node name="TitleLabel" type="Label" parent="Root/ObjectInspector/MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "对象检查器"
+
+[node name="BodyLabel" type="Label" parent="Root/ObjectInspector/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+text = "未选择对象"
+autowrap_mode = 3
+
+[node name="DebugEventPanel" type="PanelContainer" parent="Root"]
+unique_name_in_owner = true
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -452.0
+offset_top = 72.0
+offset_right = -12.0
+offset_bottom = 820.0
+grow_horizontal = 0
+script = ExtResource("3_5k6ks")
+
+[node name="MarginContainer" type="MarginContainer" parent="Root/DebugEventPanel"]
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Root/DebugEventPanel/MarginContainer"]
+theme_override_constants/separation = 8
+
+[node name="TitleLabel" type="Label" parent="Root/DebugEventPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "调试事件"
+
+[node name="ScrollContainer" type="ScrollContainer" parent="Root/DebugEventPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="EventList" type="VBoxContainer" parent="Root/DebugEventPanel/MarginContainer/VBoxContainer/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="BottomBar" type="PanelContainer" parent="Root"]
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -76.0
+offset_right = -12.0
+offset_bottom = -12.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="MarginContainer" type="MarginContainer" parent="Root/BottomBar"]
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 8
+
+[node name="BottomHintLabel" type="Label" parent="Root/BottomBar/MarginContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "底部操作条占位"
+autowrap_mode = 3

@@ -1,0 +1,20 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://Scripts/mvp/mvp_game_manager.gd" id="1_3v01g"]
+[ext_resource type="PackedScene" path="res://Scenes/ui/mvp_hud.tscn" id="2_eyf33"]
+[ext_resource type="PackedScene" path="res://Scenes/map/grid_map.tscn" id="2_w66pq"]
+
+[node name="MvpGameManager" type="Node2D"]
+script = ExtResource("1_3v01g")
+
+[node name="GameWorld" type="Node2D" parent="."]
+
+[node name="GridMap" parent="GameWorld" instance=ExtResource("2_w66pq")]
+unique_name_in_owner = true
+
+[node name="MainCamera" type="Camera2D" parent="."]
+position = Vector2(960, 540)
+enabled = true
+
+[node name="MvpHUD" parent="." instance=ExtResource("2_eyf33")]
+unique_name_in_owner = true
