@@ -452,6 +452,12 @@ Scripts/map/grid_overlay.gd
   - 输入资源。
   - 输出资源或单位。
   - 耗时。
+  - 配方类型：资源加工 / 建筑建造 / 单位生产。
+  - 目标 ID，例如建筑 ID 或机器人蓝图 ID。
+- 将所有 MVP 配方放入外部 JSON 配置：
+  - 中间产物加工配方。
+  - 建筑建造配方。
+  - 机器人生产配方。
 - 定义机器人蓝图数据结构：
   - 蓝图 ID。
   - 蓝图版本。
@@ -477,6 +483,7 @@ Scripts/core/combat_event_log.gd
 Scripts/core/id_provider.gd
 Scripts/data/resource_def.gd
 Scripts/data/recipe_def.gd
+Scripts/data/recipe_config_loader.gd
 Scripts/data/unit_blueprint.gd
 Scripts/data/unit_stats.gd
 Scripts/data/building_def.gd
@@ -484,6 +491,7 @@ Scripts/data/map_object_def.gd
 Scripts/combat/team.gd
 Scripts/ui/debug_event_panel.gd
 Scenes/ui/debug_event_panel.tscn
+Resources/data/recipes/mvp_recipes.json
 ```
 
 ### 模块化要求
@@ -491,12 +499,13 @@ Scenes/ui/debug_event_panel.tscn
 - 所有事件都通过统一函数记录，例如 `CombatEventLog.record(type, payload)`。
 - 事件日志只关心数据，不关心 UI。
 - `DebugEventPanel` 只监听或查询事件日志，不直接写入事件。
-- 配方和蓝图不要硬写在建筑脚本里，应由建筑引用。
+- 配方不要硬写在建筑、蓝图或产线脚本里，应从外部配置加载为 `RecipeDef`。
+- 建筑和蓝图可以保存配方 ID 与成本快照，但成本来源必须是配方配置。
 - 建筑占格尺寸属于建筑定义数据，不要散落在放置逻辑里。
 
 ### 美术素材需求
 
-这个阶段只需要 UI 图标占位：
+这个阶段只需要 MVP 美术图标：
 
 | 素材 | 用途 | MVP 要求 |
 | --- | --- | --- |
@@ -506,7 +515,7 @@ Scenes/ui/debug_event_panel.tscn
 | 资源图标：铜线 | 资源面板 | 16x16 或 32x32，线圈图标 |
 | 资源图标：建设质料 | 资源面板 | 16x16 或 32x32，方块/建材图标 |
 
-可先用纯色图形或简单 SVG/PNG 占位。
+当前可使用简单 SVG/PNG 作为 MVP 正式资源，后续只替换不满意的单个文件。
 
 ### 验收标准
 
@@ -514,7 +523,8 @@ Scenes/ui/debug_event_panel.tscn
 - `DebugEventPanel` 可以显示最近 20 条事件。
 - 事件 payload 可以展开查看。
 - 可以创建一个基础步枪机器人蓝图数据。
-- 可以用配方数据描述机器人生产成本。
+- 可以用外部配方数据描述机器人生产成本。
+- 可以用外部配方数据描述建筑建造成本和中间产物加工。
 - 资源 ID 全部集中定义，不散落在脚本字符串里。
 - 地图尺寸、格子尺寸、建筑占格尺寸有集中定义。
 
@@ -1069,7 +1079,7 @@ Scenes/ui/debug_panel_tabs.tscn
   - 零散失败。
   - 集结成功。
   - 生产节奏不让玩家等待太久。
-- 替换关键占位美术。
+- 替换或微调不满意的 MVP 美术资源。
 - 清理调试文本，把必要信息做成简洁 UI。
 - 统一 UI 视觉规范：
   - 面板背景。
@@ -1129,7 +1139,7 @@ MVP UI 最终至少需要以下界面元素：
 | 阶段 | 名称 | 主要产物 | 地图产物 | UI 产物 | 是否需要新美术 |
 | --- | --- | --- | --- | --- | --- |
 | 0 | 工程整理与基线验证 | 可运行旧 MVP、测试场景入口 | `GameWorld`、`MainCamera`、64x64 网格地图骨架 | HUD 三栏占位 | 否 |
-| 1 | 核心数据与事件地基 | 事件日志、资源/配方/蓝图数据 | 地图尺寸、格子尺寸、占格数据定义 | DebugEventPanel | 资源图标占位 |
+| 1 | 核心数据与事件地基 | 事件日志、资源/配方/蓝图数据 | 地图尺寸、格子尺寸、占格数据定义 | DebugEventPanel | MVP 资源图标 |
 | 2 | 主基地与抽象物流 | 库存、服务半径 | 主基地 `2x2` 占格、地图选择基础 | ResourcePanel、主基地检查器 | 主基地 |
 | 3 | 采矿与加工 | 矿点、采矿机、加工厂 | 资源点和建筑 `1x1` 占格、占用检测 | BuildingStatusPanel | 矿点、采矿机、加工厂 |
 | 4 | 机器人锻造厂 | 蓝图生产、自动补位、集结点引用 | 锻造厂占格、集结点地图交互 | ForgePanel、集结点设置 | 锻造厂、集结点 |
