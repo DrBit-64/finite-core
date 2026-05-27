@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Scripts/map/building_placement_ghost.gd" id="1_nyq7y"]
+
+[node name="BuildingPlacementGhost" type="Node2D"]
+z_index = 20
+script = ExtResource("1_nyq7y")
+
+[node name="IconSprite" type="Sprite2D" parent="."]

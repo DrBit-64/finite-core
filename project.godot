@@ -36,7 +36,3 @@ window/stretch/mode="canvas_items"
 [physics]
 
 3d/physics_engine="Jolt Physics"
-
-[rendering]
-
-rendering_device/driver.windows="vulkan"
