@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "map_id": "mvp_stage3",
+  "map_size": [64, 64],
+  "resource_nodes": [
+    {
+      "id": "iron_ore_001",
+      "resource_id": "iron_ore",
+      "grid_origin": [8, 8],
+      "grid_size": [1, 1],
+      "amount": 10000
+    },
+    {
+      "id": "copper_ore_001",
+      "resource_id": "copper_ore",
+      "grid_origin": [12, 8],
+      "grid_size": [1, 1],
+      "amount": 10000
+    },
+    {
+      "id": "iron_ore_002",
+      "resource_id": "iron_ore",
+      "grid_origin": [8, 13],
+      "grid_size": [1, 1],
+      "amount": 10000
+    },
+    {
+      "id": "copper_ore_002",
+      "resource_id": "copper_ore",
+      "grid_origin": [13, 13],
+      "grid_size": [1, 1],
+      "amount": 10000
+    }
+  ]
+}

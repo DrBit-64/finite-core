@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Scripts/buildings/processor.gd" id="1_dmpk8"]
+
+[node name="Processor" type="Node2D"]
+script = ExtResource("1_dmpk8")
+
+[node name="Footprint" type="Polygon2D" parent="."]
+color = Color(0.16, 0.19, 0.25, 0.62)
+
+[node name="IconSprite" type="Sprite2D" parent="."]

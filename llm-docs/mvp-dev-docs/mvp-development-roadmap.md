@@ -646,6 +646,12 @@ Scenes/ui/build_menu.tscn
 
 ### 功能任务
 
+- 实现固定 MVP 地图配置：
+  - 使用外部 JSON 描述地图资源点。
+  - 地图配置包含资源点 ID、资源类型、网格坐标、占格尺寸和储量。
+  - 新游戏读取默认地图配置生成矿点。
+  - 后续随机地图生成也应先产出同一份地图数据结构。
+  - 存档系统保存运行中的地图状态，而不是重新随机。
 - 实现固定矿点：
   - 铁矿点。
   - 铜矿点。
@@ -653,9 +659,17 @@ Scenes/ui/build_menu.tscn
 - 实现 `Miner`：
   - 按固定速率产出矿物。
   - 将资源加入主基地库存。
-  - 只能绑定相邻或同格资源点，MVP 可先使用固定摆放。
+  - 采矿机必须覆盖矿点建造。
+  - 一个矿点只能绑定一个采矿机。
+  - 已绑定矿点不能再放置第二个采矿机。
+  - 非矿点格子不能放置采矿机。
+  - 采矿机保存绑定矿点 ID 和产出资源 ID。
 - 实现 `Processor`：
-  - 自动执行配方。
+  - 选中加工厂后显示正式建筑操作悬浮窗口。
+  - 悬浮窗口用于配方选择、缓存查看、生产状态和进度展示。
+  - 悬浮窗口属于最终游戏流程 UI，不属于左侧调试检查器。
+  - UI 只发出选择配方请求，不推动生产逻辑。
+  - 自动执行已选择配方。
   - 铁矿 -> 铁板。
   - 铜矿 -> 铜线。
   - 资源不足时等待。
@@ -681,21 +695,27 @@ Scenes/ui/build_menu.tscn
 Scripts/buildings/miner.gd
 Scripts/buildings/processor.gd
 Scripts/map/resource_node.gd
+Scripts/map/map_config_loader.gd
 Scripts/map/building_placement.gd
 Scripts/ui/building_status_panel.gd
+Scripts/ui/building_operation_panel.gd
 Scenes/buildings/miner.tscn
 Scenes/buildings/processor.tscn
 Scenes/map/resource_node.tscn
 Scenes/ui/building_status_panel.tscn
+Scenes/ui/building_operation_panel.tscn
+Resources/data/maps/mvp_stage3_map.json
 ```
 
 ### 模块化要求
 
-- 矿点只提供资源类型，不负责产出逻辑。
+- 矿点只提供资源类型和绑定状态，不负责产出逻辑。
 - `Miner` 负责按时间产出。
 - `Processor` 通过配方数据工作，不硬编码每种配方。
-- 建筑状态面板只读取建筑公开状态，不推动生产 tick。
-- 资源点和建筑都登记到网格占用系统，但机器人不会登记到占格系统。
+- 建筑操作面板只读取建筑公开状态并发送玩家指令，不推动生产 tick。
+- 资源点登记到资源格系统，建筑登记到建筑占格系统；采矿机是唯一允许覆盖未绑定资源点的建筑。
+- 普通建筑不能放在资源点上。
+- 采矿机建成后保留矿点底图，在上方叠加采矿机图标。
 
 ### 美术素材需求
 
@@ -707,12 +727,18 @@ Scenes/ui/building_status_panel.tscn
 | 基础加工厂 | 建筑 | 48x48 或 64x64，工业设备感 |
 | 建筑占格底板 | 地图调试 | 1x1 半透明格底即可 |
 | 工作状态小图标 | UI/地图调试 | 可用简单符号：运行、等待 |
-| 建筑状态面板 | UI | 默认面板即可，重点是进度条和等待原因清楚 |
+| 加工厂操作悬浮窗 | 正式玩法 UI | 配方选择、缓存、状态、进度清楚 |
 
 ### 验收标准
 
 - 铁矿和铜矿会稳定进入库存。
+- 矿点由固定地图配置生成，而不是运行时随机生成。
+- 采矿机只能放在未绑定矿点上。
+- 采矿机建成后矿点底图仍然可辨认。
 - 加工厂会消耗矿物并产出铁板、铜线。
+- 选中加工厂时出现正式建筑操作悬浮窗。
+- 加工厂悬浮窗可以选择铁板/铜线配方。
+- 加工厂悬浮窗能显示当前配方、原料缓存、产物缓存、状态和进度。
 - 资源不足时不会报错。
 - 所有资源变化写入事件日志。
 - 选中采矿机或加工厂时，面板能看出它在工作还是等待资源。

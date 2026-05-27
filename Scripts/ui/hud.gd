@@ -2,6 +2,7 @@ extends CanvasLayer
 class_name MvpHud
 
 signal build_mode_requested(building_id: StringName)
+signal processor_recipe_selected(processor: Node, recipe_id: StringName)
 
 @onready var current_goal_label: Label = %CurrentGoalLabel
 @onready var resource_summary_label: Label = %ResourceSummaryLabel
@@ -16,6 +17,17 @@ var _inventory_amounts: Dictionary = {}
 var _cost_panel: PanelContainer = null
 var _cost_list: VBoxContainer = null
 var _cost_preview_content_key: String = ""
+var _operation_panel: PanelContainer = null
+var _operation_list: VBoxContainer = null
+var _operation_processor: Node = null
+var _operation_recipes: Array[RecipeDef] = []
+var _operation_current_label: Label = null
+var _operation_status_label: Label = null
+var _operation_progress_label: Label = null
+var _operation_progress_bar: ProgressBar = null
+var _operation_input_cache_label: Label = null
+var _operation_output_cache_label: Label = null
+var _operation_recipe_buttons: Dictionary = {}
 
 func _ready() -> void:
 	set_current_goal("阶段 0：验证 MVP 测试入口")
@@ -63,6 +75,21 @@ func hide_build_cost_preview() -> void:
 	if _cost_panel:
 		_cost_panel.visible = false
 	_cost_preview_content_key = ""
+
+func show_processor_panel(processor: Node, recipes: Array[RecipeDef], resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
+	_ensure_operation_panel()
+	_operation_panel.visible = true
+	if _operation_processor != processor or _operation_recipes.size() != recipes.size():
+		_operation_processor = processor
+		_operation_recipes = recipes.duplicate()
+		_rebuild_processor_panel(processor, recipes)
+	_update_processor_panel(processor, resource_defs)
+	_position_operation_panel(screen_position)
+
+func hide_operation_panel() -> void:
+	if _operation_panel:
+		_operation_panel.visible = false
+	_operation_processor = null
 
 func set_resource_amounts(resource_defs: Array[ResourceDef], amounts: Dictionary) -> void:
 	_inventory_amounts = amounts.duplicate(true)
@@ -220,3 +247,150 @@ func _get_resource_display_name(resource_defs: Array[ResourceDef], resource_id: 
 		if resource_def.id == resource_id:
 			return resource_def.display_name
 	return String(resource_id)
+
+func _ensure_operation_panel() -> void:
+	if _operation_panel != null:
+		return
+
+	_operation_panel = PanelContainer.new()
+	_operation_panel.name = "BuildingOperationPanel"
+	_operation_panel.z_index = 90
+	_operation_panel.visible = false
+	_operation_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	_operation_panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_operation_panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	_operation_panel.add_theme_stylebox_override("panel", _make_operation_panel_style())
+	root_control.add_child(_operation_panel)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 8)
+	margin.add_theme_constant_override("margin_top", 6)
+	margin.add_theme_constant_override("margin_right", 8)
+	margin.add_theme_constant_override("margin_bottom", 6)
+	_operation_panel.add_child(margin)
+
+	_operation_list = VBoxContainer.new()
+	_operation_list.add_theme_constant_override("separation", 4)
+	_operation_list.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_operation_list.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	margin.add_child(_operation_list)
+
+func _rebuild_processor_panel(processor: Node, recipes: Array[RecipeDef]) -> void:
+	for child in _operation_list.get_children():
+		_operation_list.remove_child(child)
+		child.queue_free()
+	_operation_panel.size = Vector2.ZERO
+	_operation_current_label = null
+	_operation_status_label = null
+	_operation_progress_label = null
+	_operation_progress_bar = null
+	_operation_input_cache_label = null
+	_operation_output_cache_label = null
+	_operation_recipe_buttons.clear()
+
+	_operation_list.add_child(_make_operation_label(processor.call("get_display_name"), Color(0.96, 0.98, 1.0, 1.0), 15))
+	_operation_list.add_child(_make_operation_label("配方", Color(0.72, 0.78, 0.84, 1.0), 12))
+
+	var recipe_row := HBoxContainer.new()
+	recipe_row.add_theme_constant_override("separation", 6)
+	for recipe in recipes:
+		var button := Button.new()
+		button.text = recipe.display_name
+		button.custom_minimum_size = Vector2(88, 28)
+		button.pressed.connect(_on_processor_recipe_button_pressed.bind(processor, recipe.id), CONNECT_DEFERRED)
+		recipe_row.add_child(button)
+		_operation_recipe_buttons[recipe.id] = button
+	_operation_list.add_child(recipe_row)
+
+	_operation_current_label = _make_operation_label("", Color(0.9, 0.92, 0.95, 1.0), 13)
+	_operation_list.add_child(_operation_current_label)
+	_operation_status_label = _make_operation_label("", Color(0.9, 0.92, 0.95, 1.0), 13)
+	_operation_list.add_child(_operation_status_label)
+	_operation_progress_label = _make_operation_label("", Color(0.78, 0.88, 1.0, 1.0), 13)
+	_operation_list.add_child(_operation_progress_label)
+
+	_operation_progress_bar = ProgressBar.new()
+	_operation_progress_bar.custom_minimum_size = Vector2(184, 10)
+	_operation_progress_bar.min_value = 0.0
+	_operation_progress_bar.max_value = 1.0
+	_operation_progress_bar.show_percentage = false
+	_operation_list.add_child(_operation_progress_bar)
+
+	_operation_input_cache_label = _make_operation_label("", Color(0.78, 0.88, 1.0, 1.0), 13)
+	_operation_list.add_child(_operation_input_cache_label)
+	_operation_output_cache_label = _make_operation_label("", Color(0.82, 0.95, 0.82, 1.0), 13)
+	_operation_list.add_child(_operation_output_cache_label)
+	_operation_panel.size = _operation_panel.get_combined_minimum_size()
+
+func _update_processor_panel(processor: Node, resource_defs: Array[ResourceDef]) -> void:
+	var selected_recipe: RecipeDef = processor.get("selected_recipe")
+	if _operation_current_label:
+		_operation_current_label.text = "当前：%s" % (selected_recipe.display_name if selected_recipe else "未选择")
+	if _operation_status_label:
+		_operation_status_label.text = "状态：%s" % str(processor.get("status_text"))
+	if _operation_progress_label:
+		_operation_progress_label.text = _format_processor_progress_text(processor, selected_recipe)
+	if _operation_progress_bar:
+		_operation_progress_bar.value = float(processor.call("get_progress_ratio"))
+	if _operation_input_cache_label:
+		_operation_input_cache_label.text = "原料缓存：%s" % _format_resource_dictionary(processor.get("input_cache"), resource_defs)
+	if _operation_output_cache_label:
+		_operation_output_cache_label.text = "产物缓存：%s" % _format_resource_dictionary(processor.get("output_cache"), resource_defs)
+	_refresh_recipe_button_states(selected_recipe)
+	_operation_panel.size = _operation_panel.get_combined_minimum_size()
+
+func _refresh_recipe_button_states(selected_recipe: RecipeDef) -> void:
+	for recipe_id in _operation_recipe_buttons.keys():
+		var button := _operation_recipe_buttons[recipe_id] as Button
+		if button:
+			button.modulate = Color(0.68, 0.92, 1.0, 1.0) if selected_recipe and selected_recipe.id == recipe_id else Color.WHITE
+
+func _format_processor_progress_text(processor: Node, selected_recipe: RecipeDef) -> String:
+	var current_seconds := float(processor.get("progress_seconds"))
+	var total_seconds := selected_recipe.duration_seconds if selected_recipe else 0.0
+	return "进度：%.1fs / %.1fs" % [current_seconds, total_seconds]
+
+func _position_operation_panel(screen_position: Vector2) -> void:
+	var offset := Vector2(24, -16)
+	var desired_position := screen_position + offset
+	var viewport_size := get_viewport().get_visible_rect().size
+	var panel_size := _operation_panel.get_combined_minimum_size()
+	if panel_size == Vector2.ZERO:
+		panel_size = Vector2(196, 140)
+	desired_position.x = clampf(desired_position.x, 8.0, maxf(8.0, viewport_size.x - panel_size.x - 8.0))
+	desired_position.y = clampf(desired_position.y, 68.0, maxf(68.0, viewport_size.y - panel_size.y - 86.0))
+	_operation_panel.position = desired_position
+
+func _make_operation_panel_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.035, 0.04, 0.048, 0.92)
+	style.border_color = Color(0.30, 0.36, 0.42, 0.9)
+	style.border_width_left = 1
+	style.border_width_top = 1
+	style.border_width_right = 1
+	style.border_width_bottom = 1
+	style.corner_radius_top_left = 6
+	style.corner_radius_top_right = 6
+	style.corner_radius_bottom_right = 6
+	style.corner_radius_bottom_left = 6
+	return style
+
+func _make_operation_label(text: String, color: Color, font_size: int) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_font_size_override("font_size", font_size)
+	return label
+
+func _format_resource_dictionary(resources: Dictionary, resource_defs: Array[ResourceDef]) -> String:
+	if resources.is_empty():
+		return "空"
+	var parts: Array[String] = []
+	for resource_id in resources.keys():
+		parts.append("%s %s" % [_get_resource_display_name(resource_defs, resource_id), int(resources[resource_id])])
+	return " / ".join(parts)
+
+func _on_processor_recipe_button_pressed(processor: Node, recipe_id: StringName) -> void:
+	processor_recipe_selected.emit(processor, recipe_id)

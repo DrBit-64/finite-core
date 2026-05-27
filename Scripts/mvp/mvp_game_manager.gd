@@ -4,15 +4,21 @@ class_name MvpGameManager
 const GridOccupancyScript := preload("res://Scripts/map/grid_occupancy.gd")
 const MainBaseScene := preload("res://Scenes/buildings/main_base.tscn")
 const BaseBuildingScene := preload("res://Scenes/buildings/base_building.tscn")
+const MinerScene := preload("res://Scenes/buildings/miner.tscn")
+const ProcessorScene := preload("res://Scenes/buildings/processor.tscn")
 const BuildingPlacementGhostScene := preload("res://Scenes/map/building_placement_ghost.tscn")
 const GridSelectionMarkerScene := preload("res://Scenes/map/grid_selection_marker.tscn")
+const ResourceNodeScene := preload("res://Scenes/map/resource_node.tscn")
+const MapConfigLoaderScript := preload("res://Scripts/map/map_config_loader.gd")
+const OPERATION_PANEL_REFRESH_INTERVAL := 0.1
 
-@export var stage_label: String = "阶段 2"
-@export var current_goal: String = "主基地、库存与建筑放置"
+@export var stage_label: String = "阶段 3"
+@export var current_goal: String = "固定矿点、采矿与加工"
 @export var resource_summary_placeholder: String = "资源面板占位"
-@export var bottom_hint: String = "底部选择建筑，鼠标预览位置，左键建造，右键或 Esc 取消"
+@export var bottom_hint: String = "先放置主基地；采矿机必须覆盖矿点；选中加工厂可选择配方"
 @export var hud_path: NodePath = ^"%MvpHUD"
 @export var grid_map_path: NodePath = ^"%GridMap"
+@export_file("*.json") var map_config_path: String = "res://Resources/data/maps/mvp_stage3_map.json"
 @export var starting_inventory: Dictionary = {
 	&"construction_mass": 120,
 	&"iron_plate": 20,
@@ -32,13 +38,22 @@ var active_building_def: BuildingDef = null
 var placement_ghost: Node2D = null
 var selection_marker: Node2D = null
 var last_hover_cell: Vector2i = Vector2i(-9999, -9999)
+var resource_nodes_by_cell: Dictionary = {}
+var resource_nodes_by_id: Dictionary = {}
+var selected_operation_building: Node = null
+var operation_panel_refresh_seconds: float = 0.0
 
 func _ready() -> void:
 	_bootstrap_mvp_scene()
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if active_building_def:
 		_update_placement_preview()
+	if selected_operation_building:
+		operation_panel_refresh_seconds += delta
+		if operation_panel_refresh_seconds >= OPERATION_PANEL_REFRESH_INTERVAL:
+			operation_panel_refresh_seconds = 0.0
+			_refresh_operation_panel()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if active_building_def and event is InputEventMouseMotion:
@@ -87,6 +102,8 @@ func _configure_hud() -> void:
 		hud.call("set_bottom_hint", bottom_hint)
 	if hud.has_signal("build_mode_requested"):
 		hud.connect("build_mode_requested", Callable(self, "_on_build_mode_requested"))
+	if hud.has_signal("processor_recipe_selected"):
+		hud.connect("processor_recipe_selected", Callable(self, "_on_processor_recipe_selected"))
 	_refresh_build_options()
 	_refresh_resource_hud()
 
@@ -95,14 +112,16 @@ func _setup_stage_two_world() -> void:
 		return
 	grid_occupancy.configure(grid_map.get("map_size_cells"))
 	_create_selection_marker()
+	_load_fixed_map()
 
 func _log_startup_status() -> void:
 	push_debug_event("MVP GameManager 已加载")
 	push_debug_event("当前目标：%s：%s" % [stage_label, current_goal])
-	push_debug_event("阶段 2 数据：资源 %d 项，配方 %d 条，建筑 %d 种" % [
+	push_debug_event("阶段 3 数据：资源 %d 项，配方 %d 条，建筑 %d 种，矿点 %d 个" % [
 		resource_defs.size(),
 		recipe_defs.size(),
 		building_defs.size(),
+		resource_nodes_by_id.size(),
 	])
 	if basic_rifle_blueprint:
 		push_debug_event("基础蓝图：%s，配方 %s，成本 %s" % [
@@ -138,6 +157,7 @@ func _on_build_mode_requested(building_id: StringName) -> void:
 		return
 	active_building_def = building_def
 	last_hover_cell = Vector2i(-9999, -9999)
+	_hide_operation_panel()
 	_create_or_update_placement_ghost()
 	_update_placement_preview()
 	if hud and hud.has_method("set_bottom_hint"):
@@ -186,9 +206,11 @@ func _try_place_active_building() -> void:
 		push_debug_event("建造完成：%s @ %s, %s" % [active_building_def.display_name, cell.x, cell.y])
 		if is_main_base:
 			_setup_main_base_after_placement(building)
+		_configure_building_runtime(building, active_building_def, cell)
 		_show_selection_for_node(building)
 		if hud and hud.has_method("inspect_node"):
 			hud.call("inspect_node", building)
+		_show_operation_panel_for_node(building)
 	_cancel_build_mode()
 
 func _cancel_build_mode() -> void:
@@ -215,15 +237,23 @@ func _select_map_cell_under_mouse() -> void:
 		_show_selection_for_node(occupant)
 		if hud and hud.has_method("inspect_node"):
 			hud.call("inspect_node", occupant)
+		_show_operation_panel_for_node(occupant)
+	elif resource_nodes_by_cell.has(cell):
+		var resource_node: Node = resource_nodes_by_cell[cell]
+		_show_selection_for_node(resource_node)
+		if hud and hud.has_method("inspect_node"):
+			hud.call("inspect_node", resource_node)
+		_hide_operation_panel()
 	else:
 		_show_selection_for_cell(cell)
 		if hud and hud.has_method("inspect_cell"):
 			hud.call("inspect_cell", cell)
+		_hide_operation_panel()
 
 func _spawn_building(building_def: BuildingDef, origin: Vector2i, is_main_base: bool) -> Node:
 	if grid_map == null or not grid_occupancy.register_rect(origin, building_def.grid_size, null):
 		return null
-	var scene := MainBaseScene if is_main_base else BaseBuildingScene
+	var scene := _get_building_scene(building_def, is_main_base)
 	var building := scene.instantiate()
 	building.name = String(building_def.id)
 	var building_layer := _get_layer("BuildingLayer")
@@ -244,10 +274,20 @@ func _get_place_block_reason(building_def: BuildingDef, origin: Vector2i) -> Str
 		return "超出地图边界"
 	if not grid_occupancy.can_place(origin, building_def.grid_size):
 		return "格子已被占用"
+	var resource_node := _get_resource_node_at(origin)
 	if _is_main_base_def(building_def):
 		if main_base != null:
 			return "主基地已经存在"
+		if resource_node != null:
+			return "主基地不能覆盖资源点"
 		return ""
+	if _is_miner_def(building_def):
+		if resource_node == null:
+			return "采矿机必须覆盖矿点"
+		if bool(resource_node.call("is_bound")):
+			return "矿点已绑定采矿机"
+	elif resource_node != null:
+		return "资源点上只能放置采矿机"
 	var inventory = _get_main_base_inventory()
 	if inventory == null:
 		return "请先放置主基地"
@@ -382,3 +422,108 @@ func _refresh_build_options() -> void:
 
 func _is_main_base_def(building_def: BuildingDef) -> bool:
 	return building_def != null and building_def.id == MvpDataDefaults.BUILDING_MAIN_BASE
+
+func _is_miner_def(building_def: BuildingDef) -> bool:
+	return building_def != null and building_def.id == MvpDataDefaults.BUILDING_MINER
+
+func _is_processor_def(building_def: BuildingDef) -> bool:
+	return building_def != null and building_def.id == MvpDataDefaults.BUILDING_PROCESSOR
+
+func _get_building_scene(building_def: BuildingDef, is_main_base: bool) -> PackedScene:
+	if is_main_base:
+		return MainBaseScene
+	if _is_miner_def(building_def):
+		return MinerScene
+	if _is_processor_def(building_def):
+		return ProcessorScene
+	return BaseBuildingScene
+
+func _load_fixed_map() -> void:
+	var map_config := MapConfigLoaderScript.load_map_config(map_config_path)
+	var resource_items: Array = map_config.get("resource_nodes", [])
+	for item in resource_items:
+		if typeof(item) != TYPE_DICTIONARY:
+			continue
+		_spawn_resource_node(item)
+
+func _spawn_resource_node(data: Dictionary) -> void:
+	var resource_id := StringName(str(data.get("resource_id", "")))
+	var resource_def := _find_resource_def(resource_id)
+	if resource_def == null:
+		push_warning("Unknown map resource id: %s" % String(resource_id))
+		return
+	var node := ResourceNodeScene.instantiate()
+	var layer := _get_layer("ResourceLayer")
+	(layer if layer else self).add_child(node)
+	node.call("setup", data, resource_def, _get_grid_cell_size())
+	resource_nodes_by_cell[node.get("grid_origin")] = node
+	resource_nodes_by_id[node.get("node_id")] = node
+
+func _find_resource_def(resource_id: StringName) -> ResourceDef:
+	for resource_def in resource_defs:
+		if resource_def.id == resource_id:
+			return resource_def
+	return null
+
+func _get_resource_node_at(cell: Vector2i) -> Node:
+	return resource_nodes_by_cell.get(cell, null)
+
+func _configure_building_runtime(building: Node, building_def: BuildingDef, origin: Vector2i) -> void:
+	var inventory = _get_main_base_inventory()
+	if _is_miner_def(building_def) and building.has_method("setup_miner"):
+		building.call("setup_miner", _get_resource_node_at(origin), inventory)
+	elif _is_processor_def(building_def) and building.has_method("setup_processor"):
+		building.call("setup_processor", _get_resource_recipes(), inventory)
+		if building.has_signal("processor_state_changed"):
+			building.connect("processor_state_changed", Callable(self, "_on_processor_state_changed").bind(building))
+
+func _get_resource_recipes() -> Array[RecipeDef]:
+	var result: Array[RecipeDef] = []
+	for recipe in recipe_defs:
+		if recipe.recipe_type == &"resource":
+			result.append(recipe)
+	return result
+
+func _show_operation_panel_for_node(node: Node) -> void:
+	selected_operation_building = null
+	if node == null:
+		_hide_operation_panel()
+		return
+	var building_def: BuildingDef = node.get("building_def")
+	if _is_processor_def(building_def):
+		selected_operation_building = node
+		operation_panel_refresh_seconds = 0.0
+		_refresh_operation_panel()
+	else:
+		_hide_operation_panel()
+
+func _refresh_operation_panel() -> void:
+	if selected_operation_building == null or hud == null:
+		return
+	if hud.has_method("show_processor_panel"):
+		hud.call(
+			"show_processor_panel",
+			selected_operation_building,
+			_get_resource_recipes(),
+			resource_defs,
+			_world_to_screen(selected_operation_building.global_position)
+		)
+
+func _hide_operation_panel() -> void:
+	selected_operation_building = null
+	operation_panel_refresh_seconds = 0.0
+	if hud and hud.has_method("hide_operation_panel"):
+		hud.call("hide_operation_panel")
+
+func _on_processor_recipe_selected(processor: Node, recipe_id: StringName) -> void:
+	if processor and processor.has_method("set_recipe"):
+		processor.call("set_recipe", recipe_id)
+		push_debug_event("加工厂配方切换：%s" % String(recipe_id))
+	call_deferred("_refresh_operation_panel")
+
+func _on_processor_state_changed(processor: Node) -> void:
+	if processor == selected_operation_building:
+		call_deferred("_refresh_operation_panel")
+
+func _world_to_screen(world_position: Vector2) -> Vector2:
+	return get_viewport().get_canvas_transform() * world_position
