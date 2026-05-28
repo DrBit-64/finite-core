@@ -24,8 +24,12 @@ const UNIT_INSPECTOR_REFRESH_INTERVAL := 0.2
 @export var bottom_hint: String = "建造锻造厂生产机器人；机器人会索敌当前可见地图内的调试敌军"
 @export var hud_path: NodePath = ^"%MvpHUD"
 @export var grid_map_path: NodePath = ^"%GridMap"
+@export var camera_path: NodePath = ^"MainCamera"
 @export_file("*.json") var map_config_path: String = "res://Resources/data/maps/mvp_stage3_map.json"
 @export_file("*.json") var starting_inventory_config_path: String = "res://Resources/data/debug/mvp_debug_starting_inventory.json"
+@export var enable_right_mouse_camera_drag: bool = true
+@export var clamp_camera_to_map_bounds: bool = true
+@export var camera_drag_start_threshold: float = 4.0
 @export var starting_inventory: Dictionary = {
 	&"construction_mass": 120,
 	&"iron_plate": 20,
@@ -34,6 +38,7 @@ const UNIT_INSPECTOR_REFRESH_INTERVAL := 0.2
 
 @onready var hud: CanvasLayer = get_node_or_null(hud_path)
 @onready var grid_map: Node2D = get_node_or_null(grid_map_path)
+@onready var main_camera: Camera2D = get_node_or_null(camera_path)
 
 var resource_defs: Array[ResourceDef] = []
 var recipe_defs: Array[RecipeDef] = []
@@ -52,11 +57,18 @@ var operation_panel_refresh_seconds: float = 0.0
 var rally_point_target_forge: Node = null
 var selected_world_unit: Node = null
 var unit_inspector_refresh_seconds: float = 0.0
+var is_camera_dragging: bool = false
+var is_camera_drag_candidate: bool = false
+var camera_drag_accumulated: float = 0.0
 
 func _ready() -> void:
 	_bootstrap_mvp_scene()
 
 func _process(delta: float) -> void:
+	if is_camera_dragging and not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+		is_camera_dragging = false
+		is_camera_drag_candidate = false
+		camera_drag_accumulated = 0.0
 	if active_building_def:
 		_update_placement_preview()
 	if selected_operation_building:
@@ -71,24 +83,104 @@ func _process(delta: float) -> void:
 			_refresh_selected_unit_inspector()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _handle_camera_drag_input(event):
+		return
 	if rally_point_target_forge:
 		_handle_rally_point_input(event)
 		return
-	if active_building_def and event is InputEventMouseMotion:
-		_update_placement_preview()
-	elif event is InputEventMouseButton and event.pressed:
+
+	if active_building_def:
+		_handle_build_mode_input(event)
+		return
+
+	if event is InputEventMouseButton and event.pressed:
 		var mouse_event := event as InputEventMouseButton
 		if mouse_event.button_index == MOUSE_BUTTON_LEFT:
-			if active_building_def:
-				_try_place_active_building()
-			else:
-				_select_map_cell_under_mouse()
-		elif mouse_event.button_index == MOUSE_BUTTON_RIGHT and active_building_def:
+			_select_map_cell_under_mouse()
+
+func _handle_build_mode_input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion:
+		_update_placement_preview()
+	elif event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		if mouse_event.button_index == MOUSE_BUTTON_LEFT and mouse_event.pressed:
+			_try_place_active_building()
+		elif mouse_event.button_index == MOUSE_BUTTON_RIGHT and not mouse_event.pressed:
 			_cancel_build_mode()
 	elif event is InputEventKey and event.pressed and not event.echo:
 		var key_event := event as InputEventKey
-		if key_event.keycode == KEY_ESCAPE and active_building_def:
+		if key_event.keycode == KEY_ESCAPE:
 			_cancel_build_mode()
+
+func _handle_camera_drag_input(event: InputEvent) -> bool:
+	if not enable_right_mouse_camera_drag or main_camera == null:
+		return false
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		if mouse_event.button_index != MOUSE_BUTTON_RIGHT:
+			return false
+		if mouse_event.pressed:
+			is_camera_drag_candidate = true
+			is_camera_dragging = false
+			camera_drag_accumulated = 0.0
+			get_viewport().set_input_as_handled()
+			return true
+		var was_dragging := is_camera_dragging
+		if was_dragging:
+			get_viewport().set_input_as_handled()
+		is_camera_drag_candidate = false
+		is_camera_dragging = false
+		camera_drag_accumulated = 0.0
+		return was_dragging
+	if event is InputEventMouseMotion and (is_camera_drag_candidate or is_camera_dragging):
+		var mouse_motion := event as InputEventMouseMotion
+		camera_drag_accumulated += mouse_motion.relative.length()
+		if is_camera_dragging or camera_drag_accumulated >= camera_drag_start_threshold:
+			is_camera_dragging = true
+			_pan_camera_by_screen_delta(mouse_motion.relative)
+			get_viewport().set_input_as_handled()
+			return true
+		return false
+	return false
+
+func _pan_camera_by_screen_delta(screen_delta: Vector2) -> void:
+	if screen_delta == Vector2.ZERO or main_camera == null:
+		return
+	var zoom := main_camera.zoom
+	var world_delta := Vector2(
+		screen_delta.x / maxf(zoom.x, 0.001),
+		screen_delta.y / maxf(zoom.y, 0.001)
+	)
+	main_camera.global_position -= world_delta
+	_clamp_camera_to_map_bounds()
+	if selected_operation_building:
+		_refresh_operation_panel()
+
+func _clamp_camera_to_map_bounds() -> void:
+	if not clamp_camera_to_map_bounds or main_camera == null or grid_map == null:
+		return
+	if not grid_map.has_method("get_world_size"):
+		return
+	var map_world_size: Vector2 = grid_map.call("get_world_size")
+	var map_origin := grid_map.global_position
+	var viewport_size := get_viewport_rect().size
+	var zoom := main_camera.zoom
+	var half_view := Vector2(
+		viewport_size.x / maxf(zoom.x * 2.0, 0.001),
+		viewport_size.y / maxf(zoom.y * 2.0, 0.001)
+	)
+	var camera_pos := main_camera.global_position
+	var min_pos := map_origin + half_view
+	var max_pos := map_origin + map_world_size - half_view
+	if max_pos.x < min_pos.x:
+		camera_pos.x = map_origin.x + map_world_size.x * 0.5
+	else:
+		camera_pos.x = clampf(camera_pos.x, min_pos.x, max_pos.x)
+	if max_pos.y < min_pos.y:
+		camera_pos.y = map_origin.y + map_world_size.y * 0.5
+	else:
+		camera_pos.y = clampf(camera_pos.y, min_pos.y, max_pos.y)
+	main_camera.global_position = camera_pos
 
 func _bootstrap_mvp_scene() -> void:
 	_load_stage_one_data()
@@ -178,6 +270,7 @@ func _on_build_mode_requested(building_id: StringName) -> void:
 	if building_def == null:
 		push_debug_event("未知建筑：%s" % String(building_id))
 		return
+	_reset_camera_drag_state()
 	_cancel_rally_point_mode(false)
 	active_building_def = building_def
 	last_hover_cell = Vector2i(-9999, -9999)
@@ -703,6 +796,7 @@ func _record_robot_produced(forge: Node, robot: Node, blueprint: UnitBlueprint) 
 func _on_forge_rally_point_requested(forge: Node) -> void:
 	if forge == null or not is_instance_valid(forge):
 		return
+	_reset_camera_drag_state()
 	rally_point_target_forge = forge
 	_hide_operation_panel()
 	if hud and hud.has_method("show_bottom_prompt"):
@@ -710,11 +804,11 @@ func _on_forge_rally_point_requested(forge: Node) -> void:
 	push_debug_event("进入集结点设置模式：%s" % forge.name)
 
 func _handle_rally_point_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed:
+	if event is InputEventMouseButton:
 		var mouse_event := event as InputEventMouseButton
-		if mouse_event.button_index == MOUSE_BUTTON_LEFT:
+		if mouse_event.button_index == MOUSE_BUTTON_LEFT and mouse_event.pressed:
 			_try_set_rally_point_under_mouse()
-		elif mouse_event.button_index == MOUSE_BUTTON_RIGHT:
+		elif mouse_event.button_index == MOUSE_BUTTON_RIGHT and not mouse_event.pressed:
 			_cancel_rally_point_mode(true)
 	elif event is InputEventKey and event.pressed and not event.echo:
 		var key_event := event as InputEventKey
@@ -770,6 +864,11 @@ func _create_or_update_rally_marker(forge: Node, cell: Vector2i) -> void:
 func _format_vector2_payload(value: Variant) -> Dictionary:
 	var vector: Vector2 = value
 	return {"x": vector.x, "y": vector.y}
+
+func _reset_camera_drag_state() -> void:
+	is_camera_dragging = false
+	is_camera_drag_candidate = false
+	camera_drag_accumulated = 0.0
 
 func _world_to_screen(world_position: Vector2) -> Vector2:
 	return get_viewport().get_canvas_transform() * world_position

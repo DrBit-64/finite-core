@@ -62,7 +62,7 @@
 2. **极简的 UI 交互：** 绝对不要让玩家打字！甚至不要做连线！就是最简单的下拉菜单式配置。左边选条件（下拉），右边选动作（下拉）。
 3. **即时视觉反馈：** 在战斗界面，当某条逻辑被触发时，在那个机器人的头顶飘出一个文字气泡（例如 `[⚡ 触发：紧急撤退]`），让玩家清晰地看到自己的代码正在生效。
 
-既然我们理清了“If-Then”是解开动态谜题的钥匙，在你的构想中，你打算在游戏的前 15 分钟（即新手引导阶段），用一个什么样的简单遇敌情境，来让玩家第一次体验到“修改一行逻辑，就能反败为胜”的顿悟感（Aha Moment）呢？
+既然我们理清了“If-Then”是解开动态谜题的钥匙，在你的构想中，你打算在游戏的前 15 分钟（即新手引导阶段），用一个什么样的简单遇敌情境，来让玩家第一次体验到“修改一个战术规则块，就能反败为胜”的顿悟感（Aha Moment）呢？
 
 
 
@@ -109,6 +109,8 @@
 * **状态类 (States)：**
 * `IS_CASTING` (正在蓄力/施法)
 * `HAS_BUFF` (带有增益状态：如护盾)
+* `SELF_FLAG_IS` (自身战术标记是否为真/假，例如 `已集结 = 是`)
+* `TARGET_FLAG_IS` (目标战术标记是否为真/假，例如 `已锁定 = 是`)
 
 
 
@@ -135,6 +137,24 @@
 * `FIRE_WEAPON_2` (触发副武器模块)
 * `STOP_FIRING` (停止开火，通常用于防止过热或面对反伤盾时)
 
+#### 3. 标记指令（State / Tactical Flags）
+
+If-Then 系统需要有限状态记忆，否则只能描述“当前看到什么就做什么”，很难表达“先集结，再战斗”“先锁定，再导弹打击”这类顺序行为。
+
+MVP 阶段只开放布尔战术标记：
+
+* `SET_SELF_FLAG` (设置自身标记，例如 `已集结 = 是`)
+* `CLEAR_SELF_FLAG` (清除自身标记)
+* `SET_TARGET_FLAG` (给当前目标打标，例如 `已锁定 = 是`，可放到中后期)
+
+不要在 MVP 开放任意变量、数字运算、循环或脚本。玩家看到的是“标记 A/B/C”或重命名后的“已集结/正在撤退”，而不是程序变量。
+
+典型集结规则：
+
+* `If [自身标记: 已集结 = 否] & [距离集结点 > 20] -> Then [前往集结点]`
+* `If [自身标记: 已集结 = 否] & [距离集结点 <= 20] -> Then [设置自身标记: 已集结 = 是]`
+* `If [自身标记: 已集结 = 是] & [发现敌人] -> Then [默认战斗]`
+
 ---
 
 ### 第三步：如何映射到 GDScript 与 UI 面板？
@@ -147,8 +167,8 @@ class_name AIRule
 
 # 1. 枚举定义 (对应UI的下拉菜单项)
 enum Subject { SELF, TARGET_NEAREST, TARGET_LOWEST_HP }
-enum Condition { HP_LESS, DISTANCE_LESS, HAS_TAG, IS_CASTING }
-enum Action { APPROACH, FLEE, FIRE_MAIN, STOP_FIRE }
+enum Condition { HP_LESS, DISTANCE_LESS, HAS_TAG, IS_CASTING, SELF_FLAG_IS }
+enum Action { APPROACH, FLEE, FIRE_MAIN, STOP_FIRE, SET_SELF_FLAG }
 
 @export var subject: Subject
 @export var condition: Condition
