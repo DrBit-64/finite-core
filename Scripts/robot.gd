@@ -1,6 +1,8 @@
 extends CharacterBody2D
 class_name RobotUnit
 
+signal robot_lost(robot: Node, reason: StringName)
+
 @export var max_hp: int = 100
 @export var speed: float = 80.0
 @export_enum("Team_A", "Team_B") var team: String = "Team_A"
@@ -15,6 +17,10 @@ class_name RobotUnit
 @export var fire_cooldown_seconds: float = 0.8
 
 var hp: int
+var blueprint_id: StringName = &""
+var blueprint_version: int = 0
+var rally_point_position: Vector2 = Vector2.ZERO
+var has_rally_point: bool = false
 var _is_dead: bool = false
 var enemies_in_range: Array[CharacterBody2D] = []
 var _last_fire_time: float = -9999.0
@@ -59,6 +65,26 @@ func reset_state() -> void:
 		lifespan_timer.wait_time = lifespan_seconds
 		lifespan_timer.one_shot = true
 		lifespan_timer.start()
+
+func setup_from_blueprint(blueprint: UnitBlueprint, next_rally_point: Vector2 = Vector2.ZERO, next_has_rally_point: bool = false) -> void:
+	if blueprint == null:
+		return
+	blueprint_id = blueprint.id
+	blueprint_version = blueprint.version
+	if blueprint.stats:
+		max_hp = blueprint.stats.max_hp
+		speed = blueprint.stats.speed
+		lifespan_seconds = blueprint.stats.lifespan_seconds
+		radar_radius = blueprint.stats.radar_radius
+		fire_range = blueprint.stats.fire_range
+		bullet_damage = blueprint.stats.damage
+		fire_cooldown_seconds = blueprint.stats.fire_cooldown_seconds
+	rally_point_position = next_rally_point
+	has_rally_point = next_has_rally_point
+	reset_state()
+
+func is_alive() -> bool:
+	return not _is_dead
 
 func _configure_team_collision() -> void:
 	if team == "Team_A":
@@ -238,16 +264,17 @@ func take_damage(amount: int) -> void:
 	if hp < 0:
 		hp = 0
 	if hp <= 0:
-		die()
+		die(&"destroyed")
 
-func die() -> void:
+func die(reason: StringName = &"destroyed") -> void:
 	if _is_dead:
 		return
 	_is_dead = true
 	enemies_in_range.clear()
 	if lifespan_timer:
 		lifespan_timer.stop()
+	robot_lost.emit(self, reason)
 	ObjectPool.return_instance(self, pool_name)
 
 func _on_lifespan_timer_timeout() -> void:
-	die()
+	die(&"lifespan_expired")

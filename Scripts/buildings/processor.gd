@@ -32,6 +32,10 @@ func _process(delta: float) -> void:
 	if target_inventory == null:
 		_set_status("等待主基地")
 		return
+	if progress_seconds > 0.0:
+		_advance_production(delta)
+		return
+
 	var cache_changed := _pull_missing_inputs_from_inventory()
 	if not _cache_can_afford(input_cache, selected_recipe.inputs):
 		progress_seconds = 0.0
@@ -44,6 +48,9 @@ func _process(delta: float) -> void:
 		_spend_from_cache(input_cache, selected_recipe.inputs)
 		processor_state_changed.emit()
 
+	_advance_production(delta)
+
+func _advance_production(delta: float) -> void:
 	progress_seconds += delta
 	_set_status("运行中")
 	if progress_seconds < selected_recipe.duration_seconds:

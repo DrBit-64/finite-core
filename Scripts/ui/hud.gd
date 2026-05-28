@@ -3,6 +3,9 @@ class_name MvpHud
 
 signal build_mode_requested(building_id: StringName)
 signal processor_recipe_selected(processor: Node, recipe_id: StringName)
+signal forge_rally_point_requested(forge: Node)
+
+const BottomPromptScript := preload("res://Scripts/ui/bottom_prompt.gd")
 
 @onready var current_goal_label: Label = %CurrentGoalLabel
 @onready var resource_summary_label: Label = %ResourceSummaryLabel
@@ -19,15 +22,23 @@ var _cost_list: VBoxContainer = null
 var _cost_preview_content_key: String = ""
 var _operation_panel: PanelContainer = null
 var _operation_list: VBoxContainer = null
+var _operation_mode: StringName = &""
 var _operation_processor: Node = null
 var _operation_recipes: Array[RecipeDef] = []
+var _operation_forge: Node = null
 var _operation_current_label: Label = null
+var _operation_recipe_detail_label: Label = null
 var _operation_status_label: Label = null
 var _operation_progress_label: Label = null
 var _operation_progress_bar: ProgressBar = null
 var _operation_input_cache_label: Label = null
 var _operation_output_cache_label: Label = null
 var _operation_recipe_buttons: Dictionary = {}
+var _operation_blueprint_label: Label = null
+var _operation_alive_label: Label = null
+var _operation_rally_label: Label = null
+var _operation_cost_label: Label = null
+var _bottom_prompt: BottomPrompt = null
 
 func _ready() -> void:
 	set_current_goal("阶段 0：验证 MVP 测试入口")
@@ -37,6 +48,7 @@ func _ready() -> void:
 		object_inspector.show_placeholder("未选择对象")
 	if debug_event_panel:
 		debug_event_panel.add_event_line("MVP HUD 已加载")
+	_ensure_bottom_prompt()
 
 func set_current_goal(text: String) -> void:
 	if current_goal_label:
@@ -76,20 +88,44 @@ func hide_build_cost_preview() -> void:
 		_cost_panel.visible = false
 	_cost_preview_content_key = ""
 
+func show_bottom_prompt(text: String, duration_seconds: float = 0.0, variant: StringName = &"info") -> void:
+	_ensure_bottom_prompt()
+	_bottom_prompt.show_prompt(text, duration_seconds, variant)
+
+func hide_bottom_prompt() -> void:
+	if _bottom_prompt:
+		_bottom_prompt.hide_prompt()
+
 func show_processor_panel(processor: Node, recipes: Array[RecipeDef], resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
 	_ensure_operation_panel()
 	_operation_panel.visible = true
-	if _operation_processor != processor or _operation_recipes.size() != recipes.size():
+	if _operation_mode != &"processor" or _operation_processor != processor or _operation_recipes.size() != recipes.size():
+		_operation_mode = &"processor"
 		_operation_processor = processor
+		_operation_forge = null
 		_operation_recipes = recipes.duplicate()
 		_rebuild_processor_panel(processor, recipes)
 	_update_processor_panel(processor, resource_defs)
 	_position_operation_panel(screen_position)
 
+func show_forge_panel(forge: Node, blueprint: UnitBlueprint, resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
+	_ensure_operation_panel()
+	_operation_panel.visible = true
+	if _operation_mode != &"forge" or _operation_forge != forge:
+		_operation_mode = &"forge"
+		_operation_forge = forge
+		_operation_processor = null
+		_operation_recipes.clear()
+		_rebuild_forge_panel(forge)
+	_update_forge_panel(forge, blueprint, resource_defs)
+	_position_operation_panel(screen_position)
+
 func hide_operation_panel() -> void:
 	if _operation_panel:
 		_operation_panel.visible = false
+	_operation_mode = &""
 	_operation_processor = null
+	_operation_forge = null
 
 func set_resource_amounts(resource_defs: Array[ResourceDef], amounts: Dictionary) -> void:
 	_inventory_amounts = amounts.duplicate(true)
@@ -248,6 +284,23 @@ func _get_resource_display_name(resource_defs: Array[ResourceDef], resource_id: 
 			return resource_def.display_name
 	return String(resource_id)
 
+func _ensure_bottom_prompt() -> void:
+	if _bottom_prompt != null:
+		return
+	_bottom_prompt = BottomPromptScript.new()
+	_bottom_prompt.name = "BottomPrompt"
+	_bottom_prompt.anchor_left = 0.5
+	_bottom_prompt.anchor_top = 1.0
+	_bottom_prompt.anchor_right = 0.5
+	_bottom_prompt.anchor_bottom = 1.0
+	_bottom_prompt.offset_left = -420.0
+	_bottom_prompt.offset_top = -150.0
+	_bottom_prompt.offset_right = 420.0
+	_bottom_prompt.offset_bottom = -102.0
+	_bottom_prompt.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_bottom_prompt.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	root_control.add_child(_bottom_prompt)
+
 func _ensure_operation_panel() -> void:
 	if _operation_panel != null:
 		return
@@ -276,17 +329,7 @@ func _ensure_operation_panel() -> void:
 	margin.add_child(_operation_list)
 
 func _rebuild_processor_panel(processor: Node, recipes: Array[RecipeDef]) -> void:
-	for child in _operation_list.get_children():
-		_operation_list.remove_child(child)
-		child.queue_free()
-	_operation_panel.size = Vector2.ZERO
-	_operation_current_label = null
-	_operation_status_label = null
-	_operation_progress_label = null
-	_operation_progress_bar = null
-	_operation_input_cache_label = null
-	_operation_output_cache_label = null
-	_operation_recipe_buttons.clear()
+	_clear_operation_content()
 
 	_operation_list.add_child(_make_operation_label(processor.call("get_display_name"), Color(0.96, 0.98, 1.0, 1.0), 15))
 	_operation_list.add_child(_make_operation_label("配方", Color(0.72, 0.78, 0.84, 1.0), 12))
@@ -304,6 +347,8 @@ func _rebuild_processor_panel(processor: Node, recipes: Array[RecipeDef]) -> voi
 
 	_operation_current_label = _make_operation_label("", Color(0.9, 0.92, 0.95, 1.0), 13)
 	_operation_list.add_child(_operation_current_label)
+	_operation_recipe_detail_label = _make_operation_label("", Color(0.82, 0.88, 0.96, 1.0), 13)
+	_operation_list.add_child(_operation_recipe_detail_label)
 	_operation_status_label = _make_operation_label("", Color(0.9, 0.92, 0.95, 1.0), 13)
 	_operation_list.add_child(_operation_status_label)
 	_operation_progress_label = _make_operation_label("", Color(0.78, 0.88, 1.0, 1.0), 13)
@@ -326,6 +371,8 @@ func _update_processor_panel(processor: Node, resource_defs: Array[ResourceDef])
 	var selected_recipe: RecipeDef = processor.get("selected_recipe")
 	if _operation_current_label:
 		_operation_current_label.text = "当前：%s" % (selected_recipe.display_name if selected_recipe else "未选择")
+	if _operation_recipe_detail_label:
+		_operation_recipe_detail_label.text = _format_processor_recipe_detail(selected_recipe, resource_defs)
 	if _operation_status_label:
 		_operation_status_label.text = "状态：%s" % str(processor.get("status_text"))
 	if _operation_progress_label:
@@ -339,6 +386,75 @@ func _update_processor_panel(processor: Node, resource_defs: Array[ResourceDef])
 	_refresh_recipe_button_states(selected_recipe)
 	_operation_panel.size = _operation_panel.get_combined_minimum_size()
 
+func _rebuild_forge_panel(forge: Node) -> void:
+	_clear_operation_content()
+
+	_operation_list.add_child(_make_operation_label(forge.call("get_display_name"), Color(0.96, 0.98, 1.0, 1.0), 15))
+	_operation_blueprint_label = _make_operation_label("", Color(0.84, 0.90, 1.0, 1.0), 13)
+	_operation_list.add_child(_operation_blueprint_label)
+	_operation_alive_label = _make_operation_label("", Color(0.90, 0.94, 0.98, 1.0), 13)
+	_operation_list.add_child(_operation_alive_label)
+	_operation_status_label = _make_operation_label("", Color(0.90, 0.94, 0.98, 1.0), 13)
+	_operation_list.add_child(_operation_status_label)
+	_operation_progress_label = _make_operation_label("", Color(0.78, 0.88, 1.0, 1.0), 13)
+	_operation_list.add_child(_operation_progress_label)
+
+	_operation_progress_bar = ProgressBar.new()
+	_operation_progress_bar.custom_minimum_size = Vector2(206, 10)
+	_operation_progress_bar.min_value = 0.0
+	_operation_progress_bar.max_value = 1.0
+	_operation_progress_bar.show_percentage = false
+	_operation_list.add_child(_operation_progress_bar)
+
+	_operation_cost_label = _make_operation_label("", Color(0.82, 0.88, 0.94, 1.0), 13)
+	_operation_list.add_child(_operation_cost_label)
+	_operation_rally_label = _make_operation_label("", Color(0.86, 0.94, 0.82, 1.0), 13)
+	_operation_list.add_child(_operation_rally_label)
+
+	var action_row := HBoxContainer.new()
+	action_row.add_theme_constant_override("separation", 6)
+	var rally_button := Button.new()
+	rally_button.text = "设置集结点"
+	rally_button.custom_minimum_size = Vector2(112, 30)
+	rally_button.pressed.connect(_on_forge_rally_button_pressed.bind(forge), CONNECT_DEFERRED)
+	action_row.add_child(rally_button)
+	_operation_list.add_child(action_row)
+	_operation_panel.size = _operation_panel.get_combined_minimum_size()
+
+func _update_forge_panel(forge: Node, blueprint: UnitBlueprint, resource_defs: Array[ResourceDef]) -> void:
+	if _operation_blueprint_label:
+		_operation_blueprint_label.text = "蓝图：%s v%s" % [
+			blueprint.display_name if blueprint else "未绑定",
+			blueprint.version if blueprint else 0,
+		]
+	if _operation_alive_label:
+		_operation_alive_label.text = "存活：%s / %s" % [
+			int(forge.call("get_alive_count")) if forge.has_method("get_alive_count") else 0,
+			int(forge.get("target_alive_count")),
+		]
+	if _operation_status_label:
+		_operation_status_label.text = "状态：%s" % str(forge.get("status_text"))
+	if _operation_progress_label:
+		_operation_progress_label.text = _format_forge_progress_text(forge, blueprint)
+	if _operation_progress_bar:
+		_operation_progress_bar.value = float(forge.call("get_progress_ratio")) if forge.has_method("get_progress_ratio") else 0.0
+	if _operation_cost_label:
+		_operation_cost_label.text = "成本：%s" % _format_resource_dictionary(blueprint.production_cost if blueprint else {}, resource_defs)
+	if _operation_rally_label:
+		_operation_rally_label.text = _format_forge_rally_text(forge)
+	_operation_panel.size = _operation_panel.get_combined_minimum_size()
+
+func _format_forge_progress_text(forge: Node, blueprint: UnitBlueprint) -> String:
+	var current_seconds := float(forge.get("progress_seconds"))
+	var total_seconds := blueprint.production_time_seconds if blueprint else 0.0
+	return "进度：%.1fs / %.1fs" % [current_seconds, total_seconds]
+
+func _format_forge_rally_text(forge: Node) -> String:
+	if not bool(forge.get("has_rally_point")):
+		return "集结点：未设置"
+	var cell: Vector2i = forge.get("rally_point_cell")
+	return "集结点：%s, %s" % [cell.x, cell.y]
+
 func _refresh_recipe_button_states(selected_recipe: RecipeDef) -> void:
 	for recipe_id in _operation_recipe_buttons.keys():
 		var button := _operation_recipe_buttons[recipe_id] as Button
@@ -349,6 +465,33 @@ func _format_processor_progress_text(processor: Node, selected_recipe: RecipeDef
 	var current_seconds := float(processor.get("progress_seconds"))
 	var total_seconds := selected_recipe.duration_seconds if selected_recipe else 0.0
 	return "进度：%.1fs / %.1fs" % [current_seconds, total_seconds]
+
+func _format_processor_recipe_detail(selected_recipe: RecipeDef, resource_defs: Array[ResourceDef]) -> String:
+	if selected_recipe == null:
+		return "配方内容：未选择"
+	return "配方内容：%s -> %s，%.1fs" % [
+		_format_resource_dictionary(selected_recipe.inputs, resource_defs),
+		_format_resource_dictionary(selected_recipe.outputs, resource_defs),
+		selected_recipe.duration_seconds,
+	]
+
+func _clear_operation_content() -> void:
+	for child in _operation_list.get_children():
+		_operation_list.remove_child(child)
+		child.queue_free()
+	_operation_panel.size = Vector2.ZERO
+	_operation_current_label = null
+	_operation_recipe_detail_label = null
+	_operation_status_label = null
+	_operation_progress_label = null
+	_operation_progress_bar = null
+	_operation_input_cache_label = null
+	_operation_output_cache_label = null
+	_operation_recipe_buttons.clear()
+	_operation_blueprint_label = null
+	_operation_alive_label = null
+	_operation_rally_label = null
+	_operation_cost_label = null
 
 func _position_operation_panel(screen_position: Vector2) -> void:
 	var offset := Vector2(24, -16)
@@ -394,3 +537,6 @@ func _format_resource_dictionary(resources: Dictionary, resource_defs: Array[Res
 
 func _on_processor_recipe_button_pressed(processor: Node, recipe_id: StringName) -> void:
 	processor_recipe_selected.emit(processor, recipe_id)
+
+func _on_forge_rally_button_pressed(forge: Node) -> void:
+	forge_rally_point_requested.emit(forge)

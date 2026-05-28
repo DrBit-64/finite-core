@@ -6,16 +6,19 @@ const MainBaseScene := preload("res://Scenes/buildings/main_base.tscn")
 const BaseBuildingScene := preload("res://Scenes/buildings/base_building.tscn")
 const MinerScene := preload("res://Scenes/buildings/miner.tscn")
 const ProcessorScene := preload("res://Scenes/buildings/processor.tscn")
+const RobotForgeScene := preload("res://Scenes/buildings/robot_forge.tscn")
 const BuildingPlacementGhostScene := preload("res://Scenes/map/building_placement_ghost.tscn")
 const GridSelectionMarkerScene := preload("res://Scenes/map/grid_selection_marker.tscn")
 const ResourceNodeScene := preload("res://Scenes/map/resource_node.tscn")
+const RallyPointMarkerScene := preload("res://Scenes/map/rally_point_marker.tscn")
+const RobotScene := preload("res://Scenes/robot.tscn")
 const MapConfigLoaderScript := preload("res://Scripts/map/map_config_loader.gd")
 const OPERATION_PANEL_REFRESH_INTERVAL := 0.1
 
-@export var stage_label: String = "阶段 3"
-@export var current_goal: String = "固定矿点、采矿与加工"
+@export var stage_label: String = "阶段 4"
+@export var current_goal: String = "机器人锻造厂、蓝图生产与集结点"
 @export var resource_summary_placeholder: String = "资源面板占位"
-@export var bottom_hint: String = "先放置主基地；采矿机必须覆盖矿点；选中加工厂可选择配方"
+@export var bottom_hint: String = "先放置主基地；生产材料后建造机器人锻造厂；选中锻造厂可设置集结点"
 @export var hud_path: NodePath = ^"%MvpHUD"
 @export var grid_map_path: NodePath = ^"%GridMap"
 @export_file("*.json") var map_config_path: String = "res://Resources/data/maps/mvp_stage3_map.json"
@@ -42,6 +45,7 @@ var resource_nodes_by_cell: Dictionary = {}
 var resource_nodes_by_id: Dictionary = {}
 var selected_operation_building: Node = null
 var operation_panel_refresh_seconds: float = 0.0
+var rally_point_target_forge: Node = null
 
 func _ready() -> void:
 	_bootstrap_mvp_scene()
@@ -56,6 +60,9 @@ func _process(delta: float) -> void:
 			_refresh_operation_panel()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if rally_point_target_forge:
+		_handle_rally_point_input(event)
+		return
 	if active_building_def and event is InputEventMouseMotion:
 		_update_placement_preview()
 	elif event is InputEventMouseButton and event.pressed:
@@ -104,6 +111,8 @@ func _configure_hud() -> void:
 		hud.connect("build_mode_requested", Callable(self, "_on_build_mode_requested"))
 	if hud.has_signal("processor_recipe_selected"):
 		hud.connect("processor_recipe_selected", Callable(self, "_on_processor_recipe_selected"))
+	if hud.has_signal("forge_rally_point_requested"):
+		hud.connect("forge_rally_point_requested", Callable(self, "_on_forge_rally_point_requested"))
 	_refresh_build_options()
 	_refresh_resource_hud()
 
@@ -117,7 +126,8 @@ func _setup_stage_two_world() -> void:
 func _log_startup_status() -> void:
 	push_debug_event("MVP GameManager 已加载")
 	push_debug_event("当前目标：%s：%s" % [stage_label, current_goal])
-	push_debug_event("阶段 3 数据：资源 %d 项，配方 %d 条，建筑 %d 种，矿点 %d 个" % [
+	push_debug_event("%s 数据：资源 %d 项，配方 %d 条，建筑 %d 种，矿点 %d 个" % [
+		stage_label,
 		resource_defs.size(),
 		recipe_defs.size(),
 		building_defs.size(),
@@ -155,6 +165,7 @@ func _on_build_mode_requested(building_id: StringName) -> void:
 	if building_def == null:
 		push_debug_event("未知建筑：%s" % String(building_id))
 		return
+	_cancel_rally_point_mode(false)
 	active_building_def = building_def
 	last_hover_cell = Vector2i(-9999, -9999)
 	_hide_operation_panel()
@@ -429,6 +440,9 @@ func _is_miner_def(building_def: BuildingDef) -> bool:
 func _is_processor_def(building_def: BuildingDef) -> bool:
 	return building_def != null and building_def.id == MvpDataDefaults.BUILDING_PROCESSOR
 
+func _is_robot_forge_def(building_def: BuildingDef) -> bool:
+	return building_def != null and building_def.id == MvpDataDefaults.BUILDING_ROBOT_FORGE
+
 func _get_building_scene(building_def: BuildingDef, is_main_base: bool) -> PackedScene:
 	if is_main_base:
 		return MainBaseScene
@@ -436,6 +450,8 @@ func _get_building_scene(building_def: BuildingDef, is_main_base: bool) -> Packe
 		return MinerScene
 	if _is_processor_def(building_def):
 		return ProcessorScene
+	if _is_robot_forge_def(building_def):
+		return RobotForgeScene
 	return BaseBuildingScene
 
 func _load_fixed_map() -> void:
@@ -476,6 +492,12 @@ func _configure_building_runtime(building: Node, building_def: BuildingDef, orig
 		building.call("setup_processor", _get_resource_recipes(), inventory)
 		if building.has_signal("processor_state_changed"):
 			building.connect("processor_state_changed", Callable(self, "_on_processor_state_changed").bind(building))
+	elif _is_robot_forge_def(building_def) and building.has_method("setup_forge"):
+		building.call("setup_forge", basic_rifle_blueprint, inventory)
+		if building.has_signal("forge_state_changed"):
+			building.connect("forge_state_changed", Callable(self, "_on_forge_state_changed").bind(building))
+		if building.has_signal("robot_production_completed"):
+			building.connect("robot_production_completed", Callable(self, "_on_forge_robot_production_completed"))
 
 func _get_resource_recipes() -> Array[RecipeDef]:
 	var result: Array[RecipeDef] = []
@@ -494,17 +516,30 @@ func _show_operation_panel_for_node(node: Node) -> void:
 		selected_operation_building = node
 		operation_panel_refresh_seconds = 0.0
 		_refresh_operation_panel()
+	elif _is_robot_forge_def(building_def):
+		selected_operation_building = node
+		operation_panel_refresh_seconds = 0.0
+		_refresh_operation_panel()
 	else:
 		_hide_operation_panel()
 
 func _refresh_operation_panel() -> void:
 	if selected_operation_building == null or hud == null:
 		return
-	if hud.has_method("show_processor_panel"):
+	var building_def: BuildingDef = selected_operation_building.get("building_def")
+	if _is_processor_def(building_def) and hud.has_method("show_processor_panel"):
 		hud.call(
 			"show_processor_panel",
 			selected_operation_building,
 			_get_resource_recipes(),
+			resource_defs,
+			_world_to_screen(selected_operation_building.global_position)
+		)
+	elif _is_robot_forge_def(building_def) and hud.has_method("show_forge_panel"):
+		hud.call(
+			"show_forge_panel",
+			selected_operation_building,
+			basic_rifle_blueprint,
 			resource_defs,
 			_world_to_screen(selected_operation_building.global_position)
 		)
@@ -524,6 +559,115 @@ func _on_processor_recipe_selected(processor: Node, recipe_id: StringName) -> vo
 func _on_processor_state_changed(processor: Node) -> void:
 	if processor == selected_operation_building:
 		call_deferred("_refresh_operation_panel")
+
+func _on_forge_state_changed(forge: Node) -> void:
+	if forge == selected_operation_building:
+		call_deferred("_refresh_operation_panel")
+
+func _on_forge_robot_production_completed(forge: Node, blueprint: UnitBlueprint) -> void:
+	if forge == null or blueprint == null:
+		return
+	var unit_layer := _get_layer("UnitLayer")
+	var robot := ObjectPool.get_instance(RobotScene, unit_layer if unit_layer else self, "robot_basic") as CharacterBody2D
+	if robot == null:
+		return
+	robot.name = IdProvider.next_id(&"robot")
+	robot.set("team", "Team_A")
+	robot.global_position = forge.call("get_spawn_position") if forge.has_method("get_spawn_position") else forge.global_position
+	if robot.has_method("setup_from_blueprint"):
+		robot.call(
+			"setup_from_blueprint",
+			blueprint,
+			forge.get("rally_point_position"),
+			bool(forge.get("has_rally_point"))
+		)
+	if forge.has_method("register_robot"):
+		forge.call("register_robot", robot)
+	_record_robot_produced(forge, robot, blueprint)
+
+func _record_robot_produced(forge: Node, robot: Node, blueprint: UnitBlueprint) -> void:
+	var event_log := get_node_or_null("/root/CombatEventLog")
+	if event_log and event_log.has_method("record"):
+		event_log.call("record", &"robot_produced", {
+			"forge": forge.name,
+			"robot": robot.name,
+			"blueprint_id": String(blueprint.id),
+			"blueprint_version": blueprint.version,
+			"rally_point": _format_vector2_payload(forge.get("rally_point_position")),
+			"has_rally_point": bool(forge.get("has_rally_point")),
+		})
+	push_debug_event("锻造完成：%s -> %s" % [blueprint.display_name, robot.name])
+
+func _on_forge_rally_point_requested(forge: Node) -> void:
+	if forge == null or not is_instance_valid(forge):
+		return
+	rally_point_target_forge = forge
+	_hide_operation_panel()
+	if hud and hud.has_method("show_bottom_prompt"):
+		hud.call("show_bottom_prompt", "单击地图空白格点设置集结点，右键或 Esc 取消", 0.0, &"info")
+	push_debug_event("进入集结点设置模式：%s" % forge.name)
+
+func _handle_rally_point_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed:
+		var mouse_event := event as InputEventMouseButton
+		if mouse_event.button_index == MOUSE_BUTTON_LEFT:
+			_try_set_rally_point_under_mouse()
+		elif mouse_event.button_index == MOUSE_BUTTON_RIGHT:
+			_cancel_rally_point_mode(true)
+	elif event is InputEventKey and event.pressed and not event.echo:
+		var key_event := event as InputEventKey
+		if key_event.keycode == KEY_ESCAPE:
+			_cancel_rally_point_mode(true)
+
+func _try_set_rally_point_under_mouse() -> void:
+	if rally_point_target_forge == null or not is_instance_valid(rally_point_target_forge):
+		_cancel_rally_point_mode(false)
+		return
+	var cell := _get_mouse_grid_cell()
+	var block_reason := _get_rally_point_block_reason(cell)
+	if not block_reason.is_empty():
+		if hud and hud.has_method("show_bottom_prompt"):
+			hud.call("show_bottom_prompt", "不能设置集结点：%s。请单击地图空白格点，右键或 Esc 取消" % block_reason, 0.0, &"warning")
+		return
+	var world_position: Vector2 = grid_map.call("grid_to_world", cell)
+	rally_point_target_forge.call("set_rally_point", cell, world_position)
+	_create_or_update_rally_marker(rally_point_target_forge, cell)
+	if hud and hud.has_method("show_bottom_prompt"):
+		hud.call("show_bottom_prompt", "集结点已设置：%s, %s" % [cell.x, cell.y], 2.4, &"success")
+	push_debug_event("集结点已设置：%s @ %s, %s" % [rally_point_target_forge.name, cell.x, cell.y])
+	rally_point_target_forge = null
+
+func _get_rally_point_block_reason(cell: Vector2i) -> String:
+	if grid_map == null or not bool(grid_map.call("is_cell_in_bounds", cell)):
+		return "超出地图边界"
+	if grid_occupancy.get_at(cell) != null:
+		return "格子已有建筑"
+	if resource_nodes_by_cell.has(cell):
+		return "资源点不能作为集结点"
+	return ""
+
+func _cancel_rally_point_mode(show_message: bool) -> void:
+	if rally_point_target_forge == null:
+		return
+	rally_point_target_forge = null
+	if show_message and hud and hud.has_method("show_bottom_prompt"):
+		hud.call("show_bottom_prompt", "已取消设置集结点", 1.8, &"warning")
+	elif hud and hud.has_method("hide_bottom_prompt"):
+		hud.call("hide_bottom_prompt")
+
+func _create_or_update_rally_marker(forge: Node, cell: Vector2i) -> void:
+	var marker: Node = forge.get("rally_marker")
+	if marker == null or not is_instance_valid(marker):
+		marker = RallyPointMarkerScene.instantiate()
+		var layer := _get_layer("RallyLayer")
+		(layer if layer else self).add_child(marker)
+		forge.set("rally_marker", marker)
+	if marker.has_method("setup"):
+		marker.call("setup", cell, _get_grid_cell_size())
+
+func _format_vector2_payload(value: Variant) -> Dictionary:
+	var vector: Vector2 = value
+	return {"x": vector.x, "y": vector.y}
 
 func _world_to_screen(world_position: Vector2) -> Vector2:
 	return get_viewport().get_canvas_transform() * world_position

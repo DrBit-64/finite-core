@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Scripts/map/rally_point.gd" id="1_gm1pj"]
+
+[node name="RallyPointMarker" type="Node2D"]
+z_index = 40
+script = ExtResource("1_gm1pj")
