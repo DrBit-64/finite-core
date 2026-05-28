@@ -13,6 +13,7 @@ const ResourceNodeScene := preload("res://Scenes/map/resource_node.tscn")
 const RallyPointMarkerScene := preload("res://Scenes/map/rally_point_marker.tscn")
 const RobotScene := preload("res://Scenes/robot.tscn")
 const MapConfigLoaderScript := preload("res://Scripts/map/map_config_loader.gd")
+const StartingInventoryConfigLoaderScript := preload("res://Scripts/data/starting_inventory_config_loader.gd")
 const OPERATION_PANEL_REFRESH_INTERVAL := 0.1
 
 @export var stage_label: String = "阶段 4"
@@ -22,6 +23,7 @@ const OPERATION_PANEL_REFRESH_INTERVAL := 0.1
 @export var hud_path: NodePath = ^"%MvpHUD"
 @export var grid_map_path: NodePath = ^"%GridMap"
 @export_file("*.json") var map_config_path: String = "res://Resources/data/maps/mvp_stage3_map.json"
+@export_file("*.json") var starting_inventory_config_path: String = "res://Resources/data/debug/mvp_debug_starting_inventory.json"
 @export var starting_inventory: Dictionary = {
 	&"construction_mass": 120,
 	&"iron_plate": 20,
@@ -90,6 +92,7 @@ func _load_stage_one_data() -> void:
 	recipe_defs = MvpDataDefaults.create_recipe_defs()
 	basic_rifle_blueprint = MvpDataDefaults.create_basic_rifle_blueprint()
 	building_defs = MvpDataDefaults.create_mvp_building_defs()
+	starting_inventory = StartingInventoryConfigLoaderScript.load_starting_inventory(starting_inventory_config_path, starting_inventory)
 	resource_summary_placeholder = "资源 %d / 配方 %d / 建筑 %d" % [
 		resource_defs.size(),
 		recipe_defs.size(),
@@ -126,6 +129,7 @@ func _setup_stage_two_world() -> void:
 func _log_startup_status() -> void:
 	push_debug_event("MVP GameManager 已加载")
 	push_debug_event("当前目标：%s：%s" % [stage_label, current_goal])
+	push_debug_event("Debug 初始库存配置：%s" % starting_inventory_config_path)
 	push_debug_event("%s 数据：资源 %d 项，配方 %d 条，建筑 %d 种，矿点 %d 个" % [
 		stage_label,
 		resource_defs.size(),

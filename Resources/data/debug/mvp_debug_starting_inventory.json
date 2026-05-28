@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "debug_only": true,
+  "description": "Debug-only starting inventory for MVP development. These values reduce waiting during manual testing and are not production balance.",
+  "starting_inventory": {
+    "construction_mass": 500,
+    "iron_ore": 500,
+    "copper_ore": 500,
+    "iron_plate": 500,
+    "copper_wire": 500
+  }
+}

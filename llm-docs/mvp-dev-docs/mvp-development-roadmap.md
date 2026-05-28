@@ -792,6 +792,10 @@ Resources/data/maps/mvp_stage3_map.json
 - 实现蓝图快照：
   - 生产出的机器人保存蓝图 ID 和版本。
   - 后续蓝图修改不影响已出生机器人。
+- 实现 Debug 初始库存配置：
+  - MVP 调试期从 `Resources/data/debug/mvp_debug_starting_inventory.json` 读取开局库存。
+  - 默认将铁矿、铜矿、铁板、铜线、建设质料提升到约 500，减少手动测试时等待采矿和加工的时间。
+  - 该配置仅限 debug/开发调试使用，不代表正式经济平衡；进入试玩平衡阶段前需要替换或关闭。
 
 ### 推荐文件
 
@@ -800,6 +804,7 @@ Scripts/buildings/robot_forge.gd
 Scripts/economy/production_queue.gd
 Scripts/ui/forge_panel.gd
 Scripts/ui/bottom_prompt.gd
+Scripts/data/starting_inventory_config_loader.gd
 Scenes/buildings/robot_forge.tscn
 Scenes/ui/forge_panel.tscn
 Scenes/map/rally_point_marker.tscn
@@ -816,6 +821,7 @@ Scripts/map/rally_point.gd
 - 锻造厂通过网格占用系统放置，但生产出来的机器人使用自由世界坐标。
 - UI 功能面板只发出命令信号，例如 `forge_rally_point_requested(forge)`，地图点击模式由 `MvpGameManager` 维护。
 - 底部提示模块不应该知道锻造厂或地图规则，只接收文本、样式和显示时长。
+- Debug 初始库存必须来自外部配置；脚本可以保留低资源 fallback，但不要把调试用 500 资源硬编码进生产逻辑。
 
 ### 美术素材需求
 
@@ -837,6 +843,7 @@ Scripts/map/rally_point.gd
 - 机器人出生时携带锻造厂当时的集结点快照：`has_rally_point` 与 `rally_point_position`。
 - `robot_produced` 事件能记录机器人实际持有的集结点快照，便于在机器人外观/行为重写前完成验收。
 - 生产事件写入 `robot_produced` 和 `resource_spent`。
+- 开局库存能从 debug JSON 配置读取，且文档明确该库存只用于开发调试。
 - `ForgePanel` 能解释锻造厂为什么正在生产、等待或停止。
 - 设置集结点时，地图能显示集结点标记。
 - 点击“设置集结点”后功能面板关闭，底部提示引导玩家点击地图空白格。
@@ -847,20 +854,32 @@ Scripts/map/rally_point.gd
 ### 目标
 
 让机器人作为可复用单位实体运行：移动、索敌、开火、受伤、死亡、寿命到期。
+本阶段建议重写最早期的纯色方块机器人原型，不以旧 `robot.gd` 的运动/攻击行为作为实现基础。旧原型只作为字段和验证经验参考。
 
 ### 功能任务
 
-- 拆分或整理机器人组件：
+- 拆分或重写机器人底层组件：
   - HP。
   - 移动。
   - 索敌。
   - 武器。
   - 寿命。
+  - 队伍与目标过滤。
+  - 当前动作/调试状态。
 - 实现默认脑干：
   - 找最近敌人。
   - 敌人在开火范围外则接近。
-  - 敌人在开火范围内则开火。
+  - 敌人在开火范围内则停止接近并开火。
+  - 默认脑干应该尽量把自己维持在射程边缘，而不是一边开火一边继续贴近敌人。
+  - 推荐加入简单的期望距离参数，例如 `preferred_range_ratio = 0.85`，让机器人在射程内过近时后退或侧移，在过远时接近。
+  - 移动意图和开火意图要分开，开火不应继承上一帧的接近速度。
   - 没有敌人则闲置或巡向敌巢方向。
+- 实现调试用敌军单位：
+  - 敌军单位与我方机器人共享同一套底层单位组件。
+  - 敌军单位暂时不会攻击。
+  - 敌军单位沿预设路径移动，用于测试索敌、追击、射程维持和命中。
+  - 敌军单位拥有较厚血量，避免过快死亡导致调试困难。
+  - 敌军单位也能被 `RobotInspector` 观测。
 - 实现死亡原因：
   - 被击杀。
   - 寿命耗尽。
@@ -873,10 +892,14 @@ Scripts/map/rally_point.gd
   - MVP 阶段可以暂不做建筑碰撞阻挡，后续按需要补。
   - 机器人目标点可以来自网格对象中心，例如敌巢中心、集结点中心。
 - 实现 `RobotInspector`：
+  - MVP 阶段优先复用左侧 `ObjectInspector`，点击机器人或调试敌军时显示专属状态；暂不强制新建独立弹窗。
   - HP。
   - 剩余寿命。
   - 当前目标。
   - 当前动作：移动 / 开火 / 闲置 / 默认脑干接管。
+  - 当前移动意图：接近 / 后退 / 保持距离 / 停止。
+  - 当前开火状态：冷却中 / 可开火 / 无目标 / 目标超出射程。
+  - 当前距离与射程：例如 `距离 120 / 射程 140`。
   - 最近 5 次规则或默认脑干触发。
 - 实现单位头顶状态：
   - HP 条。
@@ -890,9 +913,12 @@ Scripts/units/movement_component.gd
 Scripts/units/sensor_component.gd
 Scripts/units/weapon_component.gd
 Scripts/units/lifespan_component.gd
+Scripts/units/unit_debug_state.gd
 Scripts/ai/default_brain.gd
+Scripts/ai/path_follow_brain.gd
 Scripts/ui/robot_inspector.gd
 Scenes/units/player_robot.tscn
+Scenes/units/debug_enemy_unit.tscn
 Scenes/combat/bullet.tscn
 Scenes/ui/robot_inspector.tscn
 ```
@@ -903,8 +929,11 @@ Scenes/ui/robot_inspector.tscn
 - `MovementComponent` 负责实际移动。
 - `WeaponComponent` 负责冷却和开火。
 - `HealthComponent` 负责死亡信号。
+- 玩家机器人和调试敌军必须复用同一套基础组件，不要维护两套生命/移动/索敌/受伤代码。
+- 默认脑干、路径移动脑干、后续规则脑干应该是可替换决策层，不应该侵入底层单位组件。
 - 不要让 AI 直接扣敌人 HP。
-- `RobotInspector` 读取机器人公开状态，不直接调用 AI 决策函数。
+- `RobotInspector` 读取单位公开状态，不直接调用 AI 决策函数；被检查对象可以是我方机器人，也可以是调试敌军。
+- `RobotInspector` 在 MVP 阶段可以只是 `ObjectInspector` 的机器人/单位分支，后续再拆成独立 `Scenes/ui/robot_inspector.tscn`。
 - 移动组件只使用世界坐标，不依赖网格坐标。
 
 ### 美术素材需求
@@ -912,6 +941,7 @@ Scenes/ui/robot_inspector.tscn
 | 素材 | 用途 | MVP 要求 |
 | --- | --- | --- |
 | 玩家机器人地图精灵 | 地图单位 | 32x32 或 48x48，正俯视图，朝向可选 |
+| 调试敌军单位地图精灵 | 地图单位 | 48x48 左右，颜色/轮廓与玩家明显区分，血量较厚 |
 | 子弹 | 战斗表现 | 8x8 或简单线段/圆点 |
 | 命中特效 | 战斗反馈 | 可用短暂圆形闪光 |
 | 死亡/报废特效 | 反馈 | 可用灰色碎片或短暂爆点 |
@@ -921,11 +951,14 @@ Scenes/ui/robot_inspector.tscn
 ### 验收标准
 
 - 机器人会移动、索敌、开火。
+- 默认脑干不会在开火时继续沿上一帧接近速度贴近敌人；进入射程后应停止接近或维持在射程边缘。
 - 子弹能造成伤害。
 - 机器人死亡后移除或回收到对象池。
 - 寿命到期会触发 `robot_lost`。
 - 默认脑干在没有自定义规则时能独立战斗。
-- 选中机器人时能看见目标、动作、寿命和默认脑干状态。
+- 调试敌军能沿预设路径移动，不攻击，但能被我方机器人索敌和攻击。
+- 调试敌军与我方机器人共享底层生命、移动、受伤和检查器数据结构。
+- 选中我方机器人或调试敌军时，能看见目标、动作、寿命/生命和默认脑干或路径移动状态。
 - 机器人不会被网格系统强制吸附。
 
 ## 十二、阶段 6：自定义规则与集结行为
@@ -1218,7 +1251,7 @@ MVP UI 最终至少需要以下界面元素：
 | 2 | 主基地与抽象物流 | 库存、服务半径 | 主基地 `2x2` 占格、地图选择基础 | ResourcePanel、主基地检查器 | 主基地 |
 | 3 | 采矿与加工 | 矿点、采矿机、加工厂 | 资源点和建筑 `1x1` 占格、占用检测 | BuildingStatusPanel | 矿点、采矿机、加工厂 |
 | 4 | 机器人锻造厂 | 蓝图生产、自动补位、集结点快照注入 | 锻造厂占格、集结点地图交互 | ForgePanel、集结点设置 | 锻造厂、集结点 |
-| 5 | 机器人组件与默认脑干 | 移动、索敌、开火、死亡 | 机器人自由世界坐标移动 | RobotInspector、HP 条 | 机器人、子弹、HP 条 |
+| 5 | 机器人组件与默认脑干 | 移动、索敌、开火、死亡、调试敌军 | 机器人自由世界坐标移动 | RobotInspector、HP 条 | 机器人、调试敌军、子弹、HP 条 |
 | 6 | 自定义规则与集结 | 集结条件/动作 | 规则读取集结点世界坐标 | 规则气泡、规则调试状态 | 气泡/状态图标 |
 | 7 | 敌巢与胜利 | 敌人、敌巢、胜利条件 | 敌巢 `2x2` 占格、守军自由移动 | 敌巢检查器、胜利摘要 | 敌人、敌巢 |
 | 8 | 最小复盘 UI | 5 分钟摘要、事件列表 | 地图对象事件可追踪 | CombatReportPanel、标签页 | UI 图标可选 |
