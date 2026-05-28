@@ -12,14 +12,16 @@ const GridSelectionMarkerScene := preload("res://Scenes/map/grid_selection_marke
 const ResourceNodeScene := preload("res://Scenes/map/resource_node.tscn")
 const RallyPointMarkerScene := preload("res://Scenes/map/rally_point_marker.tscn")
 const RobotScene := preload("res://Scenes/robot.tscn")
+const DebugEnemyScene := preload("res://Scenes/units/debug_enemy_unit.tscn")
 const MapConfigLoaderScript := preload("res://Scripts/map/map_config_loader.gd")
 const StartingInventoryConfigLoaderScript := preload("res://Scripts/data/starting_inventory_config_loader.gd")
 const OPERATION_PANEL_REFRESH_INTERVAL := 0.1
+const UNIT_INSPECTOR_REFRESH_INTERVAL := 0.2
 
-@export var stage_label: String = "阶段 4"
-@export var current_goal: String = "机器人锻造厂、蓝图生产与集结点"
+@export var stage_label: String = "阶段 5"
+@export var current_goal: String = "机器人组件、默认脑干与调试敌军"
 @export var resource_summary_placeholder: String = "资源面板占位"
-@export var bottom_hint: String = "先放置主基地；生产材料后建造机器人锻造厂；选中锻造厂可设置集结点"
+@export var bottom_hint: String = "建造锻造厂生产机器人；机器人会索敌当前可见地图内的调试敌军"
 @export var hud_path: NodePath = ^"%MvpHUD"
 @export var grid_map_path: NodePath = ^"%GridMap"
 @export_file("*.json") var map_config_path: String = "res://Resources/data/maps/mvp_stage3_map.json"
@@ -48,6 +50,8 @@ var resource_nodes_by_id: Dictionary = {}
 var selected_operation_building: Node = null
 var operation_panel_refresh_seconds: float = 0.0
 var rally_point_target_forge: Node = null
+var selected_world_unit: Node = null
+var unit_inspector_refresh_seconds: float = 0.0
 
 func _ready() -> void:
 	_bootstrap_mvp_scene()
@@ -60,6 +64,11 @@ func _process(delta: float) -> void:
 		if operation_panel_refresh_seconds >= OPERATION_PANEL_REFRESH_INTERVAL:
 			operation_panel_refresh_seconds = 0.0
 			_refresh_operation_panel()
+	if selected_world_unit:
+		unit_inspector_refresh_seconds += delta
+		if unit_inspector_refresh_seconds >= UNIT_INSPECTOR_REFRESH_INTERVAL:
+			unit_inspector_refresh_seconds = 0.0
+			_refresh_selected_unit_inspector()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if rally_point_target_forge:
@@ -244,22 +253,33 @@ func _cancel_build_mode() -> void:
 func _select_map_cell_under_mouse() -> void:
 	if grid_map == null:
 		return
+	var world_unit := _find_world_unit_under_mouse()
+	if world_unit:
+		_show_selection_for_world_unit(world_unit)
+		if hud and hud.has_method("inspect_node"):
+			hud.call("inspect_node", world_unit)
+		_hide_operation_panel()
+		return
+
 	var cell := _get_mouse_grid_cell()
 	if not bool(grid_map.call("is_cell_in_bounds", cell)):
 		return
 	var occupant = grid_occupancy.get_at(cell)
 	if occupant is Node:
+		_clear_world_unit_selection()
 		_show_selection_for_node(occupant)
 		if hud and hud.has_method("inspect_node"):
 			hud.call("inspect_node", occupant)
 		_show_operation_panel_for_node(occupant)
 	elif resource_nodes_by_cell.has(cell):
 		var resource_node: Node = resource_nodes_by_cell[cell]
+		_clear_world_unit_selection()
 		_show_selection_for_node(resource_node)
 		if hud and hud.has_method("inspect_node"):
 			hud.call("inspect_node", resource_node)
 		_hide_operation_panel()
 	else:
+		_clear_world_unit_selection()
 		_show_selection_for_cell(cell)
 		if hud and hud.has_method("inspect_cell"):
 			hud.call("inspect_cell", cell)
@@ -390,15 +410,63 @@ func _create_selection_marker() -> void:
 	(layer if layer else self).add_child(selection_marker)
 
 func _show_selection_for_cell(cell: Vector2i) -> void:
+	_clear_world_unit_selection()
 	if selection_marker and selection_marker.has_method("show_selection"):
 		selection_marker.call("show_selection", cell, Vector2i.ONE, _get_grid_cell_size())
 
 func _show_selection_for_node(node: Node) -> void:
+	_clear_world_unit_selection()
 	if selection_marker == null or not selection_marker.has_method("show_selection"):
 		return
 	var origin: Vector2i = node.get("grid_origin")
 	var size: Vector2i = node.get("grid_size")
 	selection_marker.call("show_selection", origin, size, _get_grid_cell_size())
+
+func _show_selection_for_world_unit(unit: Node) -> void:
+	_clear_world_unit_selection()
+	selected_world_unit = unit
+	unit_inspector_refresh_seconds = 0.0
+	if selection_marker and selection_marker.has_method("clear_selection"):
+		selection_marker.call("clear_selection")
+	if selected_world_unit.has_method("set_selected"):
+		selected_world_unit.call("set_selected", true)
+
+func _clear_world_unit_selection() -> void:
+	if selected_world_unit and is_instance_valid(selected_world_unit) and selected_world_unit.has_method("set_selected"):
+		selected_world_unit.call("set_selected", false)
+	selected_world_unit = null
+	unit_inspector_refresh_seconds = 0.0
+
+func _refresh_selected_unit_inspector() -> void:
+	if selected_world_unit == null or not is_instance_valid(selected_world_unit):
+		_clear_world_unit_selection()
+		return
+	if selected_world_unit.has_method("is_alive") and not bool(selected_world_unit.call("is_alive")):
+		_clear_world_unit_selection()
+		return
+	if hud and hud.has_method("inspect_node"):
+		hud.call("inspect_node", selected_world_unit)
+
+func _find_world_unit_under_mouse() -> Node:
+	var mouse_world := get_global_mouse_position()
+	var best_unit: Node = null
+	var best_distance_sq := 32.0 * 32.0
+	for layer_name in ["UnitLayer", "EnemyLayer"]:
+		var layer := _get_layer(layer_name)
+		if layer == null:
+			continue
+		for child in layer.get_children():
+			if not (child is Node2D):
+				continue
+			if child is CanvasItem and not (child as CanvasItem).is_visible_in_tree():
+				continue
+			if child.has_method("is_alive") and not bool(child.call("is_alive")):
+				continue
+			var distance_sq := mouse_world.distance_squared_to((child as Node2D).global_position)
+			if distance_sq < best_distance_sq:
+				best_distance_sq = distance_sq
+				best_unit = child
+	return best_unit
 
 func _find_building_def(building_id: StringName) -> BuildingDef:
 	for building_def in building_defs:
@@ -465,6 +533,11 @@ func _load_fixed_map() -> void:
 		if typeof(item) != TYPE_DICTIONARY:
 			continue
 		_spawn_resource_node(item)
+	var debug_enemy_items: Array = map_config.get("debug_enemies", [])
+	for item in debug_enemy_items:
+		if typeof(item) != TYPE_DICTIONARY:
+			continue
+		_spawn_debug_enemy(item)
 
 func _spawn_resource_node(data: Dictionary) -> void:
 	var resource_id := StringName(str(data.get("resource_id", "")))
@@ -478,6 +551,31 @@ func _spawn_resource_node(data: Dictionary) -> void:
 	node.call("setup", data, resource_def, _get_grid_cell_size())
 	resource_nodes_by_cell[node.get("grid_origin")] = node
 	resource_nodes_by_id[node.get("node_id")] = node
+
+func _spawn_debug_enemy(data: Dictionary) -> void:
+	var path_points := _get_world_path_points(data.get("grid_path", []))
+	if path_points.is_empty():
+		return
+	var enemy := DebugEnemyScene.instantiate()
+	var layer := _get_layer("EnemyLayer")
+	(layer if layer else self).add_child(enemy)
+	enemy.name = str(data.get("id", IdProvider.next_id(&"debug_enemy")))
+	enemy.global_position = path_points[0]
+	if enemy.has_method("setup_debug_enemy"):
+		enemy.call("setup_debug_enemy", str(data.get("display_name", "调试靶机")), path_points, bool(data.get("loop", true)))
+	push_debug_event("调试敌军已生成：%s，路径点 %d" % [enemy.name, path_points.size()])
+
+func _get_world_path_points(grid_path: Variant) -> Array[Vector2]:
+	var points: Array[Vector2] = []
+	if grid_map == null or typeof(grid_path) != TYPE_ARRAY:
+		return points
+	for value in grid_path:
+		if typeof(value) != TYPE_ARRAY or value.size() < 2:
+			continue
+		var cell := Vector2i(int(value[0]), int(value[1]))
+		if bool(grid_map.call("is_cell_in_bounds", cell)):
+			points.append(grid_map.call("grid_to_world", cell))
+	return points
 
 func _find_resource_def(resource_id: StringName) -> ResourceDef:
 	for resource_def in resource_defs:

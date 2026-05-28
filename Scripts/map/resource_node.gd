@@ -42,7 +42,7 @@ func get_display_name() -> String:
 	return display_name if not display_name.is_empty() else String(resource_id)
 
 func get_inspector_lines() -> Array[String]:
-	return [
+	var lines: Array[String] = [
 		"类型：资源点",
 		"名称：%s" % get_display_name(),
 		"网格：%s, %s" % [grid_origin.x, grid_origin.y],
@@ -50,6 +50,7 @@ func get_inspector_lines() -> Array[String]:
 		"储量：%s" % amount,
 		"绑定：%s" % ("已绑定" if is_bound() else "未绑定"),
 	]
+	return lines
 
 func _ready() -> void:
 	_update_visuals()

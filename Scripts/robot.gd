@@ -3,171 +3,225 @@ class_name RobotUnit
 
 signal robot_lost(robot: Node, reason: StringName)
 
-@export var max_hp: int = 100
-@export var speed: float = 80.0
+@export var display_name: String = "基础步枪机器人"
+@export var max_hp: int = 60
+@export var speed: float = 90.0
 @export_enum("Team_A", "Team_B") var team: String = "Team_A"
 @export var tags: Array[String] = []
-@export var lifespan_seconds: float = 5.0
+@export var lifespan_seconds: float = 120.0
 @export var pool_name: String = "robot_basic"
-@export var radar_radius: float = 1000.0
 @export var fire_range: float = 140.0
-@export var bullet_scene: PackedScene = preload("res://Scenes/bullet.tscn")
-@export var bullet_pool_name: String = "bullet_basic"
-@export var bullet_damage: int = 15
+@export var bullet_damage: int = 8
 @export var fire_cooldown_seconds: float = 0.8
+@export var weapon_enabled: bool = true
+@export_enum("default_combat", "path_patrol", "idle") var brain_mode: String = "default_combat"
+@export var default_brain_enabled: bool = true
+@export var preferred_range_ratio: float = 0.85
+@export var range_dead_zone: float = 12.0
+@export var visual_size: Vector2 = Vector2(42, 42)
+@export var muzzle_distance: float = 24.0
+@export var turn_speed_radians: float = 12.0
+@export var fire_arc_radians: float = 0.16
+@export_file("*.svg") var icon_path: String = "res://Resources/art/blueprints/basic_rifle_robot.svg"
 
-var hp: int
+var hp: int = 60
 var blueprint_id: StringName = &""
 var blueprint_version: int = 0
 var rally_point_position: Vector2 = Vector2.ZERO
 var has_rally_point: bool = false
-var _is_dead: bool = false
-var enemies_in_range: Array[CharacterBody2D] = []
-var _last_fire_time: float = -9999.0
 
-@onready var lifespan_timer: Timer = $LifespanTimer
-@onready var radar: Area2D = $Radar
-@onready var radar_shape: CollisionShape2D = $Radar/CollisionShape2D
-@onready var body_color: ColorRect = $ColorRect
-@onready var muzzle: Marker2D = $Muzzle
+var current_target: Node2D = null
+var current_action: String = "闲置"
+var current_fire_state: String = "无目标"
+var current_distance_to_target: float = -1.0
+var patrol_points: Array[Vector2] = []
+var patrol_loop: bool = true
+
+var _is_dead: bool = false
+var _selected: bool = false
+var _patrol_index: int = 0
+var _loaded_icon_path: String = ""
+var _facing_angle: float = 0.0
+var _brain_trigger_history: Array[String] = []
+var _last_brain_trigger_key: StringName = &""
+var _last_brain_trigger_msec: int = 0
+
+@onready var unit_sprite: Sprite2D = get_node_or_null("UnitSprite")
+@onready var hp_bar: ProgressBar = get_node_or_null("HPBar")
+@onready var action_label: Label = get_node_or_null("ActionLabel")
+@onready var muzzle: Marker2D = get_node_or_null("Muzzle")
+@onready var lifespan_component = get_node_or_null("LifespanComponent")
+@onready var health_component = get_node_or_null("HealthComponent")
+@onready var movement_component = get_node_or_null("MovementComponent")
+@onready var weapon_component = get_node_or_null("WeaponComponent")
+@onready var enemy_sensor = get_node_or_null("VisibleEnemySensor")
+@onready var default_brain = get_node_or_null("DefaultBrain")
+@onready var path_follow_brain = get_node_or_null("PathFollowBrain")
 
 func _ready() -> void:
-	_sync_runtime_groups()
+	_connect_components()
 	reset_state()
 
-func _sync_runtime_groups() -> void:
-	if team == "Team_A":
-		add_to_group("team_a")
-		remove_from_group("team_b")
-	else:
-		add_to_group("team_b")
-		remove_from_group("team_a")
-	for tag in tags:
-		if not tag.is_empty():
-			add_to_group(tag)
-
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	if _is_dead:
 		return
-	move_and_slide()
 
-func reset_state() -> void:
-	hp = max_hp
-	_is_dead = false
-	velocity = Vector2.ZERO
-	enemies_in_range.clear()
-	_last_fire_time = -9999.0
-	_sync_runtime_groups()
-	_configure_team_collision()
-	_configure_radar()
-	if lifespan_timer:
-		lifespan_timer.stop()
-		lifespan_timer.wait_time = lifespan_seconds
-		lifespan_timer.one_shot = true
-		lifespan_timer.start()
+	match brain_mode:
+		"path_patrol":
+			if path_follow_brain:
+				path_follow_brain.tick(self)
+			else:
+				current_action = "路径脑干缺失"
+				if movement_component:
+					movement_component.stop(&"idle")
+		"default_combat":
+			if default_brain_enabled:
+				if default_brain:
+					default_brain.tick(self)
+				else:
+					current_action = "默认脑干缺失"
+					if movement_component:
+						movement_component.stop(&"idle")
+		_:
+			current_action = "闲置"
+			if movement_component:
+				movement_component.stop(&"idle")
+
+	if movement_component:
+		movement_component.apply_to(self)
+	_update_facing(delta)
+	_update_unit_visuals()
 
 func setup_from_blueprint(blueprint: UnitBlueprint, next_rally_point: Vector2 = Vector2.ZERO, next_has_rally_point: bool = false) -> void:
 	if blueprint == null:
 		return
 	blueprint_id = blueprint.id
 	blueprint_version = blueprint.version
+	display_name = blueprint.display_name
+	if not blueprint.icon_path.is_empty():
+		icon_path = blueprint.icon_path
 	if blueprint.stats:
 		max_hp = blueprint.stats.max_hp
 		speed = blueprint.stats.speed
 		lifespan_seconds = blueprint.stats.lifespan_seconds
-		radar_radius = blueprint.stats.radar_radius
 		fire_range = blueprint.stats.fire_range
 		bullet_damage = blueprint.stats.damage
 		fire_cooldown_seconds = blueprint.stats.fire_cooldown_seconds
+	default_brain_enabled = blueprint.default_brain_enabled
 	rally_point_position = next_rally_point
 	has_rally_point = next_has_rally_point
 	reset_state()
 
+func setup_debug_enemy(next_name: String, path_points: Array[Vector2], loop_path: bool = true) -> void:
+	display_name = next_name
+	team = "Team_B"
+	brain_mode = "path_patrol"
+	default_brain_enabled = false
+	weapon_enabled = false
+	max_hp = 420
+	speed = 54.0
+	lifespan_seconds = 0.0
+	pool_name = "debug_enemy_unit"
+	icon_path = "res://Resources/art/units/debug_enemy_unit.svg"
+	set_patrol_path(path_points, loop_path)
+	reset_state()
+
+func set_patrol_path(path_points: Array[Vector2], loop_path: bool = true) -> void:
+	patrol_points = path_points.duplicate()
+	patrol_loop = loop_path
+	_patrol_index = 0
+	if path_follow_brain:
+		path_follow_brain.set_path(path_points, loop_path)
+
+func reset_state() -> void:
+	_is_dead = false
+	current_target = null
+	current_action = "闲置"
+	current_fire_state = "无目标"
+	current_distance_to_target = -1.0
+	_facing_angle = 0.0
+	_brain_trigger_history.clear()
+	_last_brain_trigger_key = &""
+	_last_brain_trigger_msec = 0
+	_sync_runtime_groups()
+	_configure_team_collision()
+	_configure_components()
+	_update_unit_visuals()
+
 func is_alive() -> bool:
-	return not _is_dead
+	return not _is_dead and (health_component == null or health_component.is_alive())
 
-func _configure_team_collision() -> void:
-	if team == "Team_A":
-		collision_layer = 1
-		if body_color:
-			body_color.color = Color(0.203922, 0.537255, 0.921569, 1.0)
+func get_display_name() -> String:
+	return display_name
+
+func get_inspector_lines() -> Array[String]:
+	var target_name := "无"
+	if current_target:
+		target_name = str(current_target.call("get_display_name")) if current_target.has_method("get_display_name") else current_target.name
+	var distance_text := "-" if current_distance_to_target < 0.0 else "%.1f / %.1f" % [current_distance_to_target, fire_range]
+	var hp_text := "%s / %s" % [hp, max_hp]
+	if health_component:
+		hp_text = "%s / %s" % [health_component.hp, health_component.max_hp]
+	var lines: Array[String] = [
+		"类型：单位",
+		"队伍：%s" % _format_team_name(),
+		"生命：%s" % hp_text,
+		"脑干：%s" % _format_brain_mode(),
+		"目标：%s" % target_name,
+		"动作：%s" % current_action,
+		"移动：%s" % _format_movement_intent(),
+		"开火：%s" % _format_fire_state(),
+		"距离/射程：%s" % distance_text,
+	]
+	if lifespan_seconds > 0.0 and lifespan_component:
+		lines.append("剩余寿命：%.1fs" % lifespan_component.get_time_left())
 	else:
-		collision_layer = 2
-		if body_color:
-			body_color.color = Color(0.839216, 0.203922, 0.203922, 1.0)
-	collision_mask = 0
+		lines.append("剩余寿命：无限")
+	if not String(blueprint_id).is_empty():
+		lines.append("蓝图：%s v%s" % [String(blueprint_id), blueprint_version])
+	if has_rally_point:
+		lines.append("集结点：%.0f, %.0f" % [rally_point_position.x, rally_point_position.y])
+	if brain_mode == "path_patrol":
+		var path_index: int = path_follow_brain.patrol_index if path_follow_brain else _patrol_index
+		var path_count: int = path_follow_brain.patrol_points.size() if path_follow_brain else patrol_points.size()
+		lines.append("路径点：%s / %s" % [path_index + 1, path_count])
+	lines.append("索敌：当前可见地图内敌军")
+	if not _brain_trigger_history.is_empty():
+		lines.append("最近脑干触发：")
+		for entry in _brain_trigger_history:
+			lines.append("  %s" % entry)
+	return lines
 
-func _configure_radar() -> void:
-	if radar_shape and radar_shape.shape is CircleShape2D:
-		(radar_shape.shape as CircleShape2D).radius = radar_radius
-
-	if radar:
-		radar.collision_layer = 0
-		if team == "Team_A":
-			radar.collision_mask = 2
-		else:
-			radar.collision_mask = 1
-
-func _is_enemy_candidate(body: Node2D) -> bool:
-	if body == null or body == self:
-		return false
-	if not (body is CharacterBody2D):
-		return false
-	if body.get("team") == null:
-		return false
-	return body.get("team") != team
-
-func _cleanup_enemy_list() -> void:
-	for i in range(enemies_in_range.size() - 1, -1, -1):
-		var enemy := enemies_in_range[i]
-		if enemy == null or not is_instance_valid(enemy):
-			enemies_in_range.remove_at(i)
+func set_selected(value: bool) -> void:
+	_selected = value
+	queue_redraw()
 
 func has_enemy_in_range() -> bool:
-	_cleanup_enemy_list()
-	return not enemies_in_range.is_empty()
+	return get_current_enemy() != null
 
-# TODO: 这个函数被频繁调用，可能需要性能优化
 func get_current_enemy() -> CharacterBody2D:
-	_cleanup_enemy_list()
-	if enemies_in_range.is_empty():
+	var enemies := _get_visible_enemies()
+	if enemies.is_empty() or not (enemies[0] is CharacterBody2D):
 		return null
-	var nearest: CharacterBody2D = enemies_in_range[0]
-	var nearest_dist_sq := global_position.distance_squared_to(nearest.global_position)
-	for i in range(1, enemies_in_range.size()):
-		var candidate := enemies_in_range[i]
-		if candidate == null or not is_instance_valid(candidate):
-			continue
-		var dist_sq := global_position.distance_squared_to(candidate.global_position)
-		if dist_sq < nearest_dist_sq:
-			nearest = candidate
-			nearest_dist_sq = dist_sq
-	return nearest
+	return enemies[0] as CharacterBody2D
 
 func get_lowest_hp_enemy() -> CharacterBody2D:
-	_cleanup_enemy_list()
-	if enemies_in_range.is_empty():
+	var enemies := _get_visible_enemies()
+	if enemies.is_empty():
 		return null
-	var target := enemies_in_range[0]
-	var lowest_ratio: float = target.hp_ratio() if target.has_method("hp_ratio") else 1.0
-	for i in range(1, enemies_in_range.size()):
-		var candidate := enemies_in_range[i]
-		if candidate == null or not is_instance_valid(candidate):
-			continue
+	var target := enemies[0]
+	var lowest_ratio: float = float(target.call("hp_ratio")) if target.has_method("hp_ratio") else 1.0
+	for candidate in enemies:
 		if not candidate.has_method("hp_ratio"):
 			continue
-		var ratio: float = candidate.hp_ratio()
+		var ratio: float = float(candidate.call("hp_ratio"))
 		if ratio < lowest_ratio:
 			target = candidate
 			lowest_ratio = ratio
-	return target
+	return target as CharacterBody2D
 
 func get_radar_targets() -> Array[Node2D]:
-	_cleanup_enemy_list()
-	var targets: Array[Node2D] = []
-	for enemy in enemies_in_range:
-		targets.append(enemy)
-	return targets
+	return _get_visible_enemies()
 
 func is_current_enemy_in_fire_range() -> bool:
 	var enemy := get_current_enemy()
@@ -176,6 +230,8 @@ func is_current_enemy_in_fire_range() -> bool:
 	return global_position.distance_to(enemy.global_position) <= fire_range
 
 func hp_ratio() -> float:
+	if health_component:
+		return health_component.hp_ratio()
 	if max_hp <= 0:
 		return 0.0
 	return float(hp) / float(max_hp)
@@ -195,86 +251,256 @@ func move_towards_nearest_enemy() -> void:
 	move_towards(enemy.global_position)
 
 func move_towards(target_pos: Vector2) -> void:
-	var dir := target_pos - global_position
-	if dir.length() < 0.001:
-		stop_and_idle()
+	if movement_component == null:
 		return
-	velocity = dir.normalized() * speed
+	movement_component.move_towards(global_position, target_pos)
+	current_action = "接近目标"
 
 func flee_from(target_pos: Vector2) -> void:
-	var dir := global_position - target_pos
-	if dir.length() < 0.001:
-		dir = Vector2.RIGHT
-	velocity = dir.normalized() * speed
+	if movement_component == null:
+		return
+	movement_component.move_away_from(global_position, target_pos)
+	current_action = "远离目标"
 
 func stop_and_idle() -> void:
-	velocity = Vector2.ZERO
+	if movement_component:
+		movement_component.stop(&"idle")
+	current_action = "闲置"
 
 func fire_main_weapon() -> void:
 	var enemy := get_current_enemy()
 	if enemy == null:
+		current_fire_state = "无目标"
 		return
 	fire_weapon(enemy)
 
+func record_brain_trigger(key: StringName, description: String) -> void:
+	var now := Time.get_ticks_msec()
+	if key == _last_brain_trigger_key and now - _last_brain_trigger_msec < 1000:
+		return
+	_last_brain_trigger_key = key
+	_last_brain_trigger_msec = now
+	_brain_trigger_history.push_front(description)
+	while _brain_trigger_history.size() > 5:
+		_brain_trigger_history.pop_back()
+
 func fire_weapon(target: Node2D) -> void:
-	if target == null:
+	if weapon_component == null:
 		return
-	if global_position.distance_to(target.global_position) > fire_range:
-		return
-	var now := Time.get_ticks_msec() / 1000.0
-	if now - _last_fire_time < fire_cooldown_seconds:
-		return
-	_last_fire_time = now
-
-	var spawn_parent := get_tree().current_scene
-	if spawn_parent == null:
-		spawn_parent = get_parent()
-	if spawn_parent == null:
-		return
-
-	var bullet := ObjectPool.get_instance(bullet_scene, spawn_parent, bullet_pool_name) as Node2D
-	if bullet == null:
-		return
-	bullet.global_position = muzzle.global_position if muzzle else global_position
-	var shot_dir: Vector2 = (target.global_position - bullet.global_position).normalized()
-	if bullet.has_method("setup"):
-		bullet.setup(team, bullet_damage, shot_dir)
-
-func _on_radar_body_entered(body: Node2D) -> void:
-	if not _is_enemy_candidate(body):
-		return
-	var enemy := body as CharacterBody2D
-	if enemies_in_range.has(enemy):
-		return
-	enemies_in_range.append(enemy)
-	print("[", name, "] 发现敌人: ", enemy.name, " 当前敌人数=", enemies_in_range.size())
-
-func _on_radar_body_exited(body: Node2D) -> void:
-	if not (body is CharacterBody2D):
-		return
-	var enemy := body as CharacterBody2D
-	if enemies_in_range.has(enemy):
-		enemies_in_range.erase(enemy)
-		print("[", name, "] 敌人离开: ", enemy.name, " 当前敌人数=", enemies_in_range.size())
+	if target:
+		_turn_towards(target.global_position, get_physics_process_delta_time())
+		if not _is_facing_position(target.global_position):
+			current_fire_state = "转向中"
+			return
+	var spawn_parent := _get_projectile_parent()
+	weapon_component.try_fire(team, muzzle, target, spawn_parent)
+	current_fire_state = _format_fire_state()
 
 func take_damage(amount: int) -> void:
 	if _is_dead:
 		return
-	hp -= amount
-	if hp < 0:
-		hp = 0
-	if hp <= 0:
-		die(&"destroyed")
+	if health_component:
+		health_component.take_damage(amount)
 
 func die(reason: StringName = &"destroyed") -> void:
 	if _is_dead:
 		return
+	if health_component:
+		health_component.kill(reason)
+	else:
+		_finish_death(reason)
+
+func _connect_components() -> void:
+	if health_component:
+		if not health_component.health_changed.is_connected(_on_health_changed):
+			health_component.health_changed.connect(_on_health_changed)
+		if not health_component.died.is_connected(_on_health_died):
+			health_component.died.connect(_on_health_died)
+	if lifespan_component:
+		if not lifespan_component.expired.is_connected(_on_lifespan_expired):
+			lifespan_component.expired.connect(_on_lifespan_expired)
+
+func _configure_components() -> void:
+	if health_component:
+		health_component.setup(max_hp)
+	if movement_component:
+		movement_component.setup(speed)
+	if weapon_component:
+		weapon_component.enabled = weapon_enabled
+		weapon_component.setup(fire_range, bullet_damage, fire_cooldown_seconds)
+	if lifespan_component:
+		lifespan_component.setup(lifespan_seconds)
+	if default_brain:
+		default_brain.setup(preferred_range_ratio, range_dead_zone)
+	if path_follow_brain:
+		path_follow_brain.set_path(patrol_points, patrol_loop)
+
+func _sync_runtime_groups() -> void:
+	add_to_group("combat_unit")
+	if team == "Team_A":
+		add_to_group("team_a")
+		remove_from_group("team_b")
+	else:
+		add_to_group("team_b")
+		remove_from_group("team_a")
+	for tag in tags:
+		if not tag.is_empty():
+			add_to_group(tag)
+
+func _configure_team_collision() -> void:
+	collision_layer = 1 if team == "Team_A" else 2
+	collision_mask = 0
+
+func _get_visible_enemies() -> Array[Node2D]:
+	if enemy_sensor:
+		return enemy_sensor.get_visible_enemies(self, team)
+	return []
+
+func _get_projectile_parent() -> Node:
+	var map := get_parent()
+	while map != null and not map.has_method("get_layer"):
+		map = map.get_parent()
+	if map != null:
+		var projectile_layer := map.call("get_layer", "ProjectileLayer") as Node
+		if projectile_layer:
+			return projectile_layer
+	return get_tree().current_scene if get_tree().current_scene else get_parent()
+
+func _update_unit_visuals() -> void:
+	if unit_sprite:
+		var texture := unit_sprite.texture
+		if icon_path != _loaded_icon_path:
+			_loaded_icon_path = icon_path
+			if not icon_path.is_empty() and ResourceLoader.exists(icon_path, "Texture2D"):
+				texture = load(icon_path) as Texture2D
+				if texture:
+					unit_sprite.texture = texture
+		if texture:
+			var texture_size := texture.get_size()
+			if texture_size.x > 0.0 and texture_size.y > 0.0:
+				unit_sprite.scale = Vector2(visual_size.x / texture_size.x, visual_size.y / texture_size.y)
+		unit_sprite.rotation = _facing_angle
+		unit_sprite.modulate = Color.WHITE
+	if muzzle:
+		muzzle.position = Vector2.RIGHT.rotated(_facing_angle) * muzzle_distance
+	if hp_bar:
+		hp_bar.max_value = max_hp
+		hp_bar.value = hp
+		hp_bar.visible = hp < max_hp
+	if action_label:
+		var should_show_action := is_alive() and not current_action.is_empty() and current_action != "闲置"
+		action_label.visible = should_show_action
+		action_label.text = current_action if should_show_action else ""
+	queue_redraw()
+
+func _update_facing(delta: float) -> void:
+	if _should_face_attack_target():
+		_turn_towards(current_target.global_position, delta)
+		return
+	if movement_component and movement_component.desired_velocity.length() > 0.001:
+		_turn_angle_towards(movement_component.desired_velocity.angle(), delta)
+
+func _turn_towards(world_position: Vector2, delta: float) -> void:
+	var direction := world_position - global_position
+	if direction.length() <= 0.001:
+		return
+	_turn_angle_towards(direction.angle(), delta)
+
+func _turn_angle_towards(target_angle: float, delta: float) -> void:
+	if delta < 0.0 or turn_speed_radians <= 0.0:
+		_facing_angle = target_angle
+	else:
+		_facing_angle = rotate_toward(_facing_angle, target_angle, turn_speed_radians * delta)
+
+func _is_facing_position(world_position: Vector2) -> bool:
+	var direction := world_position - global_position
+	if direction.length() <= 0.001:
+		return true
+	return absf(angle_difference(_facing_angle, direction.angle())) <= fire_arc_radians
+
+func _should_face_attack_target() -> bool:
+	if not weapon_enabled:
+		return false
+	if current_target == null or not is_instance_valid(current_target):
+		return false
+	if current_distance_to_target < 0.0:
+		return false
+	return current_distance_to_target <= fire_range
+
+func _on_health_changed(current_hp: int, current_max_hp: int, _delta: int) -> void:
+	hp = current_hp
+	max_hp = current_max_hp
+	_update_unit_visuals()
+
+func _on_health_died(reason: StringName) -> void:
+	_finish_death(reason)
+
+func _finish_death(reason: StringName) -> void:
+	if _is_dead:
+		return
 	_is_dead = true
-	enemies_in_range.clear()
-	if lifespan_timer:
-		lifespan_timer.stop()
+	current_action = "报废"
+	if movement_component:
+		movement_component.stop(&"dead")
+	if lifespan_component:
+		lifespan_component.stop()
 	robot_lost.emit(self, reason)
 	ObjectPool.return_instance(self, pool_name)
 
-func _on_lifespan_timer_timeout() -> void:
+func _on_lifespan_expired() -> void:
 	die(&"lifespan_expired")
+
+func _draw() -> void:
+	if not _selected:
+		return
+	draw_arc(Vector2.ZERO, 28.0, 0.0, TAU, 64, Color(1.0, 0.86, 0.12, 0.95), 2.5)
+
+func _format_team_name() -> String:
+	return "玩家" if team == "Team_A" else "调试敌军"
+
+func _format_brain_mode() -> String:
+	match brain_mode:
+		"default_combat":
+			return "默认战斗脑干"
+		"path_patrol":
+			return "路径移动脑干"
+		_:
+			return "闲置"
+
+func _format_movement_intent() -> String:
+	if movement_component == null:
+		return "无"
+	match movement_component.movement_intent:
+		&"approach":
+			return "接近"
+		&"retreat":
+			return "后退"
+		&"hold_range":
+			return "保持射程"
+		&"arrived":
+			return "到达"
+		&"dead":
+			return "停止"
+		_:
+			return "停止"
+
+func _format_fire_state() -> String:
+	if current_fire_state == "转向中":
+		return current_fire_state
+	if weapon_component == null:
+		return "无武器"
+	match weapon_component.fire_state:
+		&"disabled":
+			return "禁用"
+		&"no_target":
+			return "无目标"
+		&"out_of_range":
+			return "目标超出射程"
+		&"cooldown":
+			return "冷却中 %.1fs" % weapon_component.get_cooldown_remaining()
+		&"spawn_failed":
+			return "弹体生成失败"
+		&"fired":
+			return "开火"
+		_:
+			return "可开火"

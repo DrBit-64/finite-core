@@ -18,11 +18,12 @@ func get_display_name() -> String:
 	return "集结点"
 
 func get_inspector_lines() -> Array[String]:
-	return [
+	var lines: Array[String] = [
 		"类型：地图标记",
 		"名称：集结点",
 		"网格：%s, %s" % [grid_cell.x, grid_cell.y],
 	]
+	return lines
 
 func _draw() -> void:
 	var radius := float(cell_size) * 0.30

@@ -26,13 +26,14 @@ func get_display_name() -> String:
 	return "建筑"
 
 func get_inspector_lines() -> Array[String]:
-	return [
+	var lines: Array[String] = [
 		"类型：建筑",
 		"名称：%s" % get_display_name(),
 		"网格：%s, %s" % [grid_origin.x, grid_origin.y],
 		"占格：%sx%s" % [grid_size.x, grid_size.y],
 		"建造配方：%s" % String(building_def.build_recipe_id if building_def else &""),
 	]
+	return lines
 
 func _ready() -> void:
 	_update_visuals()

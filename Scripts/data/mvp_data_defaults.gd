@@ -2,7 +2,9 @@
 class_name MvpDataDefaults
 
 const RECIPE_CONFIG_PATH := "res://Resources/data/recipes/mvp_recipes.json"
+const UNIT_BLUEPRINT_CONFIG_PATH := "res://Resources/data/units/mvp_unit_blueprints.json"
 const RecipeConfigLoaderScript := preload("res://Scripts/data/recipe_config_loader.gd")
+const UnitBlueprintConfigLoaderScript := preload("res://Scripts/data/unit_blueprint_config_loader.gd")
 
 const RES_IRON_ORE := &"iron_ore"
 const RES_COPPER_ORE := &"copper_ore"
@@ -30,7 +32,16 @@ static func create_recipe_defs() -> Array[RecipeDef]:
 	return RecipeConfigLoaderScript.load_recipe_defs(RECIPE_CONFIG_PATH)
 
 static func create_basic_rifle_blueprint() -> UnitBlueprint:
-	var recipe := _find_recipe_by_target(create_recipe_defs(), &"unit", UNIT_BASIC_RIFLE_ROBOT)
+	var recipe_defs := create_recipe_defs()
+	return UnitBlueprintConfigLoaderScript.load_unit_blueprint(
+		UNIT_BLUEPRINT_CONFIG_PATH,
+		UNIT_BASIC_RIFLE_ROBOT,
+		recipe_defs,
+		_create_basic_rifle_blueprint_fallback(recipe_defs)
+	)
+
+static func _create_basic_rifle_blueprint_fallback(recipe_defs: Array[RecipeDef]) -> UnitBlueprint:
+	var recipe := _find_recipe_by_target(recipe_defs, &"unit", UNIT_BASIC_RIFLE_ROBOT)
 	var blueprint := UnitBlueprint.new()
 	blueprint.id = UNIT_BASIC_RIFLE_ROBOT
 	blueprint.display_name = "基础步枪机器人"

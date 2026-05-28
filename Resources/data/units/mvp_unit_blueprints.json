@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "unit_blueprints": [
+    {
+      "id": "basic_rifle_robot",
+      "display_name": "基础步枪机器人",
+      "version": 1,
+      "icon_path": "res://Resources/art/blueprints/basic_rifle_robot.svg",
+      "chassis_icon_path": "res://Resources/art/chassis/light_chassis.svg",
+      "module_icon_paths": [
+        "res://Resources/art/modules/rifle_module.svg"
+      ],
+      "production_recipe_id": "forge_basic_rifle_robot",
+      "default_brain_enabled": true,
+      "stats": {
+        "max_hp": 60,
+        "speed": 90.0,
+        "lifespan_seconds": 20.0,
+        "radar_radius": 240.0,
+        "fire_range": 140.0,
+        "damage": 8,
+        "fire_cooldown_seconds": 0.8
+      },
+      "debug_overrides": {
+        "lifespan_seconds": {
+          "previous_value": 120.0,
+          "current_value": 20.0,
+          "reason": "缩短调试等待时间，方便验证机器人死亡、锻造厂补位和复盘事件。"
+        }
+      }
+    }
+  ]
+}

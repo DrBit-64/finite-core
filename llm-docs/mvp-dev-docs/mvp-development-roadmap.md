@@ -312,7 +312,7 @@ Scenes/
 
 - `HealthComponent`：HP、受伤、死亡信号。
 - `MovementComponent`：移动到位置、停止。
-- `SensorComponent`：索敌、范围内目标列表。
+- `VisibleEnemySensor`：从当前可见地图范围扫描敌军列表，不使用雷达碰撞箱。
 - `WeaponComponent`：冷却、射击、生成子弹。
 - `LifespanComponent`：寿命倒计时、寿命耗尽事件。
 
@@ -868,6 +868,7 @@ Scripts/map/rally_point.gd
   - 当前动作/调试状态。
 - 实现默认脑干：
   - 找最近敌人。
+  - 索敌不再使用雷达碰撞箱；从当前可见地图对应的世界范围内获得敌军单位列表。
   - 敌人在开火范围外则接近。
   - 敌人在开火范围内则停止接近并开火。
   - 默认脑干应该尽量把自己维持在射程边缘，而不是一边开火一边继续贴近敌人。
@@ -913,9 +914,9 @@ Scripts/units/movement_component.gd
 Scripts/units/sensor_component.gd
 Scripts/units/weapon_component.gd
 Scripts/units/lifespan_component.gd
+Scripts/units/default_brain.gd
+Scripts/units/path_follow_brain.gd
 Scripts/units/unit_debug_state.gd
-Scripts/ai/default_brain.gd
-Scripts/ai/path_follow_brain.gd
 Scripts/ui/robot_inspector.gd
 Scenes/units/player_robot.tscn
 Scenes/units/debug_enemy_unit.tscn
@@ -929,8 +930,11 @@ Scenes/ui/robot_inspector.tscn
 - `MovementComponent` 负责实际移动。
 - `WeaponComponent` 负责冷却和开火。
 - `HealthComponent` 负责死亡信号。
+- `LifespanComponent` 负责寿命倒计时和寿命耗尽信号，不由 `RobotUnit` 直接维护 `Timer`。
+- `DefaultBrain` 和 `PathFollowBrain` 作为独立决策节点挂在单位场景下；`RobotUnit` 只连接组件、公开状态并同步视觉。
 - 玩家机器人和调试敌军必须复用同一套基础组件，不要维护两套生命/移动/索敌/受伤代码。
 - 默认脑干、路径移动脑干、后续规则脑干应该是可替换决策层，不应该侵入底层单位组件。
+- 索敌组件只查询当前可见地图内的 `combat_unit` 列表并按队伍过滤，不依赖 `Area2D` 雷达碰撞箱。
 - 不要让 AI 直接扣敌人 HP。
 - `RobotInspector` 读取单位公开状态，不直接调用 AI 决策函数；被检查对象可以是我方机器人，也可以是调试敌军。
 - `RobotInspector` 在 MVP 阶段可以只是 `ObjectInspector` 的机器人/单位分支，后续再拆成独立 `Scenes/ui/robot_inspector.tscn`。
@@ -951,6 +955,7 @@ Scenes/ui/robot_inspector.tscn
 ### 验收标准
 
 - 机器人会移动、索敌、开火。
+- 索敌结果来自当前可见地图内的敌军列表，而不是雷达碰撞箱进入/离开事件。
 - 默认脑干不会在开火时继续沿上一帧接近速度贴近敌人；进入射程后应停止接近或维持在射程边缘。
 - 子弹能造成伤害。
 - 机器人死亡后移除或回收到对象池。
@@ -959,6 +964,8 @@ Scenes/ui/robot_inspector.tscn
 - 调试敌军能沿预设路径移动，不攻击，但能被我方机器人索敌和攻击。
 - 调试敌军与我方机器人共享底层生命、移动、受伤和检查器数据结构。
 - 选中我方机器人或调试敌军时，能看见目标、动作、寿命/生命和默认脑干或路径移动状态。
+- 选中我方机器人或调试敌军时，能看见最近 5 次规则或默认脑干触发记录。
+- 单位头顶能显示当前动作短文本，便于开发期观察。
 - 机器人不会被网格系统强制吸附。
 
 ## 十二、阶段 6：自定义规则与集结行为

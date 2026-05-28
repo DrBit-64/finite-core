@@ -31,5 +31,13 @@
       "grid_size": [1, 1],
       "amount": 10000
     }
+  ],
+  "debug_enemies": [
+    {
+      "id": "debug_enemy_001",
+      "display_name": "调试靶机",
+      "grid_path": [[17, 8], [19, 12], [16, 16], [12, 14]],
+      "loop": true
+    }
   ]
 }

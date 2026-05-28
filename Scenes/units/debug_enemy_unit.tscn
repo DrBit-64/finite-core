@@ -1,0 +1,82 @@
+[gd_scene load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://Scripts/robot.gd" id="1_enemy_robot"]
+[ext_resource type="Texture2D" path="res://Resources/art/units/debug_enemy_unit.svg" id="2_enemy_icon"]
+[ext_resource type="Script" path="res://Scripts/units/health_component.gd" id="3_health"]
+[ext_resource type="Script" path="res://Scripts/units/movement_component.gd" id="4_move"]
+[ext_resource type="Script" path="res://Scripts/units/weapon_component.gd" id="5_weapon"]
+[ext_resource type="Script" path="res://Scripts/units/visible_enemy_sensor.gd" id="6_sensor"]
+[ext_resource type="Script" path="res://Scripts/units/lifespan_component.gd" id="7_lifespan"]
+[ext_resource type="Script" path="res://Scripts/units/default_brain.gd" id="8_default_brain"]
+[ext_resource type="Script" path="res://Scripts/units/path_follow_brain.gd" id="9_path_brain"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_enemy_body"]
+radius = 20.0
+
+[node name="DebugEnemyUnit" type="CharacterBody2D"]
+collision_mask = 0
+script = ExtResource("1_enemy_robot")
+display_name = "调试靶机"
+max_hp = 420
+speed = 54.0
+team = "Team_B"
+lifespan_seconds = 0.0
+pool_name = "debug_enemy_unit"
+fire_range = 0.0
+weapon_enabled = false
+brain_mode = "path_patrol"
+default_brain_enabled = false
+visual_size = Vector2(46, 46)
+icon_path = "res://Resources/art/units/debug_enemy_unit.svg"
+
+[node name="UnitSprite" type="Sprite2D" parent="."]
+texture = ExtResource("2_enemy_icon")
+scale = Vector2(0.958333, 0.958333)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_enemy_body")
+
+[node name="Muzzle" type="Marker2D" parent="."]
+position = Vector2(24, 0)
+
+[node name="HPBar" type="ProgressBar" parent="."]
+visible = false
+offset_left = -25.0
+offset_top = -34.0
+offset_right = 25.0
+offset_bottom = -27.0
+show_percentage = false
+
+[node name="ActionLabel" type="Label" parent="."]
+visible = false
+offset_left = -58.0
+offset_top = -56.0
+offset_right = 58.0
+offset_bottom = -36.0
+theme_override_colors/font_color = Color(1, 0.78, 0.54, 1)
+theme_override_colors/font_outline_color = Color(0.02, 0.03, 0.04, 0.92)
+theme_override_constants/outline_size = 3
+theme_override_font_sizes/font_size = 12
+horizontal_alignment = 1
+
+[node name="LifespanComponent" type="Node" parent="."]
+script = ExtResource("7_lifespan")
+
+[node name="HealthComponent" type="Node" parent="."]
+script = ExtResource("3_health")
+
+[node name="MovementComponent" type="Node" parent="."]
+script = ExtResource("4_move")
+
+[node name="WeaponComponent" type="Node" parent="."]
+script = ExtResource("5_weapon")
+enabled = false
+
+[node name="VisibleEnemySensor" type="Node" parent="."]
+script = ExtResource("6_sensor")
+
+[node name="DefaultBrain" type="Node" parent="."]
+script = ExtResource("8_default_brain")
+
+[node name="PathFollowBrain" type="Node" parent="."]
+script = ExtResource("9_path_brain")

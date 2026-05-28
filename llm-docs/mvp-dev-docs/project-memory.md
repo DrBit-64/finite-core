@@ -83,3 +83,33 @@ var panel_size := panel.get_combined_minimum_size()
   - `_position_operation_panel()`
 
 后续新增类似弹窗时，优先复用这一结构，而不是重新手写尺寸计算。
+
+## Debug 数值覆盖登记
+
+**记录时间**：2026-05-28
+**适用范围**：任何为了减少等待、方便验证、制造极端场景或辅助手动测试而做的数值修改。
+
+### 长期规则
+
+后续每次因为调试目的修改数值，都必须同步更新：
+
+- `llm-docs/mvp-dev-docs/debug-balance-overrides.md`
+
+登记时至少写明：
+
+- 修改日期。
+- 数值项名称。
+- 配置或脚本位置。
+- 修改前数值。
+- 修改后数值。
+- 调试目的。
+- 正式化前处理建议。
+
+### 工程建议
+
+调试数值优先放在外部配置中，不要散落在生产逻辑里。当前可参考：
+
+- `Resources/data/debug/mvp_debug_starting_inventory.json`：调试开局库存。
+- `Resources/data/units/mvp_unit_blueprints.json`：单位蓝图与基础机器人属性。
+
+如果临时必须改脚本常量，也要在 `debug-balance-overrides.md` 记录，并在后续尽快迁移到外部配置。

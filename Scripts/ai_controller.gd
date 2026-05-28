@@ -95,6 +95,7 @@ func execute_action(act: int, target: Node2D) -> void:
 		AI_RULE_SCRIPT.Action.APPROACH:
 			if target and robot.has_method("move_towards"):
 				robot.move_towards(target.global_position)
+				_record_rule_trigger("规则：接近目标")
 		AI_RULE_SCRIPT.Action.FLEE:
 			if not robot.has_method("flee_from"):
 				return
@@ -103,12 +104,19 @@ func execute_action(act: int, target: Node2D) -> void:
 				flee_target = robot.get_current_enemy()
 			if flee_target:
 				robot.flee_from(flee_target.global_position)
+				_record_rule_trigger("规则：远离目标")
 		AI_RULE_SCRIPT.Action.FIRE_MAIN:
 			if target and robot.has_method("fire_weapon"):
 				robot.fire_weapon(target)
+				_record_rule_trigger("规则：主武器开火")
 		AI_RULE_SCRIPT.Action.STOP_ACTION:
 			if robot.has_method("stop_and_idle"):
 				robot.stop_and_idle()
+				_record_rule_trigger("规则：停止")
 
 func _on_tick_timer_timeout() -> void:
 	evaluate_logic()
+
+func _record_rule_trigger(description: String) -> void:
+	if robot and robot.has_method("record_brain_trigger"):
+		robot.record_brain_trigger(StringName(description), description)
