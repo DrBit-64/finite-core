@@ -4,8 +4,12 @@ class_name MvpHud
 signal build_mode_requested(building_id: StringName)
 signal processor_recipe_selected(processor: Node, recipe_id: StringName)
 signal forge_rally_point_requested(forge: Node)
+signal blueprint_library_requested
+signal blueprint_save_requested(source_blueprint_id: StringName, display_name: String, embedded_rules: Array, state_flag_defaults: Dictionary, save_as_new: bool)
+signal forge_blueprint_selected(forge: Node, blueprint_id: StringName)
 
 const BottomPromptScript := preload("res://Scripts/ui/bottom_prompt.gd")
+const BlueprintManagementOverlayScript := preload("res://Scripts/ui/blueprint_management_overlay.gd")
 
 @onready var current_goal_label: Label = %CurrentGoalLabel
 @onready var resource_summary_label: Label = %ResourceSummaryLabel
@@ -25,6 +29,7 @@ var _operation_list: VBoxContainer = null
 var _operation_mode: StringName = &""
 var _operation_processor: Node = null
 var _operation_recipes: Array[RecipeDef] = []
+var _operation_blueprints: Array[UnitBlueprint] = []
 var _operation_forge: Node = null
 var _operation_current_label: Label = null
 var _operation_recipe_detail_label: Label = null
@@ -39,6 +44,21 @@ var _operation_alive_label: Label = null
 var _operation_rally_label: Label = null
 var _operation_cost_label: Label = null
 var _bottom_prompt: BottomPrompt = null
+var _blueprint_button: Button = null
+var _blueprints: Array[UnitBlueprint] = []
+var _blueprint_panel: PanelContainer = null
+var _blueprint_list: VBoxContainer = null
+var _blueprint_source_option: OptionButton = null
+var _blueprint_name_edit: LineEdit = null
+var _blueprint_detail_label: Label = null
+var _blueprint_rule_list: VBoxContainer = null
+var _blueprint_default_brain_check: CheckBox = null
+var _blueprint_rule_template_option: OptionButton = null
+var _blueprint_draft_rules: Array = []
+var _blueprint_selected_source_id: StringName = &""
+var _forge_blueprint_picker: PanelContainer = null
+var _forge_blueprint_list: VBoxContainer = null
+var _blueprint_overlay: Control = null
 
 func _ready() -> void:
 	set_current_goal("阶段 0：验证 MVP 测试入口")
@@ -49,6 +69,7 @@ func _ready() -> void:
 	if debug_event_panel:
 		debug_event_panel.add_event_line("MVP HUD 已加载")
 	_ensure_bottom_prompt()
+	_ensure_blueprint_button()
 
 func set_current_goal(text: String) -> void:
 	if current_goal_label:
@@ -104,18 +125,20 @@ func show_processor_panel(processor: Node, recipes: Array[RecipeDef], resource_d
 		_operation_processor = processor
 		_operation_forge = null
 		_operation_recipes = recipes.duplicate()
+		_operation_blueprints.clear()
 		_rebuild_processor_panel(processor, recipes)
 	_update_processor_panel(processor, resource_defs)
 	_position_operation_panel(screen_position)
 
-func show_forge_panel(forge: Node, blueprint: UnitBlueprint, resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
+func show_forge_panel(forge: Node, blueprint: UnitBlueprint, blueprints: Array[UnitBlueprint], resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
 	_ensure_operation_panel()
 	_operation_panel.visible = true
-	if _operation_mode != &"forge" or _operation_forge != forge:
+	if _operation_mode != &"forge" or _operation_forge != forge or _operation_blueprints.size() != blueprints.size():
 		_operation_mode = &"forge"
 		_operation_forge = forge
 		_operation_processor = null
 		_operation_recipes.clear()
+		_operation_blueprints = blueprints.duplicate()
 		_rebuild_forge_panel(forge)
 	_update_forge_panel(forge, blueprint, resource_defs)
 	_position_operation_panel(screen_position)
@@ -126,6 +149,9 @@ func hide_operation_panel() -> void:
 	_operation_mode = &""
 	_operation_processor = null
 	_operation_forge = null
+	_operation_blueprints.clear()
+	if _forge_blueprint_picker:
+		_forge_blueprint_picker.visible = false
 
 func set_resource_amounts(resource_defs: Array[ResourceDef], amounts: Dictionary) -> void:
 	_inventory_amounts = amounts.duplicate(true)
@@ -138,6 +164,13 @@ func set_resource_amounts(resource_defs: Array[ResourceDef], amounts: Dictionary
 func set_building_options(building_defs: Array[BuildingDef]) -> void:
 	_building_defs = building_defs.duplicate()
 	_refresh_build_buttons()
+
+func set_blueprint_library(blueprints: Array[UnitBlueprint]) -> void:
+	_blueprints = blueprints.duplicate()
+	if _blueprint_overlay and _blueprint_overlay.has_method("set_blueprints"):
+		_blueprint_overlay.call("set_blueprints", _blueprints)
+	if _blueprint_panel and _blueprint_panel.visible:
+		_rebuild_blueprint_panel()
 
 func _refresh_build_buttons() -> void:
 	if build_button_row == null:
@@ -301,6 +334,221 @@ func _ensure_bottom_prompt() -> void:
 	_bottom_prompt.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	root_control.add_child(_bottom_prompt)
 
+func _ensure_blueprint_button() -> void:
+	if _blueprint_button != null:
+		return
+	_blueprint_button = Button.new()
+	_blueprint_button.name = "BlueprintLibraryButton"
+	_blueprint_button.text = "蓝图"
+	_blueprint_button.tooltip_text = "打开机器人蓝图管理"
+	_blueprint_button.anchor_left = 1.0
+	_blueprint_button.anchor_top = 1.0
+	_blueprint_button.anchor_right = 1.0
+	_blueprint_button.anchor_bottom = 1.0
+	_blueprint_button.offset_left = -142.0
+	_blueprint_button.offset_top = -150.0
+	_blueprint_button.offset_right = -24.0
+	_blueprint_button.offset_bottom = -112.0
+	_blueprint_button.z_index = 135
+	_blueprint_button.pressed.connect(_on_blueprint_button_pressed)
+	root_control.add_child(_blueprint_button)
+
+func _on_blueprint_button_pressed() -> void:
+	blueprint_library_requested.emit()
+	_ensure_blueprint_overlay()
+	if _blueprint_panel:
+		_blueprint_panel.visible = false
+	_blueprint_overlay.call("set_blueprints", _blueprints)
+	_blueprint_overlay.visible = not _blueprint_overlay.visible
+
+func _ensure_blueprint_overlay() -> void:
+	if _blueprint_overlay != null:
+		return
+	_blueprint_overlay = BlueprintManagementOverlayScript.new()
+	_blueprint_overlay.name = "BlueprintManagementOverlay"
+	_blueprint_overlay.visible = false
+	_blueprint_overlay.z_index = 150
+	_blueprint_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	_blueprint_overlay.save_requested.connect(_on_blueprint_overlay_save_requested)
+	root_control.add_child(_blueprint_overlay)
+
+func _on_blueprint_overlay_save_requested(source_blueprint_id: StringName, display_name: String, embedded_rules: Array, state_flag_defaults: Dictionary, save_as_new: bool) -> void:
+	blueprint_save_requested.emit(source_blueprint_id, display_name, embedded_rules, state_flag_defaults, save_as_new)
+
+func _ensure_blueprint_panel() -> void:
+	if _blueprint_panel != null:
+		return
+	_blueprint_panel = PanelContainer.new()
+	_blueprint_panel.name = "BlueprintLibraryPanel"
+	_blueprint_panel.visible = false
+	_blueprint_panel.z_index = 95
+	_blueprint_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	_blueprint_panel.anchor_left = 1.0
+	_blueprint_panel.anchor_top = 1.0
+	_blueprint_panel.anchor_right = 1.0
+	_blueprint_panel.anchor_bottom = 1.0
+	_blueprint_panel.offset_left = -388.0
+	_blueprint_panel.offset_top = -470.0
+	_blueprint_panel.offset_right = -24.0
+	_blueprint_panel.offset_bottom = -160.0
+	_blueprint_panel.add_theme_stylebox_override("panel", _make_operation_panel_style())
+	root_control.add_child(_blueprint_panel)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 10)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_right", 10)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	_blueprint_panel.add_child(margin)
+
+	var root := VBoxContainer.new()
+	root.add_theme_constant_override("separation", 8)
+	margin.add_child(root)
+
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 8)
+	var title := _make_operation_label("机器人蓝图库", Color(0.96, 0.98, 1.0, 1.0), 15)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(title)
+	var close_button := Button.new()
+	close_button.text = "关闭"
+	close_button.custom_minimum_size = Vector2(64, 28)
+	close_button.pressed.connect(func() -> void:
+		_blueprint_panel.visible = false
+	)
+	header.add_child(close_button)
+	root.add_child(header)
+
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(330, 148)
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(scroll)
+
+	_blueprint_list = VBoxContainer.new()
+	_blueprint_list.add_theme_constant_override("separation", 6)
+	scroll.add_child(_blueprint_list)
+
+	root.add_child(_make_operation_label("新建蓝图", Color(0.78, 0.86, 0.94, 1.0), 13))
+	_blueprint_source_option = OptionButton.new()
+	_blueprint_source_option.custom_minimum_size = Vector2(320, 28)
+	root.add_child(_blueprint_source_option)
+	_blueprint_name_edit = LineEdit.new()
+	_blueprint_name_edit.placeholder_text = "蓝图名称"
+	_blueprint_name_edit.text = "集结步枪机器人"
+	_blueprint_name_edit.custom_minimum_size = Vector2(320, 28)
+	root.add_child(_blueprint_name_edit)
+	var save_button := Button.new()
+	save_button.text = "保存为先集结再战斗蓝图"
+	save_button.custom_minimum_size = Vector2(320, 30)
+	save_button.pressed.connect(_on_save_rally_blueprint_pressed)
+	root.add_child(save_button)
+
+func _rebuild_blueprint_panel() -> void:
+	if _blueprint_list == null or _blueprint_source_option == null:
+		return
+	for child in _blueprint_list.get_children():
+		_blueprint_list.remove_child(child)
+		child.queue_free()
+	_blueprint_source_option.clear()
+	if _blueprints.is_empty():
+		_blueprint_list.add_child(_make_operation_label("暂无蓝图", Color(0.84, 0.88, 0.92, 1.0), 13))
+		return
+	for blueprint in _blueprints:
+		_blueprint_list.add_child(_make_blueprint_summary_row(blueprint))
+		_blueprint_source_option.add_item("%s v%s" % [blueprint.display_name, blueprint.version])
+		_blueprint_source_option.set_item_metadata(_blueprint_source_option.item_count - 1, blueprint.id)
+	_blueprint_source_option.select(0)
+
+func _make_blueprint_summary_row(blueprint: UnitBlueprint) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var label := _make_operation_label(_format_blueprint_summary(blueprint), Color(0.88, 0.94, 1.0, 1.0), 13)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(label)
+	var clone_button := Button.new()
+	clone_button.text = "集结版"
+	clone_button.custom_minimum_size = Vector2(74, 26)
+	clone_button.pressed.connect(_on_blueprint_clone_rally_pressed.bind(blueprint.id), CONNECT_DEFERRED)
+	row.add_child(clone_button)
+	return row
+
+func _format_blueprint_summary(blueprint: UnitBlueprint) -> String:
+	var modules := " / ".join(blueprint.module_display_names)
+	var rule_count := blueprint.embedded_rules.size()
+	return "%s v%s | %s | %s | 规则 %d" % [
+		blueprint.display_name,
+		blueprint.version,
+		blueprint.chassis_display_name,
+		modules,
+		rule_count,
+	]
+
+func _on_save_rally_blueprint_pressed() -> void:
+	if _blueprint_source_option == null or _blueprint_source_option.item_count <= 0:
+		return
+	var selected_index := _blueprint_source_option.selected
+	var source_id := StringName(str(_blueprint_source_option.get_item_metadata(selected_index)))
+	blueprint_save_requested.emit(source_id, _blueprint_name_edit.text if _blueprint_name_edit else "", [], {}, true)
+
+func _on_blueprint_clone_rally_pressed(source_blueprint_id: StringName) -> void:
+	var display_name := "集结蓝图"
+	for blueprint in _blueprints:
+		if blueprint.id == source_blueprint_id:
+			display_name = "%s 集结版" % blueprint.display_name
+			break
+	blueprint_save_requested.emit(source_blueprint_id, display_name, [], {}, true)
+
+func _on_forge_blueprint_picker_pressed(forge: Node) -> void:
+	_show_forge_blueprint_picker(forge)
+
+func _show_forge_blueprint_picker(forge: Node) -> void:
+	_ensure_forge_blueprint_picker()
+	for child in _forge_blueprint_list.get_children():
+		_forge_blueprint_list.remove_child(child)
+		child.queue_free()
+	var available_blueprints := _operation_blueprints if not _operation_blueprints.is_empty() else _blueprints
+	for blueprint in available_blueprints:
+		var button := Button.new()
+		button.text = "%s v%s" % [blueprint.display_name, blueprint.version]
+		button.tooltip_text = _format_blueprint_summary(blueprint)
+		button.custom_minimum_size = Vector2(210, 28)
+		button.pressed.connect(_on_forge_blueprint_selected.bind(forge, blueprint.id), CONNECT_DEFERRED)
+		_forge_blueprint_list.add_child(button)
+	if available_blueprints.is_empty():
+		_forge_blueprint_list.add_child(_make_operation_label("暂无可选蓝图", Color(0.84, 0.88, 0.92, 1.0), 13))
+	var panel_size := Vector2(236, minf(260.0, maxf(64.0, _forge_blueprint_list.get_combined_minimum_size().y + 20.0)))
+	_forge_blueprint_picker.visible = true
+	_forge_blueprint_picker.size = panel_size
+	_forge_blueprint_picker.position = get_viewport().get_mouse_position()
+
+func _ensure_forge_blueprint_picker() -> void:
+	if _forge_blueprint_picker != null:
+		return
+	_forge_blueprint_picker = PanelContainer.new()
+	_forge_blueprint_picker.name = "ForgeBlueprintPicker"
+	_forge_blueprint_picker.visible = false
+	_forge_blueprint_picker.z_index = 110
+	_forge_blueprint_picker.mouse_filter = Control.MOUSE_FILTER_STOP
+	_forge_blueprint_picker.add_theme_stylebox_override("panel", _make_operation_panel_style())
+	root_control.add_child(_forge_blueprint_picker)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 8)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_right", 8)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	_forge_blueprint_picker.add_child(margin)
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(220, 56)
+	margin.add_child(scroll)
+	_forge_blueprint_list = VBoxContainer.new()
+	_forge_blueprint_list.add_theme_constant_override("separation", 5)
+	scroll.add_child(_forge_blueprint_list)
+
+func _on_forge_blueprint_selected(forge: Node, blueprint_id: StringName) -> void:
+	if _forge_blueprint_picker:
+		_forge_blueprint_picker.visible = false
+	forge_blueprint_selected.emit(forge, blueprint_id)
+
 func _ensure_operation_panel() -> void:
 	if _operation_panel != null:
 		return
@@ -418,6 +666,11 @@ func _rebuild_forge_panel(forge: Node) -> void:
 	rally_button.custom_minimum_size = Vector2(112, 30)
 	rally_button.pressed.connect(_on_forge_rally_button_pressed.bind(forge), CONNECT_DEFERRED)
 	action_row.add_child(rally_button)
+	var blueprint_button := Button.new()
+	blueprint_button.text = "选择蓝图"
+	blueprint_button.custom_minimum_size = Vector2(96, 30)
+	blueprint_button.pressed.connect(_on_forge_blueprint_picker_pressed.bind(forge), CONNECT_DEFERRED)
+	action_row.add_child(blueprint_button)
 	_operation_list.add_child(action_row)
 	_operation_panel.size = _operation_panel.get_combined_minimum_size()
 

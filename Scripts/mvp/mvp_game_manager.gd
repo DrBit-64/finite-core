@@ -15,6 +15,7 @@ const RobotScene := preload("res://Scenes/robot.tscn")
 const DebugEnemyScene := preload("res://Scenes/units/debug_enemy_unit.tscn")
 const MapConfigLoaderScript := preload("res://Scripts/map/map_config_loader.gd")
 const StartingInventoryConfigLoaderScript := preload("res://Scripts/data/starting_inventory_config_loader.gd")
+const BlueprintLibraryScript := preload("res://Scripts/blueprints/blueprint_library.gd")
 const OPERATION_PANEL_REFRESH_INTERVAL := 0.1
 const UNIT_INSPECTOR_REFRESH_INTERVAL := 0.2
 
@@ -43,6 +44,7 @@ const UNIT_INSPECTOR_REFRESH_INTERVAL := 0.2
 var resource_defs: Array[ResourceDef] = []
 var recipe_defs: Array[RecipeDef] = []
 var basic_rifle_blueprint: UnitBlueprint
+var blueprint_library: BlueprintLibrary
 var building_defs: Array[BuildingDef] = []
 var grid_occupancy = GridOccupancyScript.new()
 var main_base: Node = null
@@ -192,6 +194,8 @@ func _load_stage_one_data() -> void:
 	resource_defs = MvpDataDefaults.create_resource_defs()
 	recipe_defs = MvpDataDefaults.create_recipe_defs()
 	basic_rifle_blueprint = MvpDataDefaults.create_basic_rifle_blueprint()
+	blueprint_library = BlueprintLibraryScript.new()
+	blueprint_library.add_blueprint(basic_rifle_blueprint)
 	building_defs = MvpDataDefaults.create_mvp_building_defs()
 	starting_inventory = StartingInventoryConfigLoaderScript.load_starting_inventory(starting_inventory_config_path, starting_inventory)
 	resource_summary_placeholder = "资源 %d / 配方 %d / 建筑 %d" % [
@@ -217,8 +221,15 @@ func _configure_hud() -> void:
 		hud.connect("processor_recipe_selected", Callable(self, "_on_processor_recipe_selected"))
 	if hud.has_signal("forge_rally_point_requested"):
 		hud.connect("forge_rally_point_requested", Callable(self, "_on_forge_rally_point_requested"))
+	if hud.has_signal("blueprint_library_requested"):
+		hud.connect("blueprint_library_requested", Callable(self, "_on_blueprint_library_requested"))
+	if hud.has_signal("blueprint_save_requested"):
+		hud.connect("blueprint_save_requested", Callable(self, "_on_blueprint_save_requested"))
+	if hud.has_signal("forge_blueprint_selected"):
+		hud.connect("forge_blueprint_selected", Callable(self, "_on_forge_blueprint_selected"))
 	_refresh_build_options()
 	_refresh_resource_hud()
+	_refresh_blueprint_library_ui()
 
 func _setup_stage_two_world() -> void:
 	if grid_map == null:
@@ -244,6 +255,8 @@ func _log_startup_status() -> void:
 			String(basic_rifle_blueprint.production_recipe_id),
 			JSON.stringify(basic_rifle_blueprint.production_cost),
 		])
+	if blueprint_library:
+		push_debug_event("Blueprint library ready: %d definitions; production uses snapshots." % blueprint_library.get_blueprints().size())
 	if grid_map and grid_map.has_method("describe"):
 		push_debug_event("网格地图：%s" % grid_map.call("describe"))
 	else:
@@ -688,7 +701,7 @@ func _configure_building_runtime(building: Node, building_def: BuildingDef, orig
 		if building.has_signal("processor_state_changed"):
 			building.connect("processor_state_changed", Callable(self, "_on_processor_state_changed").bind(building))
 	elif _is_robot_forge_def(building_def) and building.has_method("setup_forge"):
-		building.call("setup_forge", basic_rifle_blueprint, inventory)
+		building.call("setup_forge", _create_blueprint_snapshot(basic_rifle_blueprint), inventory)
 		if building.has_signal("forge_state_changed"):
 			building.connect("forge_state_changed", Callable(self, "_on_forge_state_changed").bind(building))
 		if building.has_signal("robot_production_completed"):
@@ -731,10 +744,12 @@ func _refresh_operation_panel() -> void:
 			_world_to_screen(selected_operation_building.global_position)
 		)
 	elif _is_robot_forge_def(building_def) and hud.has_method("show_forge_panel"):
+		var forge_blueprint: UnitBlueprint = selected_operation_building.get("blueprint")
 		hud.call(
 			"show_forge_panel",
 			selected_operation_building,
-			basic_rifle_blueprint,
+			forge_blueprint,
+			blueprint_library.get_blueprints() if blueprint_library else [],
 			resource_defs,
 			_world_to_screen(selected_operation_building.global_position)
 		)
@@ -776,6 +791,8 @@ func _on_forge_robot_production_completed(forge: Node, blueprint: UnitBlueprint)
 			forge.get("rally_point_position"),
 			bool(forge.get("has_rally_point"))
 		)
+	if robot.has_signal("robot_lost") and not robot.is_connected("robot_lost", Callable(self, "_on_robot_lost_for_blueprint_cleanup")):
+		robot.connect("robot_lost", Callable(self, "_on_robot_lost_for_blueprint_cleanup"))
 	if forge.has_method("register_robot"):
 		forge.call("register_robot", robot)
 	_record_robot_produced(forge, robot, blueprint)
@@ -788,10 +805,99 @@ func _record_robot_produced(forge: Node, robot: Node, blueprint: UnitBlueprint) 
 			"robot": robot.name,
 			"blueprint_id": String(blueprint.id),
 			"blueprint_version": blueprint.version,
+			"blueprint_snapshot_id": blueprint.get_snapshot_key(),
 			"rally_point": _format_vector2_payload(forge.get("rally_point_position")),
 			"has_rally_point": bool(forge.get("has_rally_point")),
 		})
 	push_debug_event("锻造完成：%s -> %s" % [blueprint.display_name, robot.name])
+
+func _on_blueprint_library_requested() -> void:
+	_refresh_blueprint_library_ui()
+
+func _on_blueprint_save_requested(source_blueprint_id: StringName, display_name: String, embedded_rules: Array, state_flag_defaults: Dictionary, save_as_new: bool) -> void:
+	if blueprint_library == null:
+		return
+	var source_blueprint := blueprint_library.get_blueprint(source_blueprint_id)
+	if source_blueprint == null:
+		source_blueprint = basic_rifle_blueprint
+	if source_blueprint == null:
+		return
+	var final_name := display_name.strip_edges()
+	if final_name.is_empty():
+		final_name = "%s 自定义" % source_blueprint.display_name if save_as_new else source_blueprint.display_name
+	elif save_as_new and final_name == source_blueprint.display_name:
+		final_name = "%s 自定义" % source_blueprint.display_name
+	var saved_blueprint := source_blueprint.make_snapshot()
+	saved_blueprint.id = StringName("custom_%d" % Time.get_ticks_msec()) if save_as_new else source_blueprint.id
+	saved_blueprint.display_name = final_name
+	saved_blueprint.version = 1 if save_as_new else source_blueprint.version
+	saved_blueprint.snapshot_id = &""
+	saved_blueprint.source_blueprint_id = &""
+	saved_blueprint.is_snapshot = false
+	saved_blueprint.embedded_rules = embedded_rules.duplicate(true)
+	saved_blueprint.state_flag_defaults = state_flag_defaults.duplicate(true)
+	if save_as_new:
+		blueprint_library.add_blueprint(saved_blueprint)
+		push_debug_event("Blueprint saved as new: %s v%s" % [saved_blueprint.display_name, saved_blueprint.version])
+	else:
+		blueprint_library.save_blueprint(saved_blueprint)
+		push_debug_event("Blueprint updated: %s v%s" % [saved_blueprint.display_name, saved_blueprint.version])
+	_refresh_blueprint_library_ui()
+
+func _on_forge_blueprint_selected(forge: Node, blueprint_id: StringName) -> void:
+	if forge == null or not is_instance_valid(forge) or blueprint_library == null:
+		return
+	var blueprint := blueprint_library.get_blueprint(blueprint_id)
+	if blueprint == null:
+		push_debug_event("Blueprint switch failed: %s" % String(blueprint_id))
+		return
+	if forge.has_method("set_blueprint_snapshot"):
+		forge.call("set_blueprint_snapshot", _create_blueprint_snapshot(blueprint))
+	push_debug_event("Forge blueprint switched: %s v%s" % [blueprint.display_name, blueprint.version])
+	_prune_blueprint_snapshots()
+	call_deferred("_refresh_operation_panel")
+
+func _refresh_blueprint_library_ui() -> void:
+	if hud and hud.has_method("set_blueprint_library"):
+		hud.call("set_blueprint_library", blueprint_library.get_blueprints() if blueprint_library else [])
+
+func _create_blueprint_snapshot(blueprint: UnitBlueprint) -> UnitBlueprint:
+	if blueprint_library:
+		return blueprint_library.create_snapshot(blueprint)
+	if blueprint:
+		return blueprint.make_snapshot()
+	return null
+
+func _on_robot_lost_for_blueprint_cleanup(_robot: Node, _reason: StringName) -> void:
+	call_deferred("_prune_blueprint_snapshots")
+
+func _prune_blueprint_snapshots() -> void:
+	if blueprint_library == null:
+		return
+	var removed := blueprint_library.prune_unused_snapshots(_collect_active_blueprint_snapshot_ids())
+	if removed > 0:
+		push_debug_event("Removed stale blueprint snapshots: %d" % removed)
+
+func _collect_active_blueprint_snapshot_ids() -> Array[StringName]:
+	var result: Array[StringName] = []
+	var building_layer := _get_layer("BuildingLayer")
+	if building_layer == null:
+		return result
+	for child in building_layer.get_children():
+		if child == null or not is_instance_valid(child):
+			continue
+		var building_def: BuildingDef = child.get("building_def")
+		if not _is_robot_forge_def(building_def):
+			continue
+		var forge_blueprint: UnitBlueprint = child.get("blueprint")
+		if forge_blueprint and not String(forge_blueprint.snapshot_id).is_empty() and not result.has(forge_blueprint.snapshot_id):
+			result.append(forge_blueprint.snapshot_id)
+		if child.has_method("get_tracked_snapshot_ids"):
+			for snapshot_id in child.call("get_tracked_snapshot_ids"):
+				var typed_snapshot_id := StringName(str(snapshot_id))
+				if not String(typed_snapshot_id).is_empty() and not result.has(typed_snapshot_id):
+					result.append(typed_snapshot_id)
+	return result
 
 func _on_forge_rally_point_requested(forge: Node) -> void:
 	if forge == null or not is_instance_valid(forge):

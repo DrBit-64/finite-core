@@ -47,7 +47,11 @@ static func _create_basic_rifle_blueprint_fallback(recipe_defs: Array[RecipeDef]
 	blueprint.display_name = "基础步枪机器人"
 	blueprint.version = 1
 	blueprint.icon_path = "res://Resources/art/blueprints/basic_rifle_robot.svg"
+	blueprint.chassis_id = &"light_chassis"
+	blueprint.chassis_display_name = "轻型底盘"
 	blueprint.chassis_icon_path = "res://Resources/art/chassis/light_chassis.svg"
+	blueprint.module_ids = [&"rifle_module"]
+	blueprint.module_display_names = ["步枪模块"]
 	blueprint.module_icon_paths = ["res://Resources/art/modules/rifle_module.svg"]
 	blueprint.stats = UnitStats.new()
 	if recipe:
@@ -55,6 +59,8 @@ static func _create_basic_rifle_blueprint_fallback(recipe_defs: Array[RecipeDef]
 		blueprint.production_cost = recipe.inputs.duplicate(true)
 		blueprint.production_time_seconds = recipe.duration_seconds
 	blueprint.default_brain_enabled = true
+	blueprint.embedded_rules = []
+	blueprint.state_flag_defaults = {}
 	return blueprint
 
 static func create_mvp_building_defs() -> Array[BuildingDef]:

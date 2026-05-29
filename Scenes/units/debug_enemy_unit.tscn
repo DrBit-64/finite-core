@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://Scripts/robot.gd" id="1_enemy_robot"]
 [ext_resource type="Texture2D" path="res://Resources/art/units/debug_enemy_unit.svg" id="2_enemy_icon"]
@@ -9,6 +9,7 @@
 [ext_resource type="Script" path="res://Scripts/units/lifespan_component.gd" id="7_lifespan"]
 [ext_resource type="Script" path="res://Scripts/units/default_brain.gd" id="8_default_brain"]
 [ext_resource type="Script" path="res://Scripts/units/path_follow_brain.gd" id="9_path_brain"]
+[ext_resource type="Script" path="res://Scripts/ai/unit_state_flags.gd" id="10_state_flags"]
 
 [sub_resource type="CircleShape2D" id="CircleShape2D_enemy_body"]
 radius = 20.0
@@ -74,6 +75,9 @@ enabled = false
 
 [node name="VisibleEnemySensor" type="Node" parent="."]
 script = ExtResource("6_sensor")
+
+[node name="UnitStateFlags" type="Node" parent="."]
+script = ExtResource("10_state_flags")
 
 [node name="DefaultBrain" type="Node" parent="."]
 script = ExtResource("8_default_brain")

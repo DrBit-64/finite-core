@@ -18,9 +18,14 @@ var rally_marker: Node = null
 var _tracked_robots: Array[Node] = []
 
 func setup_forge(next_blueprint: UnitBlueprint, inventory: Variant) -> void:
-	blueprint = next_blueprint
 	target_inventory = inventory
+	set_blueprint_snapshot(next_blueprint)
+
+func set_blueprint_snapshot(next_blueprint: UnitBlueprint) -> void:
+	blueprint = next_blueprint
+	progress_seconds = 0.0
 	_update_status()
+	forge_state_changed.emit()
 
 func set_rally_point(cell: Vector2i, world_position: Vector2) -> void:
 	rally_point_cell = cell
@@ -38,7 +43,24 @@ func register_robot(robot: Node) -> void:
 
 func get_alive_count() -> int:
 	_prune_robot_list()
-	return _tracked_robots.size()
+	var count := 0
+	var current_snapshot_key := _get_current_snapshot_key()
+	for robot in _tracked_robots:
+		if _robot_matches_current_snapshot(robot, current_snapshot_key):
+			count += 1
+	return count
+
+func get_tracked_snapshot_ids() -> Array[StringName]:
+	_prune_robot_list()
+	var result: Array[StringName] = []
+	for robot in _tracked_robots:
+		if robot == null or not is_instance_valid(robot):
+			continue
+		if robot.has_method("get_blueprint_snapshot_key"):
+			var snapshot_id := StringName(str(robot.call("get_blueprint_snapshot_key")))
+			if not String(snapshot_id).is_empty() and not result.has(snapshot_id):
+				result.append(snapshot_id)
+	return result
 
 func get_spawn_position() -> Vector2:
 	var center := Vector2(grid_size.x * cell_size, grid_size.y * cell_size) * 0.5
@@ -57,6 +79,8 @@ func get_missing_resources() -> Dictionary:
 func get_inspector_lines() -> Array[String]:
 	var lines := super.get_inspector_lines()
 	lines.append("蓝图：%s" % (blueprint.display_name if blueprint else "未绑定"))
+	if blueprint and not String(blueprint.get_snapshot_key()).is_empty():
+		lines.append("蓝图快照：%s" % blueprint.get_snapshot_key())
 	lines.append("存活：%s / %s" % [get_alive_count(), target_alive_count])
 	lines.append("状态：%s" % status_text)
 	lines.append("进度：%d%%" % int(get_progress_ratio() * 100.0))
@@ -103,6 +127,20 @@ func _prune_robot_list() -> void:
 			_tracked_robots.remove_at(i)
 		elif robot is CanvasItem and not (robot as CanvasItem).visible:
 			_tracked_robots.remove_at(i)
+
+func _get_current_snapshot_key() -> String:
+	if blueprint == null:
+		return ""
+	return blueprint.get_snapshot_key()
+
+func _robot_matches_current_snapshot(robot: Node, current_snapshot_key: String) -> bool:
+	if robot == null or not is_instance_valid(robot):
+		return false
+	if current_snapshot_key.is_empty():
+		return false
+	if not robot.has_method("get_blueprint_snapshot_key"):
+		return false
+	return str(robot.call("get_blueprint_snapshot_key")) == current_snapshot_key
 
 func _set_status(next_status: String) -> void:
 	if status_text == next_status:

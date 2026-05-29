@@ -6,12 +6,90 @@
       "display_name": "基础步枪机器人",
       "version": 1,
       "icon_path": "res://Resources/art/blueprints/basic_rifle_robot.svg",
+      "chassis_id": "light_chassis",
+      "chassis_display_name": "轻型底盘",
       "chassis_icon_path": "res://Resources/art/chassis/light_chassis.svg",
+      "module_ids": [
+        "rifle_module"
+      ],
+      "module_display_names": [
+        "步枪模块"
+      ],
       "module_icon_paths": [
         "res://Resources/art/modules/rifle_module.svg"
       ],
       "production_recipe_id": "forge_basic_rifle_robot",
       "default_brain_enabled": true,
+      "state_flag_defaults": {
+        "rallied": false,
+        "squad_ready": false
+      },
+      "embedded_rules": [
+        {
+          "id": "move_to_rally",
+          "name": "集结小队",
+          "subject": "self",
+          "match_mode": "all",
+          "conditions": [
+            {"type": "has_rally_point"},
+            {"type": "self_flag_is", "flag": "rallied", "value": false},
+            {"type": "distance_to_rally_greater", "value": 20.0}
+          ],
+          "action": "move_to_rally"
+        },
+        {
+          "id": "mark_rallied",
+          "name": "集结小队",
+          "subject": "self",
+          "match_mode": "all",
+          "conditions": [
+            {"type": "has_rally_point"},
+            {"type": "self_flag_is", "flag": "rallied", "value": false},
+            {"type": "distance_to_rally_less_equal", "value": 20.0}
+          ],
+          "action": "set_self_flag",
+          "flag": "rallied",
+          "value": true
+        },
+        {
+          "id": "wait_for_squad",
+          "name": "等待队友",
+          "subject": "self",
+          "match_mode": "all",
+          "conditions": [
+            {"type": "has_rally_point"},
+            {"type": "self_flag_is", "flag": "rallied", "value": true},
+            {"type": "self_flag_is", "flag": "squad_ready", "value": false},
+            {"type": "allies_near_rally_less", "value": 4, "radius": 90.0}
+          ],
+          "action": "wait"
+        },
+        {
+          "id": "mark_squad_ready",
+          "name": "等待队友",
+          "subject": "self",
+          "match_mode": "all",
+          "conditions": [
+            {"type": "has_rally_point"},
+            {"type": "self_flag_is", "flag": "rallied", "value": true},
+            {"type": "self_flag_is", "flag": "squad_ready", "value": false},
+            {"type": "allies_near_rally_at_least", "value": 4, "radius": 90.0}
+          ],
+          "action": "set_self_flag",
+          "flag": "squad_ready",
+          "value": true
+        },
+        {
+          "id": "default_after_rally",
+          "name": "默认脑干接管",
+          "subject": "self",
+          "match_mode": "all",
+          "conditions": [
+            {"type": "self_flag_is", "flag": "squad_ready", "value": true}
+          ],
+          "action": "default_combat"
+        }
+      ],
       "stats": {
         "max_hp": 60,
         "speed": 90.0,

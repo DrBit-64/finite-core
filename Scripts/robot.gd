@@ -27,6 +27,7 @@ signal robot_lost(robot: Node, reason: StringName)
 var hp: int = 60
 var blueprint_id: StringName = &""
 var blueprint_version: int = 0
+var blueprint_snapshot_id: StringName = &""
 var rally_point_position: Vector2 = Vector2.ZERO
 var has_rally_point: bool = false
 
@@ -45,6 +46,8 @@ var _facing_angle: float = 0.0
 var _brain_trigger_history: Array[String] = []
 var _last_brain_trigger_key: StringName = &""
 var _last_brain_trigger_msec: int = 0
+var _current_rule_bubble_text: String = ""
+var _current_rule_bubble_until_msec: int = 0
 
 @onready var unit_sprite: Sprite2D = get_node_or_null("UnitSprite")
 @onready var hp_bar: ProgressBar = get_node_or_null("HPBar")
@@ -55,8 +58,10 @@ var _last_brain_trigger_msec: int = 0
 @onready var movement_component = get_node_or_null("MovementComponent")
 @onready var weapon_component = get_node_or_null("WeaponComponent")
 @onready var enemy_sensor = get_node_or_null("VisibleEnemySensor")
+@onready var state_flags = get_node_or_null("UnitStateFlags")
 @onready var default_brain = get_node_or_null("DefaultBrain")
 @onready var path_follow_brain = get_node_or_null("PathFollowBrain")
+@onready var ai_controller = get_node_or_null("AIController")
 
 func _ready() -> void:
 	_connect_components()
@@ -76,7 +81,12 @@ func _physics_process(delta: float) -> void:
 					movement_component.stop(&"idle")
 		"default_combat":
 			if default_brain_enabled:
-				if default_brain:
+				var rule_handled := false
+				if ai_controller and ai_controller.has_method("evaluate_logic"):
+					rule_handled = bool(ai_controller.call("evaluate_logic"))
+				if rule_handled:
+					pass
+				elif default_brain:
 					default_brain.tick(self)
 				else:
 					current_action = "默认脑干缺失"
@@ -97,6 +107,7 @@ func setup_from_blueprint(blueprint: UnitBlueprint, next_rally_point: Vector2 = 
 		return
 	blueprint_id = blueprint.id
 	blueprint_version = blueprint.version
+	blueprint_snapshot_id = StringName(blueprint.get_snapshot_key())
 	display_name = blueprint.display_name
 	if not blueprint.icon_path.is_empty():
 		icon_path = blueprint.icon_path
@@ -108,6 +119,10 @@ func setup_from_blueprint(blueprint: UnitBlueprint, next_rally_point: Vector2 = 
 		bullet_damage = blueprint.stats.damage
 		fire_cooldown_seconds = blueprint.stats.fire_cooldown_seconds
 	default_brain_enabled = blueprint.default_brain_enabled
+	if state_flags:
+		state_flags.setup(blueprint.state_flag_defaults)
+	if ai_controller and ai_controller.has_method("set_logic_rules"):
+		ai_controller.call("set_logic_rules", blueprint.embedded_rules)
 	rally_point_position = next_rally_point
 	has_rally_point = next_has_rally_point
 	reset_state()
@@ -116,6 +131,7 @@ func setup_debug_enemy(next_name: String, path_points: Array[Vector2], loop_path
 	display_name = next_name
 	team = "Team_B"
 	brain_mode = "path_patrol"
+	blueprint_snapshot_id = &""
 	default_brain_enabled = false
 	weapon_enabled = false
 	max_hp = 420
@@ -143,6 +159,8 @@ func reset_state() -> void:
 	_brain_trigger_history.clear()
 	_last_brain_trigger_key = &""
 	_last_brain_trigger_msec = 0
+	_current_rule_bubble_text = ""
+	_current_rule_bubble_until_msec = 0
 	_sync_runtime_groups()
 	_configure_team_collision()
 	_configure_components()
@@ -179,6 +197,14 @@ func get_inspector_lines() -> Array[String]:
 		lines.append("剩余寿命：无限")
 	if not String(blueprint_id).is_empty():
 		lines.append("蓝图：%s v%s" % [String(blueprint_id), blueprint_version])
+	if not String(blueprint_snapshot_id).is_empty():
+		lines.append("蓝图快照：%s" % String(blueprint_snapshot_id))
+	if state_flags:
+		var flag_lines: Array[String] = state_flags.format_lines()
+		if not flag_lines.is_empty():
+			lines.append("战术标记：")
+			for flag_line in flag_lines:
+				lines.append("  %s" % flag_line)
 	if has_rally_point:
 		lines.append("集结点：%.0f, %.0f" % [rally_point_position.x, rally_point_position.y])
 	if brain_mode == "path_patrol":
@@ -190,6 +216,9 @@ func get_inspector_lines() -> Array[String]:
 		lines.append("最近脑干触发：")
 		for entry in _brain_trigger_history:
 			lines.append("  %s" % entry)
+	if ai_controller and ai_controller.has_method("get_rule_debug_lines"):
+		for rule_line in ai_controller.call("get_rule_debug_lines"):
+			lines.append(rule_line)
 	return lines
 
 func set_selected(value: bool) -> void:
@@ -267,6 +296,54 @@ func stop_and_idle() -> void:
 		movement_component.stop(&"idle")
 	current_action = "闲置"
 
+func move_to_rally_point() -> void:
+	if not has_rally_point:
+		stop_and_idle()
+		current_action = "无集结点"
+		return
+	move_towards(rally_point_position)
+	current_action = "前往集结点"
+
+func distance_to_rally_point() -> float:
+	if not has_rally_point:
+		return INF
+	return global_position.distance_to(rally_point_position)
+
+func count_allies_near_rally_point(radius: float = 90.0) -> int:
+	if not has_rally_point:
+		return 0
+	var count := 0
+	for unit in get_tree().get_nodes_in_group("combat_unit"):
+		if unit == null or not is_instance_valid(unit):
+			continue
+		if not (unit is Node2D):
+			continue
+		if unit.get("team") == null or String(unit.get("team")) != team:
+			continue
+		if unit.has_method("is_alive") and not bool(unit.call("is_alive")):
+			continue
+		if rally_point_position.distance_to((unit as Node2D).global_position) <= radius:
+			count += 1
+	return count
+
+func get_state_flag(flag_id: StringName) -> bool:
+	if state_flags == null:
+		return false
+	return bool(state_flags.call("get_flag", flag_id))
+
+func set_state_flag(flag_id: StringName, value: bool, reason: String = "") -> void:
+	if state_flags == null:
+		return
+	state_flags.call("set_flag", flag_id, value)
+	if not reason.is_empty():
+		record_brain_trigger(StringName("flag_%s_%s" % [String(flag_id), value]), reason)
+
+func uses_physics_ai_tick() -> bool:
+	return true
+
+func get_blueprint_snapshot_key() -> String:
+	return String(blueprint_snapshot_id)
+
 func fire_main_weapon() -> void:
 	var enemy := get_current_enemy()
 	if enemy == null:
@@ -283,6 +360,8 @@ func record_brain_trigger(key: StringName, description: String) -> void:
 	_brain_trigger_history.push_front(description)
 	while _brain_trigger_history.size() > 5:
 		_brain_trigger_history.pop_back()
+	_current_rule_bubble_text = _format_rule_bubble_text(description)
+	_current_rule_bubble_until_msec = now + 1800
 
 func fire_weapon(target: Node2D) -> void:
 	if weapon_component == null:
@@ -388,9 +467,13 @@ func _update_unit_visuals() -> void:
 		hp_bar.value = hp
 		hp_bar.visible = hp < max_hp
 	if action_label:
-		var should_show_action := is_alive() and not current_action.is_empty() and current_action != "闲置"
-		action_label.visible = should_show_action
-		action_label.text = current_action if should_show_action else ""
+		var bubble_text := ""
+		if Time.get_ticks_msec() <= _current_rule_bubble_until_msec and not _current_rule_bubble_text.is_empty():
+			bubble_text = _current_rule_bubble_text
+		elif not current_action.is_empty() and current_action != "闲置":
+			bubble_text = current_action
+		action_label.visible = is_alive() and not bubble_text.is_empty()
+		action_label.text = bubble_text
 	queue_redraw()
 
 func _update_facing(delta: float) -> void:
@@ -504,3 +587,13 @@ func _format_fire_state() -> String:
 			return "开火"
 		_:
 			return "可开火"
+
+func _format_rule_bubble_text(description: String) -> String:
+	var text := description.strip_edges()
+	if text.begins_with("规则："):
+		text = text.trim_prefix("规则：")
+	if text.begins_with("默认脑干："):
+		text = text.trim_prefix("默认脑干：")
+	if text.begins_with("路径脑干："):
+		text = text.trim_prefix("路径脑干：")
+	return text

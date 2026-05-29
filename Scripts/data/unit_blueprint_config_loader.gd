@@ -38,9 +38,15 @@ static func _make_blueprint(data: Dictionary, recipe_defs: Array[RecipeDef]) -> 
 	blueprint.display_name = str(data.get("display_name", blueprint.id))
 	blueprint.version = int(data.get("version", 1))
 	blueprint.icon_path = str(data.get("icon_path", ""))
+	blueprint.chassis_id = StringName(str(data.get("chassis_id", blueprint.chassis_id)))
+	blueprint.chassis_display_name = str(data.get("chassis_display_name", blueprint.chassis_display_name))
 	blueprint.chassis_icon_path = str(data.get("chassis_icon_path", ""))
+	blueprint.module_ids = _string_name_array(data.get("module_ids", blueprint.module_ids))
+	blueprint.module_display_names = _string_array(data.get("module_display_names", blueprint.module_display_names))
 	blueprint.module_icon_paths = _string_array(data.get("module_icon_paths", []))
 	blueprint.default_brain_enabled = bool(data.get("default_brain_enabled", true))
+	blueprint.embedded_rules = data.get("embedded_rules", []).duplicate(true)
+	blueprint.state_flag_defaults = data.get("state_flag_defaults", {}).duplicate(true)
 	blueprint.stats = _make_stats(data.get("stats", {}))
 
 	var recipe_id := StringName(str(data.get("production_recipe_id", "")))
@@ -79,4 +85,12 @@ static func _string_array(value: Variant) -> Array[String]:
 		return result
 	for item in value:
 		result.append(str(item))
+	return result
+
+static func _string_name_array(value: Variant) -> Array[StringName]:
+	var result: Array[StringName] = []
+	if typeof(value) != TYPE_ARRAY:
+		return result
+	for item in value:
+		result.append(StringName(str(item)))
 	return result

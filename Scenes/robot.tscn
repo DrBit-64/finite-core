@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3 uid="uid://b4cj2ah5o5cyv"]
+[gd_scene load_steps=13 format=3 uid="uid://b4cj2ah5o5cyv"]
 
 [ext_resource type="Script" uid="uid://dbu12wx8l23yq" path="res://Scripts/robot.gd" id="1_n2f4s"]
 [ext_resource type="Script" uid="uid://du7tsqkj524ta" path="res://Scripts/ai_controller.gd" id="2_5tv1n"]
@@ -10,6 +10,7 @@
 [ext_resource type="Script" path="res://Scripts/units/lifespan_component.gd" id="8_lifespan"]
 [ext_resource type="Script" path="res://Scripts/units/default_brain.gd" id="9_default_brain"]
 [ext_resource type="Script" path="res://Scripts/units/path_follow_brain.gd" id="10_path_brain"]
+[ext_resource type="Script" path="res://Scripts/ai/unit_state_flags.gd" id="11_state_flags"]
 
 [sub_resource type="CircleShape2D" id="CircleShape2D_body"]
 radius = 18.0
@@ -62,6 +63,9 @@ script = ExtResource("6_weapon")
 
 [node name="VisibleEnemySensor" type="Node" parent="."]
 script = ExtResource("7_sensor")
+
+[node name="UnitStateFlags" type="Node" parent="."]
+script = ExtResource("11_state_flags")
 
 [node name="DefaultBrain" type="Node" parent="."]
 script = ExtResource("9_default_brain")
