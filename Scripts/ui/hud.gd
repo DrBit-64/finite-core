@@ -10,6 +10,7 @@ signal forge_blueprint_selected(forge: Node, blueprint_id: StringName)
 
 const BottomPromptScript := preload("res://Scripts/ui/bottom_prompt.gd")
 const BlueprintManagementOverlayScript := preload("res://Scripts/ui/blueprint_management_overlay.gd")
+const CombatReportOverlayScript := preload("res://Scripts/ui/combat_report_overlay.gd")
 const VictorySummaryPanelScript := preload("res://Scripts/ui/victory_summary_panel.gd")
 
 @onready var current_goal_label: Label = %CurrentGoalLabel
@@ -46,6 +47,8 @@ var _operation_rally_label: Label = null
 var _operation_cost_label: Label = null
 var _bottom_prompt: BottomPrompt = null
 var _blueprint_button: Button = null
+var _statistics_button: Button = null
+var _resource_defs: Array[ResourceDef] = []
 var _blueprints: Array[UnitBlueprint] = []
 var _blueprint_panel: PanelContainer = null
 var _blueprint_list: VBoxContainer = null
@@ -54,6 +57,7 @@ var _blueprint_name_edit: LineEdit = null
 var _forge_blueprint_picker: PanelContainer = null
 var _forge_blueprint_list: VBoxContainer = null
 var _blueprint_overlay: Control = null
+var _combat_report_overlay: Control = null
 var _victory_summary_panel: Control = null
 
 func _ready() -> void:
@@ -66,6 +70,7 @@ func _ready() -> void:
 		debug_event_panel.add_event_line("MVP HUD 已加载")
 	_ensure_bottom_prompt()
 	_ensure_blueprint_button()
+	_ensure_statistics_button()
 
 func set_current_goal(text: String) -> void:
 	if current_goal_label:
@@ -154,12 +159,18 @@ func hide_operation_panel() -> void:
 		_forge_blueprint_picker.visible = false
 
 func set_resource_amounts(resource_defs: Array[ResourceDef], amounts: Dictionary) -> void:
+	_resource_defs = resource_defs.duplicate()
 	_inventory_amounts = amounts.duplicate(true)
 	var parts: Array[String] = []
 	for resource_def in resource_defs:
 		parts.append("%s %s" % [resource_def.display_name, int(amounts.get(resource_def.id, 0))])
 	set_resource_summary(" / ".join(parts))
 	_refresh_build_buttons()
+
+func set_resource_definitions(resource_defs: Array[ResourceDef]) -> void:
+	_resource_defs = resource_defs.duplicate()
+	if _combat_report_overlay and _combat_report_overlay.has_method("configure"):
+		_combat_report_overlay.call("configure", _get_combat_event_log(), _resource_defs, _blueprints)
 
 func set_building_options(building_defs: Array[BuildingDef]) -> void:
 	_building_defs = building_defs.duplicate()
@@ -171,6 +182,8 @@ func set_blueprint_library(blueprints: Array[UnitBlueprint]) -> void:
 		_blueprint_overlay.call("set_blueprints", _blueprints)
 	if _blueprint_panel and _blueprint_panel.visible:
 		_rebuild_blueprint_panel()
+	if _combat_report_overlay and _combat_report_overlay.has_method("configure"):
+		_combat_report_overlay.call("configure", _get_combat_event_log(), _resource_defs, _blueprints)
 
 func _refresh_build_buttons() -> void:
 	if build_button_row == null:
@@ -355,6 +368,25 @@ func _ensure_blueprint_button() -> void:
 	_blueprint_button.pressed.connect(_on_blueprint_button_pressed)
 	root_control.add_child(_blueprint_button)
 
+func _ensure_statistics_button() -> void:
+	if _statistics_button != null:
+		return
+	_statistics_button = Button.new()
+	_statistics_button.name = "CombatReportButton"
+	_statistics_button.text = "统计"
+	_statistics_button.tooltip_text = "打开最近 5 分钟生产统计"
+	_statistics_button.anchor_left = 1.0
+	_statistics_button.anchor_top = 1.0
+	_statistics_button.anchor_right = 1.0
+	_statistics_button.anchor_bottom = 1.0
+	_statistics_button.offset_left = -270.0
+	_statistics_button.offset_top = -150.0
+	_statistics_button.offset_right = -152.0
+	_statistics_button.offset_bottom = -112.0
+	_statistics_button.z_index = 135
+	_statistics_button.pressed.connect(_on_statistics_button_pressed)
+	root_control.add_child(_statistics_button)
+
 func _ensure_victory_summary_panel() -> void:
 	if _victory_summary_panel != null:
 		return
@@ -368,10 +400,34 @@ func _ensure_victory_summary_panel() -> void:
 func _on_blueprint_button_pressed() -> void:
 	blueprint_library_requested.emit()
 	_ensure_blueprint_overlay()
+	if _combat_report_overlay:
+		_combat_report_overlay.visible = false
 	if _blueprint_panel:
 		_blueprint_panel.visible = false
 	_blueprint_overlay.call("set_blueprints", _blueprints)
 	_blueprint_overlay.visible = not _blueprint_overlay.visible
+
+func _on_statistics_button_pressed() -> void:
+	_ensure_combat_report_overlay()
+	if _blueprint_overlay:
+		_blueprint_overlay.visible = false
+	_combat_report_overlay.call("configure", _get_combat_event_log(), _resource_defs, _blueprints)
+	_combat_report_overlay.visible = not _combat_report_overlay.visible
+	if _combat_report_overlay.visible and _combat_report_overlay.has_method("refresh_report"):
+		_combat_report_overlay.call("refresh_report")
+
+func _ensure_combat_report_overlay() -> void:
+	if _combat_report_overlay != null:
+		return
+	_combat_report_overlay = CombatReportOverlayScript.new()
+	_combat_report_overlay.name = "CombatReportOverlay"
+	_combat_report_overlay.visible = false
+	_combat_report_overlay.z_index = 150
+	_combat_report_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	root_control.add_child(_combat_report_overlay)
+
+func _get_combat_event_log() -> Node:
+	return get_node_or_null("/root/CombatEventLog")
 
 func _ensure_blueprint_overlay() -> void:
 	if _blueprint_overlay != null:

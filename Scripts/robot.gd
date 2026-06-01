@@ -63,6 +63,7 @@ var _locked_target: Node2D = null
 var _target_lock_until_msec: int = 0
 var _hound_has_engaged: bool = false
 var _combat_target_registry: Node = null
+var _last_damage_source_payload: Dictionary = {}
 
 @onready var unit_sprite: Sprite2D = get_node_or_null("UnitSprite")
 @onready var hp_bar: ProgressBar = get_node_or_null("HPBar")
@@ -204,6 +205,7 @@ func reset_state() -> void:
 	_locked_target = null
 	_target_lock_until_msec = 0
 	_hound_has_engaged = false
+	_last_damage_source_payload.clear()
 	_sync_runtime_groups()
 	_configure_team_collision()
 	_configure_components()
@@ -437,6 +439,13 @@ func take_damage(amount: int) -> void:
 		return
 	if health_component:
 		health_component.take_damage(amount)
+
+func take_damage_from(amount: int, source_payload: Dictionary = {}) -> void:
+	_last_damage_source_payload = source_payload.duplicate(true)
+	take_damage(amount)
+
+func get_last_damage_source_payload() -> Dictionary:
+	return _last_damage_source_payload.duplicate(true)
 
 func die(reason: StringName = &"destroyed") -> void:
 	if _is_dead:

@@ -223,6 +223,8 @@ func _configure_hud() -> void:
 		hud.call("set_current_goal", "%s：%s" % [stage_label, current_goal])
 	if hud.has_method("set_resource_summary"):
 		hud.call("set_resource_summary", resource_summary_placeholder)
+	if hud.has_method("set_resource_definitions"):
+		hud.call("set_resource_definitions", resource_defs)
 	if hud.has_method("set_bottom_hint"):
 		hud.call("set_bottom_hint", bottom_hint)
 	if hud.has_signal("build_mode_requested"):
@@ -745,11 +747,19 @@ func _on_enemy_nest_guard_spawn_requested(nest: Node, guard_type: StringName) ->
 func _on_enemy_hound_lost(hound: Node, reason: StringName) -> void:
 	var event_log := get_node_or_null("/root/CombatEventLog")
 	if event_log and event_log.has_method("record"):
-		event_log.call("record", &"enemy_killed", {
+		var payload := {
 			"enemy_id": hound.name,
 			"enemy_type": "scavenger_hound",
 			"reason": String(reason),
-		})
+		}
+		if hound.has_method("get_last_damage_source_payload"):
+			var source_payload: Dictionary = hound.call("get_last_damage_source_payload")
+			payload["killer_robot_id"] = str(source_payload.get("robot_id", ""))
+			payload["killer_blueprint_id"] = str(source_payload.get("blueprint_id", ""))
+			payload["killer_blueprint_version"] = int(source_payload.get("blueprint_version", 0))
+			payload["killer_blueprint_snapshot_id"] = str(source_payload.get("blueprint_snapshot_id", ""))
+			payload["killer_blueprint_name"] = str(source_payload.get("blueprint_name", ""))
+		event_log.call("record", &"enemy_killed", payload)
 
 func _on_enemy_nest_destroyed(nest: Node) -> void:
 	var event_log := get_node_or_null("/root/CombatEventLog")
@@ -929,8 +939,10 @@ func _record_robot_produced(forge: Node, robot: Node, blueprint: UnitBlueprint) 
 			"forge": forge.name,
 			"robot": robot.name,
 			"blueprint_id": String(blueprint.id),
+			"blueprint_name": blueprint.display_name,
 			"blueprint_version": blueprint.version,
 			"blueprint_snapshot_id": blueprint.get_snapshot_key(),
+			"blueprint_rules": _get_blueprint_rule_summaries(blueprint),
 			"rally_point": _format_vector2_payload(forge.get("rally_point_position")),
 			"has_rally_point": bool(forge.get("has_rally_point")),
 		})
@@ -1000,10 +1012,24 @@ func _on_robot_lost_for_blueprint_cleanup(robot: Node, reason: StringName) -> vo
 			"robot_id": robot.name,
 			"team": String(robot.get("team")),
 			"blueprint_id": String(robot.get("blueprint_id")),
+			"blueprint_name": str(robot.get("display_name")),
 			"blueprint_version": int(robot.get("blueprint_version")),
 			"reason": String(reason),
 		})
 	call_deferred("_prune_blueprint_snapshots")
+
+func _get_blueprint_rule_summaries(blueprint: UnitBlueprint) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if blueprint == null:
+		return result
+	for rule in blueprint.embedded_rules:
+		if typeof(rule) != TYPE_DICTIONARY:
+			continue
+		result.append({
+			"id": str(rule.get("id", rule.get("name", "unnamed_rule"))),
+			"name": str(rule.get("name", rule.get("id", "未命名规则"))),
+		})
+	return result
 
 func _on_building_destroyed(building: Node, reason: StringName) -> void:
 	var event_log := get_node_or_null("/root/CombatEventLog")

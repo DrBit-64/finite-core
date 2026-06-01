@@ -20,76 +20,8 @@
       ],
       "production_recipe_id": "forge_basic_rifle_robot",
       "default_brain_enabled": true,
-      "state_flag_defaults": {
-        "rallied": false,
-        "squad_ready": false
-      },
-      "embedded_rules": [
-        {
-          "id": "move_to_rally",
-          "name": "集结小队",
-          "subject": "self",
-          "match_mode": "all",
-          "conditions": [
-            {"type": "has_rally_point"},
-            {"type": "self_flag_is", "flag": "rallied", "value": false},
-            {"type": "distance_to_rally_greater", "value": 20.0}
-          ],
-          "action": "move_to_rally"
-        },
-        {
-          "id": "mark_rallied",
-          "name": "集结小队",
-          "subject": "self",
-          "match_mode": "all",
-          "conditions": [
-            {"type": "has_rally_point"},
-            {"type": "self_flag_is", "flag": "rallied", "value": false},
-            {"type": "distance_to_rally_less_equal", "value": 20.0}
-          ],
-          "action": "set_self_flag",
-          "flag": "rallied",
-          "value": true
-        },
-        {
-          "id": "wait_for_squad",
-          "name": "等待队友",
-          "subject": "self",
-          "match_mode": "all",
-          "conditions": [
-            {"type": "has_rally_point"},
-            {"type": "self_flag_is", "flag": "rallied", "value": true},
-            {"type": "self_flag_is", "flag": "squad_ready", "value": false},
-            {"type": "allies_near_rally_less", "value": 4, "radius": 90.0}
-          ],
-          "action": "wait"
-        },
-        {
-          "id": "mark_squad_ready",
-          "name": "等待队友",
-          "subject": "self",
-          "match_mode": "all",
-          "conditions": [
-            {"type": "has_rally_point"},
-            {"type": "self_flag_is", "flag": "rallied", "value": true},
-            {"type": "self_flag_is", "flag": "squad_ready", "value": false},
-            {"type": "allies_near_rally_at_least", "value": 4, "radius": 90.0}
-          ],
-          "action": "set_self_flag",
-          "flag": "squad_ready",
-          "value": true
-        },
-        {
-          "id": "default_after_rally",
-          "name": "默认脑干接管",
-          "subject": "self",
-          "match_mode": "all",
-          "conditions": [
-            {"type": "self_flag_is", "flag": "squad_ready", "value": true}
-          ],
-          "action": "default_combat"
-        }
-      ],
+      "state_flag_defaults": {},
+      "embedded_rules": [],
       "stats": {
         "max_hp": 60,
         "speed": 90.0,

@@ -3,6 +3,7 @@ extends Node
 const PlayerRobotScene := preload("res://Scenes/robot.tscn")
 const CombatTargetRegistryScript := preload("res://Scripts/map/combat_target_registry.gd")
 const MvpDataDefaultsScript := preload("res://Scripts/data/mvp_data_defaults.gd")
+const BlueprintLibraryScript := preload("res://Scripts/blueprints/blueprint_library.gd")
 
 func _ready() -> void:
 	CombatEventLog.clear()
@@ -12,7 +13,11 @@ func _ready() -> void:
 	var robot := PlayerRobotScene.instantiate()
 	add_child(robot)
 	robot.global_position = Vector2.ZERO
-	robot.setup_from_blueprint(MvpDataDefaultsScript.create_basic_rifle_blueprint(), Vector2(256.0, 0.0), true)
+	var rally_blueprint: UnitBlueprint = BlueprintLibraryScript.new().create_rally_variant(
+		MvpDataDefaultsScript.create_basic_rifle_blueprint(),
+		"测试集结蓝图"
+	)
+	robot.setup_from_blueprint(rally_blueprint, Vector2(256.0, 0.0), true)
 	robot.set_physics_process(false)
 
 	var ai_controller: Node = robot.get_node("AIController")

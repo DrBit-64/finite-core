@@ -58,10 +58,23 @@ func try_fire(owner_team: String, muzzle: Node2D, target: Node2D, spawn_parent: 
 	bullet.global_position = origin
 	var shot_dir := (target_position - origin).normalized()
 	if bullet.has_method("setup"):
-		bullet.call("setup", owner_team, damage, shot_dir)
+		bullet.call("setup", owner_team, damage, shot_dir, _make_source_payload(owner_team))
 	_last_fire_time = Time.get_ticks_msec() / 1000.0
 	fire_state = &"fired"
 	return true
+
+func _make_source_payload(owner_team: String) -> Dictionary:
+	var source_unit := get_parent()
+	if source_unit == null:
+		return {"team": owner_team}
+	return {
+		"team": owner_team,
+		"robot_id": str(source_unit.name),
+		"blueprint_id": String(source_unit.get("blueprint_id")) if source_unit.get("blueprint_id") != null else "",
+		"blueprint_version": int(source_unit.get("blueprint_version")) if source_unit.get("blueprint_version") != null else 0,
+		"blueprint_snapshot_id": String(source_unit.get("blueprint_snapshot_id")) if source_unit.get("blueprint_snapshot_id") != null else "",
+		"blueprint_name": str(source_unit.get("display_name")) if source_unit.get("display_name") != null else "",
+	}
 
 func _get_target_position(target: Node2D) -> Vector2:
 	if target and target.has_method("get_target_position"):

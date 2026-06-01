@@ -8,6 +8,7 @@ class_name BulletProjectile
 var team: String = "Team_A"
 var damage: int = 10
 var direction: Vector2 = Vector2.RIGHT
+var source_payload: Dictionary = {}
 var _alive: bool = true
 
 @onready var life_timer: Timer = $LifeTimer
@@ -23,9 +24,10 @@ func reset_state() -> void:
 		life_timer.one_shot = true
 		life_timer.start()
 
-func setup(spawn_team: String, spawn_damage: int, dir: Vector2) -> void:
+func setup(spawn_team: String, spawn_damage: int, dir: Vector2, next_source_payload: Dictionary = {}) -> void:
 	team = spawn_team
 	damage = spawn_damage
+	source_payload = next_source_payload.duplicate(true)
 	if dir.length() < 0.001:
 		direction = Vector2.RIGHT
 	else:
@@ -53,7 +55,9 @@ func _on_body_entered(body: Node2D) -> void:
 		return
 	if body.get("team") == team:
 		return
-	if body.has_method("take_damage"):
+	if body.has_method("take_damage_from"):
+		body.call("take_damage_from", damage, source_payload)
+	elif body.has_method("take_damage"):
 		body.take_damage(damage)
 	_return_to_pool()
 
@@ -64,6 +68,7 @@ func _return_to_pool() -> void:
 	if not _alive:
 		return
 	_alive = false
+	source_payload.clear()
 	if life_timer:
 		life_timer.stop()
 	ObjectPool.return_instance(self, pool_name)

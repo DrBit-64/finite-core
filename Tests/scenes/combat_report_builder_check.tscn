@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Tests/scenes/combat_report_builder_check.gd" id="1_report"]
+
+[node name="CombatReportBuilderCheck" type="Node"]
+script = ExtResource("1_report")

@@ -69,6 +69,9 @@ func take_damage(amount: int) -> void:
 	if health_component:
 		health_component.take_damage(amount)
 
+func take_damage_from(amount: int, _source_payload: Dictionary = {}) -> void:
+	take_damage(amount)
+
 func get_target_position() -> Vector2:
 	return global_position + Vector2(grid_size.x * cell_size, grid_size.y * cell_size) * 0.5
 
