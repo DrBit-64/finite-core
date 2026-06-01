@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "unit_types": [
+    {
+      "id": "scavenger_hound",
+      "display_name": "拾荒猎犬",
+      "icon_path": "res://Resources/art/enemies/scavenger_hound.svg",
+      "max_hp": 90,
+      "speed": 135.0,
+      "melee_damage": 16,
+      "melee_range": 32.0,
+      "melee_cooldown_seconds": 1.0,
+      "guard_aggro_radius": 320.0,
+      "hound_follow_up_radius": 180.0
+    }
+  ],
+  "nest_types": [
+    {
+      "id": "weak_scavenger_nest",
+      "display_name": "拾荒猎犬巢穴",
+      "icon_path": "res://Resources/art/enemies/enemy_nest.svg",
+      "grid_size": [2, 2],
+      "max_hp": 180,
+      "guard_unit_type": "scavenger_hound",
+      "initial_guard_count": 6,
+      "max_guard_count": 6,
+      "guard_replenish_seconds": 30.0,
+      "reward": {
+        "technology_item": "初级感应线圈"
+      }
+    }
+  ]
+}

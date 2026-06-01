@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://Scripts/buildings/processor.gd" id="1_dmpk8"]
 
-[node name="Processor" type="Node2D"]
+[node name="Processor" type="StaticBody2D"]
 script = ExtResource("1_dmpk8")
 
 [node name="Footprint" type="Polygon2D" parent="."]

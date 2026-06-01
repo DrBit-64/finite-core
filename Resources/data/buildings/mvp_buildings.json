@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "buildings": [
+    {
+      "id": "main_base",
+      "display_name": "主基地",
+      "icon_path": "res://Resources/art/buildings/main_base.svg",
+      "grid_size": [2, 2],
+      "max_hp": 1400
+    },
+    {
+      "id": "miner",
+      "display_name": "采矿机",
+      "icon_path": "res://Resources/art/buildings/miner.svg",
+      "grid_size": [1, 1],
+      "max_hp": 420
+    },
+    {
+      "id": "processor",
+      "display_name": "基础加工厂",
+      "icon_path": "res://Resources/art/buildings/processor.svg",
+      "grid_size": [1, 1],
+      "max_hp": 600
+    },
+    {
+      "id": "robot_forge",
+      "display_name": "机器人锻造厂",
+      "icon_path": "res://Resources/art/buildings/robot_forge.svg",
+      "grid_size": [1, 1],
+      "max_hp": 700
+    }
+  ]
+}

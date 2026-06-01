@@ -3,6 +3,8 @@ class_name RobotUnit
 
 signal robot_lost(robot: Node, reason: StringName)
 
+const CombatTargetRegistryScript := preload("res://Scripts/map/combat_target_registry.gd")
+
 @export var display_name: String = "基础步枪机器人"
 @export var max_hp: int = 60
 @export var speed: float = 90.0
@@ -11,10 +13,11 @@ signal robot_lost(robot: Node, reason: StringName)
 @export var lifespan_seconds: float = 120.0
 @export var pool_name: String = "robot_basic"
 @export var fire_range: float = 140.0
+@export var target_lock_seconds: float = 1.5
 @export var bullet_damage: int = 8
 @export var fire_cooldown_seconds: float = 0.8
 @export var weapon_enabled: bool = true
-@export_enum("default_combat", "path_patrol", "idle") var brain_mode: String = "default_combat"
+@export_enum("default_combat", "path_patrol", "melee_hound", "idle") var brain_mode: String = "default_combat"
 @export var default_brain_enabled: bool = true
 @export var preferred_range_ratio: float = 0.85
 @export var range_dead_zone: float = 12.0
@@ -23,6 +26,11 @@ signal robot_lost(robot: Node, reason: StringName)
 @export var turn_speed_radians: float = 12.0
 @export var fire_arc_radians: float = 0.16
 @export_file("*.svg") var icon_path: String = "res://Resources/art/blueprints/basic_rifle_robot.svg"
+@export var melee_damage: int = 0
+@export var melee_range: float = 32.0
+@export var melee_cooldown_seconds: float = 1.0
+@export var guard_aggro_radius: float = 0.0
+@export var hound_follow_up_radius: float = 180.0
 
 var hp: int = 60
 var blueprint_id: StringName = &""
@@ -37,6 +45,8 @@ var current_fire_state: String = "无目标"
 var current_distance_to_target: float = -1.0
 var patrol_points: Array[Vector2] = []
 var patrol_loop: bool = true
+var source_nest: Node = null
+var guard_home_position: Vector2 = Vector2.ZERO
 
 var _is_dead: bool = false
 var _selected: bool = false
@@ -48,6 +58,11 @@ var _last_brain_trigger_key: StringName = &""
 var _last_brain_trigger_msec: int = 0
 var _current_rule_bubble_text: String = ""
 var _current_rule_bubble_until_msec: int = 0
+var _last_melee_attack_seconds: float = -9999.0
+var _locked_target: Node2D = null
+var _target_lock_until_msec: int = 0
+var _hound_has_engaged: bool = false
+var _combat_target_registry: Node = null
 
 @onready var unit_sprite: Sprite2D = get_node_or_null("UnitSprite")
 @onready var hp_bar: ProgressBar = get_node_or_null("HPBar")
@@ -57,7 +72,7 @@ var _current_rule_bubble_until_msec: int = 0
 @onready var health_component = get_node_or_null("HealthComponent")
 @onready var movement_component = get_node_or_null("MovementComponent")
 @onready var weapon_component = get_node_or_null("WeaponComponent")
-@onready var enemy_sensor = get_node_or_null("VisibleEnemySensor")
+@onready var enemy_sensor = get_node_or_null("EnemySensor")
 @onready var state_flags = get_node_or_null("UnitStateFlags")
 @onready var default_brain = get_node_or_null("DefaultBrain")
 @onready var path_follow_brain = get_node_or_null("PathFollowBrain")
@@ -92,6 +107,8 @@ func _physics_process(delta: float) -> void:
 					current_action = "默认脑干缺失"
 					if movement_component:
 						movement_component.stop(&"idle")
+		"melee_hound":
+			_tick_melee_hound()
 		_:
 			current_action = "闲置"
 			if movement_component:
@@ -115,6 +132,7 @@ func setup_from_blueprint(blueprint: UnitBlueprint, next_rally_point: Vector2 = 
 		max_hp = blueprint.stats.max_hp
 		speed = blueprint.stats.speed
 		lifespan_seconds = blueprint.stats.lifespan_seconds
+		target_lock_seconds = blueprint.stats.target_lock_seconds
 		fire_range = blueprint.stats.fire_range
 		bullet_damage = blueprint.stats.damage
 		fire_cooldown_seconds = blueprint.stats.fire_cooldown_seconds
@@ -142,6 +160,27 @@ func setup_debug_enemy(next_name: String, path_points: Array[Vector2], loop_path
 	set_patrol_path(path_points, loop_path)
 	reset_state()
 
+func setup_scavenger_hound(config: Dictionary, nest: Node = null) -> void:
+	display_name = str(config.get("display_name", "拾荒猎犬"))
+	team = "Team_B"
+	brain_mode = "melee_hound"
+	blueprint_snapshot_id = &""
+	default_brain_enabled = false
+	weapon_enabled = false
+	max_hp = int(config.get("max_hp", 90))
+	speed = float(config.get("speed", 135.0))
+	lifespan_seconds = 0.0
+	pool_name = "scavenger_hound"
+	icon_path = str(config.get("icon_path", "res://Resources/art/enemies/scavenger_hound.svg"))
+	melee_damage = int(config.get("melee_damage", 16))
+	melee_range = float(config.get("melee_range", 32.0))
+	melee_cooldown_seconds = float(config.get("melee_cooldown_seconds", 1.0))
+	guard_aggro_radius = maxf(0.0, float(config.get("guard_aggro_radius", 320.0)))
+	hound_follow_up_radius = maxf(0.0, float(config.get("hound_follow_up_radius", 180.0)))
+	source_nest = nest
+	guard_home_position = global_position
+	reset_state()
+
 func set_patrol_path(path_points: Array[Vector2], loop_path: bool = true) -> void:
 	patrol_points = path_points.duplicate()
 	patrol_loop = loop_path
@@ -161,6 +200,10 @@ func reset_state() -> void:
 	_last_brain_trigger_msec = 0
 	_current_rule_bubble_text = ""
 	_current_rule_bubble_until_msec = 0
+	_last_melee_attack_seconds = -9999.0
+	_locked_target = null
+	_target_lock_until_msec = 0
+	_hound_has_engaged = false
 	_sync_runtime_groups()
 	_configure_team_collision()
 	_configure_components()
@@ -175,7 +218,10 @@ func get_display_name() -> String:
 func get_inspector_lines() -> Array[String]:
 	var target_name := "无"
 	if current_target:
-		target_name = str(current_target.call("get_display_name")) if current_target.has_method("get_display_name") else current_target.name
+		if current_target.has_method("get_display_name"):
+			target_name = str(current_target.call("get_display_name"))
+		else:
+			target_name = str(current_target.name)
 	var distance_text := "-" if current_distance_to_target < 0.0 else "%.1f / %.1f" % [current_distance_to_target, fire_range]
 	var hp_text := "%s / %s" % [hp, max_hp]
 	if health_component:
@@ -211,7 +257,8 @@ func get_inspector_lines() -> Array[String]:
 		var path_index: int = path_follow_brain.patrol_index if path_follow_brain else _patrol_index
 		var path_count: int = path_follow_brain.patrol_points.size() if path_follow_brain else patrol_points.size()
 		lines.append("路径点：%s / %s" % [path_index + 1, path_count])
-	lines.append("索敌：当前可见地图内敌军")
+	lines.append("索敌：地图全局敌方列表")
+	lines.append("目标锁定：%s" % ("已锁定" if _is_valid_enemy_target(_locked_target) else "无"))
 	if not _brain_trigger_history.is_empty():
 		lines.append("最近脑干触发：")
 		for entry in _brain_trigger_history:
@@ -228,14 +275,13 @@ func set_selected(value: bool) -> void:
 func has_enemy_in_range() -> bool:
 	return get_current_enemy() != null
 
-func get_current_enemy() -> CharacterBody2D:
-	var enemies := _get_visible_enemies()
-	if enemies.is_empty() or not (enemies[0] is CharacterBody2D):
-		return null
-	return enemies[0] as CharacterBody2D
+func get_current_enemy() -> Node2D:
+	if brain_mode == "melee_hound":
+		return _get_hound_target()
+	return _get_locked_or_nearest_enemy()
 
-func get_lowest_hp_enemy() -> CharacterBody2D:
-	var enemies := _get_visible_enemies()
+func get_lowest_hp_enemy() -> Node2D:
+	var enemies := _get_sensed_enemies()
 	if enemies.is_empty():
 		return null
 	var target := enemies[0]
@@ -247,16 +293,23 @@ func get_lowest_hp_enemy() -> CharacterBody2D:
 		if ratio < lowest_ratio:
 			target = candidate
 			lowest_ratio = ratio
-	return target as CharacterBody2D
+	return _lock_target(target, target_lock_seconds)
 
 func get_radar_targets() -> Array[Node2D]:
-	return _get_visible_enemies()
+	return _get_sensed_enemies()
+
+func get_target_position(target: Node2D = self) -> Vector2:
+	if target and target != self and target.has_method("get_target_position"):
+		return target.call("get_target_position")
+	if target:
+		return target.global_position
+	return global_position
 
 func is_current_enemy_in_fire_range() -> bool:
 	var enemy := get_current_enemy()
 	if enemy == null:
 		return false
-	return global_position.distance_to(enemy.global_position) <= fire_range
+	return global_position.distance_to(get_target_position(enemy)) <= fire_range
 
 func hp_ratio() -> float:
 	if health_component:
@@ -270,14 +323,14 @@ func move_away_from_current_enemy() -> void:
 	if enemy == null:
 		stop_and_idle()
 		return
-	flee_from(enemy.global_position)
+	flee_from(get_target_position(enemy))
 
 func move_towards_nearest_enemy() -> void:
 	var enemy := get_current_enemy()
 	if enemy == null:
 		stop_and_idle()
 		return
-	move_towards(enemy.global_position)
+	move_towards(get_target_position(enemy))
 
 func move_towards(target_pos: Vector2) -> void:
 	if movement_component == null:
@@ -312,6 +365,9 @@ func distance_to_rally_point() -> float:
 func count_allies_near_rally_point(radius: float = 90.0) -> int:
 	if not has_rally_point:
 		return 0
+	if _combat_target_registry != null and is_instance_valid(_combat_target_registry):
+		if _combat_target_registry.has_method("count_units_near"):
+			return int(_combat_target_registry.call("count_units_near", team, rally_point_position, radius))
 	var count := 0
 	for unit in get_tree().get_nodes_in_group("combat_unit"):
 		if unit == null or not is_instance_valid(unit):
@@ -367,8 +423,9 @@ func fire_weapon(target: Node2D) -> void:
 	if weapon_component == null:
 		return
 	if target:
-		_turn_towards(target.global_position, get_physics_process_delta_time())
-		if not _is_facing_position(target.global_position):
+		var target_position := get_target_position(target)
+		_turn_towards(target_position, get_physics_process_delta_time())
+		if not _is_facing_position(target_position):
 			current_fire_state = "转向中"
 			return
 	var spawn_parent := _get_projectile_parent()
@@ -415,7 +472,9 @@ func _configure_components() -> void:
 		path_follow_brain.set_path(patrol_points, patrol_loop)
 
 func _sync_runtime_groups() -> void:
+	_unregister_combat_target()
 	add_to_group("combat_unit")
+	add_to_group("combat_target")
 	if team == "Team_A":
 		add_to_group("team_a")
 		remove_from_group("team_b")
@@ -425,15 +484,62 @@ func _sync_runtime_groups() -> void:
 	for tag in tags:
 		if not tag.is_empty():
 			add_to_group(tag)
+	_register_combat_target()
 
 func _configure_team_collision() -> void:
 	collision_layer = 1 if team == "Team_A" else 2
 	collision_mask = 0
 
-func _get_visible_enemies() -> Array[Node2D]:
-	if enemy_sensor:
-		return enemy_sensor.get_visible_enemies(self, team)
-	return []
+func _get_sensed_enemies() -> Array[Node2D]:
+	if enemy_sensor == null:
+		return []
+	return enemy_sensor.get_enemies(self, team)
+
+func _get_locked_or_nearest_enemy() -> Node2D:
+	var now := Time.get_ticks_msec()
+	if _is_valid_enemy_target(_locked_target) and now < _target_lock_until_msec:
+		return _locked_target
+	_clear_locked_target()
+	var enemies := _get_sensed_enemies()
+	if enemies.is_empty():
+		return null
+	return _lock_target(enemies[0], target_lock_seconds)
+
+func _get_hound_target() -> Node2D:
+	if _is_valid_enemy_target(_locked_target):
+		return _locked_target
+	_clear_locked_target()
+	if enemy_sensor == null:
+		return null
+
+	var enemies: Array[Node2D] = []
+	if _hound_has_engaged and enemy_sensor.has_method("get_follow_up_targets"):
+		enemies = enemy_sensor.get_follow_up_targets(self, team, hound_follow_up_radius)
+	if enemies.is_empty() and enemy_sensor.has_method("get_initial_targets"):
+		enemies = enemy_sensor.get_initial_targets(self, team, source_nest, guard_aggro_radius)
+	if enemies.is_empty():
+		_hound_has_engaged = false
+		return null
+
+	_hound_has_engaged = true
+	return _lock_target(enemies[0], 0.0)
+
+func _lock_target(target: Node2D, duration_seconds: float) -> Node2D:
+	if not _is_valid_enemy_target(target):
+		_clear_locked_target()
+		return null
+	_locked_target = target
+	_target_lock_until_msec = Time.get_ticks_msec() + roundi(maxf(0.0, duration_seconds) * 1000.0)
+	return _locked_target
+
+func _clear_locked_target() -> void:
+	_locked_target = null
+	_target_lock_until_msec = 0
+
+func _is_valid_enemy_target(target: Node2D) -> bool:
+	if enemy_sensor == null or target == null or not is_instance_valid(target):
+		return false
+	return bool(enemy_sensor.is_valid_enemy(self, team, target))
 
 func _get_projectile_parent() -> Node:
 	var map := get_parent()
@@ -478,7 +584,7 @@ func _update_unit_visuals() -> void:
 
 func _update_facing(delta: float) -> void:
 	if _should_face_attack_target():
-		_turn_towards(current_target.global_position, delta)
+		_turn_towards(get_target_position(current_target), delta)
 		return
 	if movement_component and movement_component.desired_velocity.length() > 0.001:
 		_turn_angle_towards(movement_component.desired_velocity.angle(), delta)
@@ -510,6 +616,39 @@ func _should_face_attack_target() -> bool:
 		return false
 	return current_distance_to_target <= fire_range
 
+func _tick_melee_hound() -> void:
+	var enemy := get_current_enemy()
+	current_target = enemy
+	if enemy == null:
+		if movement_component and global_position.distance_to(guard_home_position) > movement_component.arrival_tolerance:
+			movement_component.move_towards(global_position, guard_home_position)
+			current_action = "返回守卫位置"
+			return
+		current_action = "巢穴周围警戒"
+		current_distance_to_target = -1.0
+		if movement_component:
+			movement_component.stop(&"idle")
+		return
+
+	var target_position := get_target_position(enemy)
+	current_distance_to_target = global_position.distance_to(target_position)
+	if current_distance_to_target > melee_range:
+		if movement_component:
+			movement_component.move_towards(global_position, target_position)
+		current_action = "扑向目标"
+		return
+
+	if movement_component:
+		movement_component.stop(&"hold_range")
+	current_action = "撕咬目标"
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _last_melee_attack_seconds < melee_cooldown_seconds:
+		return
+	_last_melee_attack_seconds = now
+	if enemy.has_method("take_damage"):
+		enemy.call("take_damage", melee_damage)
+	record_brain_trigger(&"hound_melee_attack", "撕咬目标")
+
 func _on_health_changed(current_hp: int, current_max_hp: int, _delta: int) -> void:
 	hp = current_hp
 	max_hp = current_max_hp
@@ -523,15 +662,32 @@ func _finish_death(reason: StringName) -> void:
 		return
 	_is_dead = true
 	current_action = "报废"
+	remove_from_group("combat_target")
+	_unregister_combat_target()
 	if movement_component:
 		movement_component.stop(&"dead")
 	if lifespan_component:
 		lifespan_component.stop()
+	_clear_locked_target()
+	_hound_has_engaged = false
+	if source_nest != null and is_instance_valid(source_nest) and source_nest.has_method("unregister_guard"):
+		source_nest.call("unregister_guard", self)
+	source_nest = null
 	robot_lost.emit(self, reason)
 	ObjectPool.return_instance(self, pool_name)
 
 func _on_lifespan_expired() -> void:
 	die(&"lifespan_expired")
+
+func _register_combat_target() -> void:
+	_combat_target_registry = CombatTargetRegistryScript.find_for(self)
+	if _combat_target_registry != null:
+		_combat_target_registry.call("register_target", self)
+
+func _unregister_combat_target() -> void:
+	if _combat_target_registry != null and is_instance_valid(_combat_target_registry):
+		_combat_target_registry.call("unregister_target", self)
+	_combat_target_registry = null
 
 func _draw() -> void:
 	if not _selected:
@@ -547,6 +703,8 @@ func _format_brain_mode() -> String:
 			return "默认战斗脑干"
 		"path_patrol":
 			return "路径移动脑干"
+		"melee_hound":
+			return "拾荒猎犬近战脑干"
 		_:
 			return "闲置"
 

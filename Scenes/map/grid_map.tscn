@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://Scripts/map/grid_map.gd" id="1_x1m0f"]
 [ext_resource type="Script" path="res://Scripts/map/grid_overlay.gd" id="2_vtvb7"]
+[ext_resource type="Script" path="res://Scripts/map/combat_target_registry.gd" id="3_target_registry"]
 
 [node name="GridMap" type="Node2D"]
 script = ExtResource("1_x1m0f")
@@ -22,3 +23,6 @@ script = ExtResource("2_vtvb7")
 [node name="UnitLayer" type="Node2D" parent="."]
 
 [node name="ProjectileLayer" type="Node2D" parent="."]
+
+[node name="CombatTargetRegistry" type="Node" parent="."]
+script = ExtResource("3_target_registry")

@@ -3,8 +3,10 @@ class_name MvpDataDefaults
 
 const RECIPE_CONFIG_PATH := "res://Resources/data/recipes/mvp_recipes.json"
 const UNIT_BLUEPRINT_CONFIG_PATH := "res://Resources/data/units/mvp_unit_blueprints.json"
+const BUILDING_CONFIG_PATH := "res://Resources/data/buildings/mvp_buildings.json"
 const RecipeConfigLoaderScript := preload("res://Scripts/data/recipe_config_loader.gd")
 const UnitBlueprintConfigLoaderScript := preload("res://Scripts/data/unit_blueprint_config_loader.gd")
+const BuildingConfigLoaderScript := preload("res://Scripts/data/building_config_loader.gd")
 
 const RES_IRON_ORE := &"iron_ore"
 const RES_COPPER_ORE := &"copper_ore"
@@ -65,11 +67,14 @@ static func _create_basic_rifle_blueprint_fallback(recipe_defs: Array[RecipeDef]
 
 static func create_mvp_building_defs() -> Array[BuildingDef]:
 	var recipe_defs := create_recipe_defs()
+	return BuildingConfigLoaderScript.load_building_defs(BUILDING_CONFIG_PATH, recipe_defs, _create_building_fallbacks(recipe_defs))
+
+static func _create_building_fallbacks(recipe_defs: Array[RecipeDef]) -> Array[BuildingDef]:
 	return [
-		_make_building(BUILDING_MAIN_BASE, "主基地", Vector2i(2, 2), recipe_defs, "res://Resources/art/buildings/main_base.svg"),
-		_make_building(BUILDING_MINER, "采矿机", Vector2i(1, 1), recipe_defs, "res://Resources/art/buildings/miner.svg"),
-		_make_building(BUILDING_PROCESSOR, "基础加工厂", Vector2i(1, 1), recipe_defs, "res://Resources/art/buildings/processor.svg"),
-		_make_building(BUILDING_ROBOT_FORGE, "机器人锻造厂", Vector2i(1, 1), recipe_defs, "res://Resources/art/buildings/robot_forge.svg"),
+		_make_building(BUILDING_MAIN_BASE, "主基地", Vector2i(2, 2), recipe_defs, "res://Resources/art/buildings/main_base.svg", 1400),
+		_make_building(BUILDING_MINER, "采矿机", Vector2i(1, 1), recipe_defs, "res://Resources/art/buildings/miner.svg", 420),
+		_make_building(BUILDING_PROCESSOR, "基础加工厂", Vector2i(1, 1), recipe_defs, "res://Resources/art/buildings/processor.svg", 600),
+		_make_building(BUILDING_ROBOT_FORGE, "机器人锻造厂", Vector2i(1, 1), recipe_defs, "res://Resources/art/buildings/robot_forge.svg", 700),
 	]
 
 static func _make_resource(resource_id: StringName, display_name: String, icon_path: String, description: String) -> ResourceDef:
@@ -80,7 +85,7 @@ static func _make_resource(resource_id: StringName, display_name: String, icon_p
 	def.description = description
 	return def
 
-static func _make_building(building_id: StringName, display_name: String, grid_size: Vector2i, recipe_defs: Array[RecipeDef], icon_path: String) -> BuildingDef:
+static func _make_building(building_id: StringName, display_name: String, grid_size: Vector2i, recipe_defs: Array[RecipeDef], icon_path: String, max_hp: int) -> BuildingDef:
 	var recipe := _find_recipe_by_target(recipe_defs, &"building", building_id)
 	var def := BuildingDef.new()
 	def.id = building_id
@@ -90,6 +95,7 @@ static func _make_building(building_id: StringName, display_name: String, grid_s
 		def.build_recipe_id = recipe.id
 		def.build_cost = recipe.inputs.duplicate(true)
 	def.icon_path = icon_path
+	def.max_hp = max_hp
 	return def
 
 static func _find_recipe_by_target(recipe_defs: Array[RecipeDef], recipe_type: StringName, target_id: StringName) -> RecipeDef:

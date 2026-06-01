@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Tests/scenes/rally_rule_activation_check.gd" id="1_rally_rule_activation"]
+
+[node name="RallyRuleActivationCheck" type="Node"]
+script = ExtResource("1_rally_rule_activation")

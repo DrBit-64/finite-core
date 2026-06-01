@@ -113,3 +113,93 @@ var panel_size := panel.get_combined_minimum_size()
 - `Resources/data/units/mvp_unit_blueprints.json`：单位蓝图与基础机器人属性。
 
 如果临时必须改脚本常量，也要在 `debug-balance-overrides.md` 记录，并在后续尽快迁移到外部配置。
+
+## Godot `--script` Smoke Test 原生崩溃
+
+**记录时间**：2026-05-31
+**适用范围**：本项目的自动化验证、headless 测试脚本、阶段验收流程。
+
+### 背景
+
+本项目多次遇到以下问题：
+
+- 使用 Godot console 执行 `--headless --script res://Tests/...gd` smoke test 时，Godot 可能直接发生原生 `signal 11` 崩溃。
+- 崩溃发生在引擎层，不一定产生可定位的 GDScript 报错。
+- 此前窗口缩放也曾触发 Godot 高内存占用与系统级异常，因此调试阶段应优先降低引擎崩溃风险。
+
+### 长期规则
+
+后续默认**不要主动运行** Godot `--script` smoke test，包括新建的 `Tests/*_smoke.gd`。
+
+默认自动化验证方式：
+
+1. JSON 使用 PowerShell `ConvertFrom-Json` 校验。
+2. SVG 使用 XML 解析校验。
+3. GDScript 与场景使用稳定的场景加载命令校验：
+
+```powershell
+& 'D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe' `
+  --headless --path 'D:\Godot\finite-core' `
+  res://Scenes/mvp/mvp_test_map.tscn --quit
+```
+
+4. 需要真实交互、战斗流程或长时间运行时，给出 F5 手工验收清单，由用户在编辑器内验证。
+
+项目内提供稳定启动检查入口：
+
+```powershell
+.\Tools\check_mvp_startup.cmd
+```
+
+该工具启动真实 MVP 场景数秒，将日志写入 `debug_exports/logs/mvp_startup.log`，并在发现 `ERROR`、`WARNING`、`Invalid call`、失效 UID、资源缺失或崩溃特征时返回失败。使用 `.cmd` 入口可以避开本机 PowerShell 脚本执行策略限制。
+
+阶段 7 的守军生命周期另有场景式回归检查：
+
+```powershell
+.\Tools\check_stage7_guard_lifecycle.cmd
+```
+
+它加载普通场景而非使用 `--script`，验证地图全局阵营目标列表、普通单位短时目标锁定、远距离敌巢可被玩家索敌、远距离玩家不会触发守军、守军锁定后离圈追杀、目标死亡后近距离续接、守军死亡注销和补员倒计时。
+
+## 索敌结构约束
+
+- 地图使用 `CombatTargetRegistry` 维护按阵营划分的全图 `combat_target` 列表，单位和建筑在启用、死亡或回收时注册或注销。
+- 通用单位使用 `UnitEnemySensor` 查询地图注册表中的全图敌方目标，不依赖局部感知半径或摄像机可见区域。
+- 普通单位使用短时间目标锁定，减少多个候选目标变化造成的频繁切换。
+- 拾荒猎犬使用独立的 `ScavengerHoundSensor`：首次接敌受敌巢警戒半径限制；锁定后持续追杀；目标死亡后先从自身附近尝试续接目标。
+- 敌巢警戒等敌军特例不要塞回通用机器人传感器。
+
+### 例外
+
+只有满足以下条件时才运行 `--script` smoke test：
+
+- 用户明确要求尝试脚本级 smoke test。
+- 已先说明本项目存在原生崩溃历史。
+- 测试范围足够小，并且没有更稳定的替代验证方式。
+
+如果一次 `--script` 测试出现原生崩溃，立即停止重复执行，改用稳定验证路径。
+
+## 规则求值与事件记账
+
+- `AIController` 按 `0.2s` 节拍求值规则，不应跟随物理帧率每帧完整求值。
+- `rule_triggered` 表示机器人进入一条不同的匹配规则。持续执行同一条规则时，不重复增加触发次数。
+- 调试事件面板应合并同一帧内的刷新请求，避免事件集中出现时反复销毁和重建 UI 行。
+- 集结人数查询通过地图注册表共享短缓存，避免多个机器人抵达同一集结点时重复扫描全部单位。
+
+规则触发节拍与记账语义可通过以下稳定场景检查验证：
+
+```powershell
+.\Tools\check_rally_rule_activation.cmd
+```
+
+## 物理回调中的建筑销毁
+
+- 子弹的 `body_entered` 会发生在物理查询刷新期间。
+- 建筑死亡回调中不要立即重建 `CollisionShape2D.shape`，也不要立即修改碰撞层或禁用状态。
+- 建筑部署时才更新碰撞几何；死亡时只更新视觉，并通过 `set_deferred()` 延迟关闭碰撞。
+
+可通过以下稳定场景检查验证：
+
+```powershell
+.\Tools\check_building_projectile_destruction.cmd
+```

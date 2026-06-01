@@ -1,0 +1,13 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Scripts/map/enemy_nest.gd" id="1_enemy_nest"]
+
+[node name="EnemyNest" type="StaticBody2D"]
+script = ExtResource("1_enemy_nest")
+team = "Team_B"
+icon_size = Vector2(96, 96)
+
+[node name="Footprint" type="Polygon2D" parent="."]
+color = Color(0.35, 0.10, 0.12, 0.68)
+
+[node name="IconSprite" type="Sprite2D" parent="."]

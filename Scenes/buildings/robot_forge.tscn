@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://Scripts/buildings/robot_forge.gd" id="1_wa3n6"]
 
-[node name="RobotForge" type="Node2D"]
+[node name="RobotForge" type="StaticBody2D"]
 script = ExtResource("1_wa3n6")
 
 [node name="Footprint" type="Polygon2D" parent="."]

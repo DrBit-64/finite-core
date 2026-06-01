@@ -22,7 +22,7 @@ func reset() -> void:
 	_last_fire_time = -9999.0
 
 func is_target_in_range(origin: Vector2, target: Node2D) -> bool:
-	return target != null and origin.distance_to(target.global_position) <= fire_range
+	return target != null and origin.distance_to(_get_target_position(target)) <= fire_range
 
 func get_cooldown_remaining() -> float:
 	var now := Time.get_ticks_msec() / 1000.0
@@ -41,7 +41,8 @@ func try_fire(owner_team: String, muzzle: Node2D, target: Node2D, spawn_parent: 
 		origin = muzzle.global_position
 	elif get_parent() is Node2D:
 		origin = (get_parent() as Node2D).global_position
-	if origin.distance_to(target.global_position) > fire_range:
+	var target_position := _get_target_position(target)
+	if origin.distance_to(target_position) > fire_range:
 		fire_state = &"out_of_range"
 		return false
 
@@ -55,9 +56,16 @@ func try_fire(owner_team: String, muzzle: Node2D, target: Node2D, spawn_parent: 
 		return false
 
 	bullet.global_position = origin
-	var shot_dir := (target.global_position - origin).normalized()
+	var shot_dir := (target_position - origin).normalized()
 	if bullet.has_method("setup"):
 		bullet.call("setup", owner_team, damage, shot_dir)
 	_last_fire_time = Time.get_ticks_msec() / 1000.0
 	fire_state = &"fired"
 	return true
+
+func _get_target_position(target: Node2D) -> Vector2:
+	if target and target.has_method("get_target_position"):
+		return target.call("get_target_position")
+	if target:
+		return target.global_position
+	return Vector2.ZERO

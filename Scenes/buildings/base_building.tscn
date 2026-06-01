@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://Scripts/buildings/base_building.gd" id="1_oj8na"]
 
-[node name="BaseBuilding" type="Node2D"]
+[node name="BaseBuilding" type="StaticBody2D"]
 script = ExtResource("1_oj8na")
 
 [node name="Footprint" type="Polygon2D" parent="."]

@@ -6,6 +6,7 @@ class_name MvpGridMap
 @export var cell_size: int = 64
 
 @onready var grid_overlay: Node2D = $TerrainLayer/GridOverlay
+@onready var combat_target_registry: Node = $CombatTargetRegistry
 
 func _ready() -> void:
 	_sync_overlay()
@@ -44,6 +45,9 @@ func is_rect_in_bounds(origin: Vector2i, size: Vector2i = Vector2i.ONE) -> bool:
 
 func get_layer(layer_name: String) -> Node2D:
 	return get_node_or_null(layer_name) as Node2D
+
+func get_combat_target_registry() -> Node:
+	return combat_target_registry
 
 func describe() -> String:
 	return "%sx%s cells, %spx cell, %sx%s world px" % [

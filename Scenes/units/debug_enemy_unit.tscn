@@ -5,7 +5,7 @@
 [ext_resource type="Script" path="res://Scripts/units/health_component.gd" id="3_health"]
 [ext_resource type="Script" path="res://Scripts/units/movement_component.gd" id="4_move"]
 [ext_resource type="Script" path="res://Scripts/units/weapon_component.gd" id="5_weapon"]
-[ext_resource type="Script" path="res://Scripts/units/visible_enemy_sensor.gd" id="6_sensor"]
+[ext_resource type="Script" path="res://Scripts/units/unit_enemy_sensor.gd" id="6_sensor"]
 [ext_resource type="Script" path="res://Scripts/units/lifespan_component.gd" id="7_lifespan"]
 [ext_resource type="Script" path="res://Scripts/units/default_brain.gd" id="8_default_brain"]
 [ext_resource type="Script" path="res://Scripts/units/path_follow_brain.gd" id="9_path_brain"]
@@ -73,7 +73,7 @@ script = ExtResource("4_move")
 script = ExtResource("5_weapon")
 enabled = false
 
-[node name="VisibleEnemySensor" type="Node" parent="."]
+[node name="EnemySensor" type="Node" parent="."]
 script = ExtResource("6_sensor")
 
 [node name="UnitStateFlags" type="Node" parent="."]

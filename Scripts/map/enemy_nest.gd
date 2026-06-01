@@ -1,0 +1,103 @@
+extends "res://Scripts/buildings/base_building.gd"
+class_name EnemyNest
+
+signal guard_spawn_requested(nest: Node, guard_type: StringName)
+signal nest_destroyed(nest: Node)
+
+var nest_id: StringName = &""
+var nest_type: StringName = &""
+var guard_unit_type: StringName = &""
+var initial_guard_count: int = 6
+var max_guard_count: int = 6
+var guard_replenish_seconds: float = 30.0
+var reward: Dictionary = {}
+var time_alive_seconds: float = 0.0
+var replenish_seconds_remaining: float = 30.0
+
+var _guards: Array[Node] = []
+
+func setup_nest(id: StringName, type_id: StringName, config: Dictionary, origin: Vector2i, next_cell_size: int) -> void:
+	nest_id = id
+	nest_type = type_id
+	guard_unit_type = StringName(str(config.get("guard_unit_type", "scavenger_hound")))
+	initial_guard_count = maxi(0, int(config.get("initial_guard_count", 6)))
+	max_guard_count = maxi(0, int(config.get("max_guard_count", 6)))
+	guard_replenish_seconds = maxf(0.1, float(config.get("guard_replenish_seconds", 30.0)))
+	replenish_seconds_remaining = guard_replenish_seconds
+	reward = config.get("reward", {}).duplicate(true)
+	time_alive_seconds = 0.0
+	team = "Team_B"
+
+	var def := BuildingDef.new()
+	def.id = type_id
+	def.display_name = str(config.get("display_name", "敌巢"))
+	def.icon_path = str(config.get("icon_path", "res://Resources/art/enemies/enemy_nest.svg"))
+	def.grid_size = _vector2i(config.get("grid_size", [2, 2]), Vector2i(2, 2))
+	def.max_hp = maxi(1, int(config.get("max_hp", 180)))
+	setup(def, origin, next_cell_size)
+
+func spawn_initial_guards() -> void:
+	for _index in range(initial_guard_count):
+		guard_spawn_requested.emit(self, guard_unit_type)
+
+func register_guard(guard: Node) -> void:
+	if guard == null or _guards.has(guard):
+		return
+	_guards.append(guard)
+
+func unregister_guard(guard: Node) -> void:
+	_guards.erase(guard)
+
+func get_guard_count() -> int:
+	_prune_guards()
+	return _guards.size()
+
+func get_spawn_position(index: int = -1) -> Vector2:
+	var offsets := [
+		Vector2(-86.0, -56.0),
+		Vector2(86.0, -56.0),
+		Vector2(-86.0, 56.0),
+		Vector2(86.0, 56.0),
+	]
+	var selected_index := get_guard_count() if index < 0 else index
+	return get_target_position() + offsets[selected_index % offsets.size()]
+
+func get_inspector_lines() -> Array[String]:
+	var lines := super.get_inspector_lines()
+	lines[0] = "类型：敌巢"
+	lines.append("巢穴 ID：%s" % String(nest_id))
+	lines.append("守军：%s / %s" % [get_guard_count(), max_guard_count])
+	lines.append("补充倒计时：%.1fs" % replenish_seconds_remaining)
+	lines.append("奖励：%s" % JSON.stringify(reward))
+	return lines
+
+func _process(delta: float) -> void:
+	if not is_alive():
+		return
+	time_alive_seconds += delta
+	if get_guard_count() >= max_guard_count:
+		replenish_seconds_remaining = guard_replenish_seconds
+		return
+	replenish_seconds_remaining -= delta
+	if replenish_seconds_remaining > 0.0:
+		return
+	replenish_seconds_remaining = guard_replenish_seconds
+	guard_spawn_requested.emit(self, guard_unit_type)
+
+func _on_building_destroyed(_reason: StringName) -> void:
+	nest_destroyed.emit(self)
+
+func _prune_guards() -> void:
+	for index in range(_guards.size() - 1, -1, -1):
+		var guard := _guards[index]
+		if guard == null or not is_instance_valid(guard):
+			_guards.remove_at(index)
+		elif guard.has_method("is_alive") and not bool(guard.call("is_alive")):
+			_guards.remove_at(index)
+		elif guard is CanvasItem and not (guard as CanvasItem).visible:
+			_guards.remove_at(index)
+
+func _vector2i(value: Variant, fallback: Vector2i) -> Vector2i:
+	if typeof(value) != TYPE_ARRAY or value.size() < 2:
+		return fallback
+	return Vector2i(int(value[0]), int(value[1]))

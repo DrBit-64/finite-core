@@ -34,6 +34,8 @@ func _draw() -> void:
 func _update_sprite() -> void:
 	if building_def == null or sprite == null:
 		return
+	if building_def.icon_path.is_empty():
+		return
 	var texture := load(building_def.icon_path) as Texture2D
 	if texture == null:
 		return

@@ -13,16 +13,20 @@ const ResourceNodeScene := preload("res://Scenes/map/resource_node.tscn")
 const RallyPointMarkerScene := preload("res://Scenes/map/rally_point_marker.tscn")
 const RobotScene := preload("res://Scenes/robot.tscn")
 const DebugEnemyScene := preload("res://Scenes/units/debug_enemy_unit.tscn")
+const ScavengerHoundScene := preload("res://Scenes/units/scavenger_hound.tscn")
+const EnemyNestScene := preload("res://Scenes/map/enemy_nest.tscn")
 const MapConfigLoaderScript := preload("res://Scripts/map/map_config_loader.gd")
 const StartingInventoryConfigLoaderScript := preload("res://Scripts/data/starting_inventory_config_loader.gd")
 const BlueprintLibraryScript := preload("res://Scripts/blueprints/blueprint_library.gd")
+const EnemyConfigLoaderScript := preload("res://Scripts/data/enemy_config_loader.gd")
+const ENEMY_CONFIG_PATH := "res://Resources/data/enemies/mvp_enemies.json"
 const OPERATION_PANEL_REFRESH_INTERVAL := 0.1
 const UNIT_INSPECTOR_REFRESH_INTERVAL := 0.2
 
-@export var stage_label: String = "阶段 5"
-@export var current_goal: String = "机器人组件、默认脑干与调试敌军"
+@export var stage_label: String = "阶段 7"
+@export var current_goal: String = "敌巢、守军与胜利条件"
 @export var resource_summary_placeholder: String = "资源面板占位"
-@export var bottom_hint: String = "建造锻造厂生产机器人；机器人会索敌当前可见地图内的调试敌军"
+@export var bottom_hint: String = "建造锻造厂并设置集结点；集结机器人后摧毁远处的拾荒猎犬巢穴"
 @export var hud_path: NodePath = ^"%MvpHUD"
 @export var grid_map_path: NodePath = ^"%GridMap"
 @export var camera_path: NodePath = ^"MainCamera"
@@ -46,6 +50,8 @@ var recipe_defs: Array[RecipeDef] = []
 var basic_rifle_blueprint: UnitBlueprint
 var blueprint_library: BlueprintLibrary
 var building_defs: Array[BuildingDef] = []
+var enemy_config: Dictionary = {}
+var enemy_nests_by_id: Dictionary = {}
 var grid_occupancy = GridOccupancyScript.new()
 var main_base: Node = null
 var active_building_def: BuildingDef = null
@@ -58,10 +64,12 @@ var selected_operation_building: Node = null
 var operation_panel_refresh_seconds: float = 0.0
 var rally_point_target_forge: Node = null
 var selected_world_unit: Node = null
+var selected_inspected_node: Node = null
 var unit_inspector_refresh_seconds: float = 0.0
 var is_camera_dragging: bool = false
 var is_camera_drag_candidate: bool = false
 var camera_drag_accumulated: float = 0.0
+var stage_started_seconds: float = 0.0
 
 func _ready() -> void:
 	_bootstrap_mvp_scene()
@@ -78,7 +86,7 @@ func _process(delta: float) -> void:
 		if operation_panel_refresh_seconds >= OPERATION_PANEL_REFRESH_INTERVAL:
 			operation_panel_refresh_seconds = 0.0
 			_refresh_operation_panel()
-	if selected_world_unit:
+	if selected_inspected_node:
 		unit_inspector_refresh_seconds += delta
 		if unit_inspector_refresh_seconds >= UNIT_INSPECTOR_REFRESH_INTERVAL:
 			unit_inspector_refresh_seconds = 0.0
@@ -185,6 +193,7 @@ func _clamp_camera_to_map_bounds() -> void:
 	main_camera.global_position = camera_pos
 
 func _bootstrap_mvp_scene() -> void:
+	stage_started_seconds = Time.get_ticks_msec() / 1000.0
 	_load_stage_one_data()
 	_setup_stage_two_world()
 	_configure_hud()
@@ -197,6 +206,7 @@ func _load_stage_one_data() -> void:
 	blueprint_library = BlueprintLibraryScript.new()
 	blueprint_library.add_blueprint(basic_rifle_blueprint)
 	building_defs = MvpDataDefaults.create_mvp_building_defs()
+	enemy_config = EnemyConfigLoaderScript.load_enemy_config(ENEMY_CONFIG_PATH)
 	starting_inventory = StartingInventoryConfigLoaderScript.load_starting_inventory(starting_inventory_config_path, starting_inventory)
 	resource_summary_placeholder = "资源 %d / 配方 %d / 建筑 %d" % [
 		resource_defs.size(),
@@ -403,6 +413,8 @@ func _spawn_building(building_def: BuildingDef, origin: Vector2i, is_main_base: 
 		building.call("setup", building_def, origin, _get_grid_cell_size())
 	grid_occupancy.clear_rect(origin, building_def.grid_size)
 	grid_occupancy.register_rect(origin, building_def.grid_size, building)
+	if building.has_signal("building_destroyed"):
+		building.connect("building_destroyed", Callable(self, "_on_building_destroyed"))
 	return building
 
 func _can_place_building(building_def: BuildingDef, origin: Vector2i) -> bool:
@@ -517,11 +529,13 @@ func _create_selection_marker() -> void:
 
 func _show_selection_for_cell(cell: Vector2i) -> void:
 	_clear_world_unit_selection()
+	selected_inspected_node = null
 	if selection_marker and selection_marker.has_method("show_selection"):
 		selection_marker.call("show_selection", cell, Vector2i.ONE, _get_grid_cell_size())
 
 func _show_selection_for_node(node: Node) -> void:
 	_clear_world_unit_selection()
+	selected_inspected_node = node
 	if selection_marker == null or not selection_marker.has_method("show_selection"):
 		return
 	var origin: Vector2i = node.get("grid_origin")
@@ -531,6 +545,7 @@ func _show_selection_for_node(node: Node) -> void:
 func _show_selection_for_world_unit(unit: Node) -> void:
 	_clear_world_unit_selection()
 	selected_world_unit = unit
+	selected_inspected_node = unit
 	unit_inspector_refresh_seconds = 0.0
 	if selection_marker and selection_marker.has_method("clear_selection"):
 		selection_marker.call("clear_selection")
@@ -540,18 +555,22 @@ func _show_selection_for_world_unit(unit: Node) -> void:
 func _clear_world_unit_selection() -> void:
 	if selected_world_unit and is_instance_valid(selected_world_unit) and selected_world_unit.has_method("set_selected"):
 		selected_world_unit.call("set_selected", false)
+	if selected_inspected_node == selected_world_unit:
+		selected_inspected_node = null
 	selected_world_unit = null
 	unit_inspector_refresh_seconds = 0.0
 
 func _refresh_selected_unit_inspector() -> void:
-	if selected_world_unit == null or not is_instance_valid(selected_world_unit):
+	if selected_inspected_node == null or not is_instance_valid(selected_inspected_node):
 		_clear_world_unit_selection()
+		selected_inspected_node = null
 		return
-	if selected_world_unit.has_method("is_alive") and not bool(selected_world_unit.call("is_alive")):
+	if selected_inspected_node.has_method("is_alive") and not bool(selected_inspected_node.call("is_alive")):
 		_clear_world_unit_selection()
+		selected_inspected_node = null
 		return
 	if hud and hud.has_method("inspect_node"):
-		hud.call("inspect_node", selected_world_unit)
+		hud.call("inspect_node", selected_inspected_node)
 
 func _find_world_unit_under_mouse() -> Node:
 	var mouse_world := get_global_mouse_position()
@@ -644,6 +663,11 @@ func _load_fixed_map() -> void:
 		if typeof(item) != TYPE_DICTIONARY:
 			continue
 		_spawn_debug_enemy(item)
+	var enemy_nest_items: Array = map_config.get("enemy_nests", [])
+	for item in enemy_nest_items:
+		if typeof(item) != TYPE_DICTIONARY:
+			continue
+		_spawn_enemy_nest(item)
 
 func _spawn_resource_node(data: Dictionary) -> void:
 	var resource_id := StringName(str(data.get("resource_id", "")))
@@ -670,6 +694,107 @@ func _spawn_debug_enemy(data: Dictionary) -> void:
 	if enemy.has_method("setup_debug_enemy"):
 		enemy.call("setup_debug_enemy", str(data.get("display_name", "调试靶机")), path_points, bool(data.get("loop", true)))
 	push_debug_event("调试敌军已生成：%s，路径点 %d" % [enemy.name, path_points.size()])
+
+func _spawn_enemy_nest(data: Dictionary) -> void:
+	var nest_id := StringName(str(data.get("id", IdProvider.next_id(&"enemy_nest"))))
+	var nest_type := StringName(str(data.get("nest_type", "weak_scavenger_nest")))
+	var nest_config := EnemyConfigLoaderScript.get_type(enemy_config, "nest_types", nest_type)
+	if nest_config.is_empty():
+		push_warning("Unknown enemy nest type: %s" % String(nest_type))
+		return
+	var origin := MapConfigLoaderScript.get_vector2i(data, "grid_origin")
+	var grid_size := MapConfigLoaderScript.get_vector2i(nest_config, "grid_size", Vector2i(2, 2))
+	if not grid_occupancy.register_rect(origin, grid_size, null):
+		push_warning("Enemy nest cannot occupy grid rect: %s @ %s" % [String(nest_id), origin])
+		return
+
+	var nest := EnemyNestScene.instantiate()
+	nest.name = String(nest_id)
+	var layer := _get_layer("EnemyLayer")
+	(layer if layer else self).add_child(nest)
+	nest.call("setup_nest", nest_id, nest_type, nest_config, origin, _get_grid_cell_size())
+	grid_occupancy.clear_rect(origin, grid_size)
+	grid_occupancy.register_rect(origin, grid_size, nest)
+	nest.connect("guard_spawn_requested", Callable(self, "_on_enemy_nest_guard_spawn_requested"))
+	nest.connect("nest_destroyed", Callable(self, "_on_enemy_nest_destroyed"))
+	if nest.has_signal("building_destroyed"):
+		nest.connect("building_destroyed", Callable(self, "_on_building_destroyed"))
+	enemy_nests_by_id[nest_id] = nest
+	nest.call_deferred("spawn_initial_guards")
+	push_debug_event("敌巢已生成：%s @ %s, %s，距离起始矿区较远" % [nest.call("get_display_name"), origin.x, origin.y])
+
+func _on_enemy_nest_guard_spawn_requested(nest: Node, guard_type: StringName) -> void:
+	if nest == null or not is_instance_valid(nest) or not bool(nest.call("is_alive")):
+		return
+	var guard_config := EnemyConfigLoaderScript.get_type(enemy_config, "unit_types", guard_type)
+	if guard_config.is_empty():
+		push_warning("Unknown enemy guard type: %s" % String(guard_type))
+		return
+	var layer := _get_layer("EnemyLayer")
+	var guard := ObjectPool.get_instance(ScavengerHoundScene, layer if layer else self, "scavenger_hound") as CharacterBody2D
+	if guard == null:
+		return
+	guard.name = IdProvider.next_id(&"scavenger_hound")
+	guard.global_position = nest.call("get_spawn_position")
+	guard.call("setup_scavenger_hound", guard_config, nest)
+	if guard.has_signal("robot_lost") and not guard.is_connected("robot_lost", Callable(self, "_on_enemy_hound_lost")):
+		guard.connect("robot_lost", Callable(self, "_on_enemy_hound_lost"))
+	nest.call("register_guard", guard)
+	push_debug_event("敌巢补充守军：%s" % guard.name)
+
+func _on_enemy_hound_lost(hound: Node, reason: StringName) -> void:
+	var event_log := get_node_or_null("/root/CombatEventLog")
+	if event_log and event_log.has_method("record"):
+		event_log.call("record", &"enemy_killed", {
+			"enemy_id": hound.name,
+			"enemy_type": "scavenger_hound",
+			"reason": String(reason),
+		})
+
+func _on_enemy_nest_destroyed(nest: Node) -> void:
+	var event_log := get_node_or_null("/root/CombatEventLog")
+	if event_log and event_log.has_method("record"):
+		event_log.call("record", &"nest_destroyed", {
+			"nest_id": String(nest.get("nest_id")),
+			"time_alive": float(nest.get("time_alive_seconds")),
+			"reward": nest.get("reward"),
+		})
+	if hud and hud.has_method("show_victory_summary"):
+		hud.call("show_victory_summary", _build_victory_summary(nest))
+	push_debug_event("胜利：敌巢已摧毁")
+
+func _build_victory_summary(nest: Node) -> Dictionary:
+	var event_log := get_node_or_null("/root/CombatEventLog")
+	var events: Array[Dictionary] = []
+	if event_log and event_log.has_method("get_recent_events"):
+		events = event_log.call("get_recent_events", 0.0, "")
+	var rule_names := {}
+	var produced := 0
+	var lost := 0
+	var killed := 0
+	var triggered := 0
+	for event in events:
+		var event_type := str(event.get("type", ""))
+		if event_type == "robot_produced":
+			produced += 1
+		elif event_type == "robot_lost":
+			lost += 1
+		elif event_type == "enemy_killed":
+			killed += 1
+		elif event_type == "rule_triggered":
+			triggered += 1
+			var rule_name := str(event.get("payload", {}).get("rule_name", "未命名规则"))
+			rule_names[rule_name] = int(rule_names.get(rule_name, 0)) + 1
+	return {
+		"target": nest.call("get_display_name"),
+		"elapsed_seconds": Time.get_ticks_msec() / 1000.0 - stage_started_seconds,
+		"robots_produced": produced,
+		"robots_lost": lost,
+		"enemies_killed": killed,
+		"rules_triggered": triggered,
+		"rule_names": rule_names,
+		"reward": nest.get("reward"),
+	}
 
 func _get_world_path_points(grid_path: Variant) -> Array[Vector2]:
 	var points: Array[Vector2] = []
@@ -868,8 +993,26 @@ func _create_blueprint_snapshot(blueprint: UnitBlueprint) -> UnitBlueprint:
 		return blueprint.make_snapshot()
 	return null
 
-func _on_robot_lost_for_blueprint_cleanup(_robot: Node, _reason: StringName) -> void:
+func _on_robot_lost_for_blueprint_cleanup(robot: Node, reason: StringName) -> void:
+	var event_log := get_node_or_null("/root/CombatEventLog")
+	if event_log and event_log.has_method("record") and robot and String(robot.get("team")) == "Team_A":
+		event_log.call("record", &"robot_lost", {
+			"robot_id": robot.name,
+			"team": String(robot.get("team")),
+			"blueprint_id": String(robot.get("blueprint_id")),
+			"blueprint_version": int(robot.get("blueprint_version")),
+			"reason": String(reason),
+		})
 	call_deferred("_prune_blueprint_snapshots")
+
+func _on_building_destroyed(building: Node, reason: StringName) -> void:
+	var event_log := get_node_or_null("/root/CombatEventLog")
+	if event_log and event_log.has_method("record"):
+		event_log.call("record", &"building_destroyed", {
+			"building": building.name,
+			"team": String(building.get("team")),
+			"reason": String(reason),
+		})
 
 func _prune_blueprint_snapshots() -> void:
 	if blueprint_library == null:

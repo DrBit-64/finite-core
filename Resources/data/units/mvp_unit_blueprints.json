@@ -93,18 +93,11 @@
       "stats": {
         "max_hp": 60,
         "speed": 90.0,
-        "lifespan_seconds": 20.0,
-        "radar_radius": 240.0,
+        "lifespan_seconds": 120.0,
+        "target_lock_seconds": 1.5,
         "fire_range": 140.0,
         "damage": 8,
         "fire_cooldown_seconds": 0.8
-      },
-      "debug_overrides": {
-        "lifespan_seconds": {
-          "previous_value": 120.0,
-          "current_value": 20.0,
-          "reason": "缩短调试等待时间，方便验证机器人死亡、锻造厂补位和复盘事件。"
-        }
       }
     }
   ]

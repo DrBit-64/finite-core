@@ -32,12 +32,12 @@
       "amount": 10000
     }
   ],
-  "debug_enemies": [
+  "debug_enemies": [],
+  "enemy_nests": [
     {
-      "id": "debug_enemy_001",
-      "display_name": "调试靶机",
-      "grid_path": [[17, 8], [19, 12], [16, 16], [12, 14]],
-      "loop": true
+      "id": "enemy_nest_001",
+      "nest_type": "weak_scavenger_nest",
+      "grid_origin": [34, 30]
     }
   ]
 }

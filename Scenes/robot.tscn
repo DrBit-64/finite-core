@@ -1,12 +1,12 @@
 [gd_scene load_steps=13 format=3 uid="uid://b4cj2ah5o5cyv"]
 
-[ext_resource type="Script" uid="uid://dbu12wx8l23yq" path="res://Scripts/robot.gd" id="1_n2f4s"]
-[ext_resource type="Script" uid="uid://du7tsqkj524ta" path="res://Scripts/ai_controller.gd" id="2_5tv1n"]
+[ext_resource type="Script" path="res://Scripts/robot.gd" id="1_n2f4s"]
+[ext_resource type="Script" path="res://Scripts/ai_controller.gd" id="2_5tv1n"]
 [ext_resource type="Texture2D" path="res://Resources/art/blueprints/basic_rifle_robot.svg" id="3_robot_icon"]
 [ext_resource type="Script" path="res://Scripts/units/health_component.gd" id="4_health"]
 [ext_resource type="Script" path="res://Scripts/units/movement_component.gd" id="5_move"]
 [ext_resource type="Script" path="res://Scripts/units/weapon_component.gd" id="6_weapon"]
-[ext_resource type="Script" path="res://Scripts/units/visible_enemy_sensor.gd" id="7_sensor"]
+[ext_resource type="Script" path="res://Scripts/units/unit_enemy_sensor.gd" id="7_sensor"]
 [ext_resource type="Script" path="res://Scripts/units/lifespan_component.gd" id="8_lifespan"]
 [ext_resource type="Script" path="res://Scripts/units/default_brain.gd" id="9_default_brain"]
 [ext_resource type="Script" path="res://Scripts/units/path_follow_brain.gd" id="10_path_brain"]
@@ -61,7 +61,7 @@ script = ExtResource("5_move")
 [node name="WeaponComponent" type="Node" parent="."]
 script = ExtResource("6_weapon")
 
-[node name="VisibleEnemySensor" type="Node" parent="."]
+[node name="EnemySensor" type="Node" parent="."]
 script = ExtResource("7_sensor")
 
 [node name="UnitStateFlags" type="Node" parent="."]

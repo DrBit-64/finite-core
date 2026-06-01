@@ -350,8 +350,8 @@ func _make_rules_for_save() -> Array:
 	for rule in result:
 		if typeof(rule) != TYPE_DICTIONARY:
 			continue
-		var name := str(rule.get("name", "")).strip_edges()
-		if name.is_empty():
+		var rule_name := str(rule.get("name", "")).strip_edges()
+		if rule_name.is_empty():
 			rule["name"] = _format_rule_action(rule)
 	return result
 

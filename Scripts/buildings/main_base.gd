@@ -40,5 +40,5 @@ func _draw() -> void:
 	var center := Vector2(grid_size.x * cell_size, grid_size.y * cell_size) * 0.5
 	draw_arc(center, radius, 0.0, TAU, 96, Color(0.24, 0.76, 0.92, 0.42), 2.0)
 
-func _on_inventory_changed(resource_id: StringName, amount: int, delta: int, reason: String) -> void:
+func _on_inventory_changed(_resource_id: StringName, _amount: int, _delta: int, _reason: String) -> void:
 	inventory_changed.emit()

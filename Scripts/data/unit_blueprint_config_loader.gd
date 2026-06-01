@@ -64,7 +64,7 @@ static func _make_stats(data: Variant) -> UnitStats:
 	stats.max_hp = int(data.get("max_hp", stats.max_hp))
 	stats.speed = float(data.get("speed", stats.speed))
 	stats.lifespan_seconds = float(data.get("lifespan_seconds", stats.lifespan_seconds))
-	stats.radar_radius = float(data.get("radar_radius", stats.radar_radius))
+	stats.target_lock_seconds = float(data.get("target_lock_seconds", stats.target_lock_seconds))
 	stats.fire_range = float(data.get("fire_range", stats.fire_range))
 	stats.damage = int(data.get("damage", stats.damage))
 	stats.fire_cooldown_seconds = float(data.get("fire_cooldown_seconds", stats.fire_cooldown_seconds))

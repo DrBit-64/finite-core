@@ -12,8 +12,9 @@ const AI_CONDITION_SCRIPT := preload("res://Scripts/ai_condition.gd")
 @onready var robot: CharacterBody2D = get_parent() as CharacterBody2D
 
 var _rule_trigger_counts: Dictionary = {}
-var _last_rule_event_key: String = ""
-var _last_rule_event_msec: int = 0
+var _active_rule_id: String = ""
+var _last_logic_handled: bool = false
+var _next_evaluation_msec: int = 0
 
 func _ready() -> void:
 	if robot and robot.has_method("uses_physics_ai_tick") and bool(robot.call("uses_physics_ai_tick")):
@@ -29,6 +30,9 @@ func _ready() -> void:
 func set_logic_rules(next_rules: Array) -> void:
 	logic_rules = next_rules.duplicate(true)
 	_rule_trigger_counts.clear()
+	_active_rule_id = ""
+	_last_logic_handled = false
+	_next_evaluation_msec = 0
 	for rule in logic_rules:
 		if rule == null:
 			continue
@@ -42,6 +46,10 @@ func has_rules() -> bool:
 func evaluate_logic() -> bool:
 	if robot == null:
 		return false
+	var now := Time.get_ticks_msec()
+	if now < _next_evaluation_msec:
+		return _last_logic_handled
+	_next_evaluation_msec = now + roundi(maxf(0.01, tick_interval) * 1000.0)
 	for rule in logic_rules:
 		if rule == null:
 			continue
@@ -50,9 +58,11 @@ func evaluate_logic() -> bool:
 		if evaluate_single_rule(rule, target):
 			var rule_name := str(_rule_get(rule, "name", _rule_get(rule, "id", "未命名规则")))
 			var handled := execute_action(_rule_get(rule, "action", AI_RULE_SCRIPT.Action.STOP_ACTION), target, rule)
-			_record_rule_trigger("规则：%s" % rule_name)
-			_record_rule_event(rule, handled)
+			_activate_rule(rule, rule_name, handled)
+			_last_logic_handled = handled
 			return handled
+	_active_rule_id = ""
+	_last_logic_handled = false
 	return false
 
 func _resolve_subject_target(subject: Variant) -> Node2D:
@@ -187,19 +197,16 @@ func execute_action(act: Variant, target: Node2D, rule: Variant = null) -> bool:
 				_record_state_flag_changed(flag_id, false, rule)
 				return true
 		"default_combat":
-			_record_rule_trigger("规则：默认脑干接管")
 			return false
 		"wait":
 			if robot.has_method("stop_and_idle"):
 				robot.call("stop_and_idle")
 				robot.set("current_action", "等待队友")
-				_record_rule_trigger("规则：等待队友")
 				return true
 	match act:
 		AI_RULE_SCRIPT.Action.APPROACH:
 			if target and robot.has_method("move_towards"):
 				robot.move_towards(target.global_position)
-				_record_rule_trigger("规则：接近目标")
 				return true
 		AI_RULE_SCRIPT.Action.FLEE:
 			if not robot.has_method("flee_from"):
@@ -209,17 +216,14 @@ func execute_action(act: Variant, target: Node2D, rule: Variant = null) -> bool:
 				flee_target = robot.get_current_enemy()
 			if flee_target:
 				robot.flee_from(flee_target.global_position)
-				_record_rule_trigger("规则：远离目标")
 				return true
 		AI_RULE_SCRIPT.Action.FIRE_MAIN:
 			if target and robot.has_method("fire_weapon"):
 				robot.fire_weapon(target)
-				_record_rule_trigger("规则：主武器开火")
 				return true
 		AI_RULE_SCRIPT.Action.STOP_ACTION:
 			if robot.has_method("stop_and_idle"):
 				robot.stop_and_idle()
-				_record_rule_trigger("规则：停止")
 				return true
 	return false
 
@@ -230,28 +234,29 @@ func _record_rule_trigger(description: String) -> void:
 	if robot and robot.has_method("record_brain_trigger"):
 		robot.record_brain_trigger(StringName(description), description)
 
-func _record_rule_event(rule: Variant, handled: bool) -> void:
+func _activate_rule(rule: Variant, rule_name: String, handled: bool) -> void:
 	var rule_id := str(_rule_get(rule, "id", _rule_get(rule, "name", "unnamed_rule")))
 	if rule_id.is_empty():
 		rule_id = "unnamed_rule"
-	_rule_trigger_counts[rule_id] = int(_rule_trigger_counts.get(rule_id, 0)) + 1
-
-	var now := Time.get_ticks_msec()
-	var event_key := "%s:%s" % [robot.name if robot else "unknown", rule_id]
-	if event_key == _last_rule_event_key and now - _last_rule_event_msec < 1000:
+	if rule_id == _active_rule_id:
 		return
-	_last_rule_event_key = event_key
-	_last_rule_event_msec = now
+	_active_rule_id = rule_id
+	_rule_trigger_counts[rule_id] = int(_rule_trigger_counts.get(rule_id, 0)) + 1
+	_record_rule_trigger("规则：%s" % rule_name)
+
+	var payload_robot_name := ""
+	if robot:
+		payload_robot_name = str(robot.name)
 
 	var event_log := get_node_or_null("/root/CombatEventLog")
 	if event_log and event_log.has_method("record"):
 		event_log.call("record", &"rule_triggered", {
-			"robot": robot.name if robot else "",
+			"robot": payload_robot_name,
 			"blueprint_id": String(robot.get("blueprint_id")) if robot else "",
 			"blueprint_version": int(robot.get("blueprint_version")) if robot else 0,
 			"blueprint_snapshot_id": String(robot.get("blueprint_snapshot_id")) if robot else "",
 			"rule_id": rule_id,
-			"rule_name": str(_rule_get(rule, "name", rule_id)),
+			"rule_name": rule_name,
 			"action": str(_rule_get(rule, "action", "")),
 			"handled": handled,
 		})

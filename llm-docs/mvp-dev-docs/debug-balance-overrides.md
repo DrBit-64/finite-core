@@ -12,7 +12,6 @@
 
 | 日期 | 数值项 | 配置位置 | 修改前 | 修改后 | 调试目的 | 正式化前处理 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2026-05-28 | 基础步枪机器人寿命 `lifespan_seconds` | `Resources/data/units/mvp_unit_blueprints.json` | `120.0s` | `20.0s` | 缩短等待时间，方便验证机器人死亡、锻造厂自动补位和复盘事件。 | 正式平衡前恢复或重新按战斗节奏设定。 |
 | 2026-05-28 | MVP 开局调试库存：建设质料 | `Resources/data/debug/mvp_debug_starting_inventory.json` | `120` | `500` | 减少手动测试建造等待。 | 正式平衡前关闭 debug 配置或替换为正式开局配置。 |
 | 2026-05-28 | MVP 开局调试库存：铁板 | `Resources/data/debug/mvp_debug_starting_inventory.json` | `20` | `500` | 减少手动测试加工等待。 | 正式平衡前关闭 debug 配置或替换为正式开局配置。 |
 | 2026-05-28 | MVP 开局调试库存：铜线 | `Resources/data/debug/mvp_debug_starting_inventory.json` | `12` | `500` | 减少手动测试加工等待。 | 正式平衡前关闭 debug 配置或替换为正式开局配置。 |
@@ -23,3 +22,9 @@
 
 - 单位蓝图与属性：`Resources/data/units/mvp_unit_blueprints.json`
 - 调试开局库存：`Resources/data/debug/mvp_debug_starting_inventory.json`
+
+## 已撤销的调试覆盖
+
+| 日期 | 数值项 | 配置位置 | 临时数值 | 恢复值 | 说明 |
+| --- | --- | --- | --- | --- | --- |
+| 2026-06-01 | 基础步枪机器人寿命 `lifespan_seconds` | `Resources/data/units/mvp_unit_blueprints.json` | `20.0s` | `120.0s` | 已恢复 MVP 原始设计值；不再为了快速观察补位而缩短玩家机器人寿命。 |

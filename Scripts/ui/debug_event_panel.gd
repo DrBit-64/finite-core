@@ -14,6 +14,8 @@ var _window_option: OptionButton = null
 var _type_option: OptionButton = null
 var _selected_window_seconds: float = 300.0
 var _selected_event_type: String = ""
+var _refresh_queued: bool = false
+var _refresh_type_filter_queued: bool = false
 
 func _ready() -> void:
 	if title_label:
@@ -30,7 +32,7 @@ func add_event_line(text: String) -> void:
 		"type": "debug",
 		"payload": {"message": text},
 	})
-	_refresh()
+	_queue_refresh()
 
 func clear_events() -> void:
 	_events.clear()
@@ -54,7 +56,20 @@ func _bind_event_log() -> void:
 
 func _on_event_recorded(event: Dictionary) -> void:
 	_append_event(event)
-	_refresh_type_filter()
+	_queue_refresh(true)
+
+func _queue_refresh(refresh_type_filter: bool = false) -> void:
+	_refresh_type_filter_queued = _refresh_type_filter_queued or refresh_type_filter
+	if _refresh_queued:
+		return
+	_refresh_queued = true
+	call_deferred("_flush_refresh")
+
+func _flush_refresh() -> void:
+	_refresh_queued = false
+	if _refresh_type_filter_queued:
+		_refresh_type_filter_queued = false
+		_refresh_type_filter()
 	_refresh()
 
 func _build_filter_controls() -> void:

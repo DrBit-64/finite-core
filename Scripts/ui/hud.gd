@@ -10,6 +10,7 @@ signal forge_blueprint_selected(forge: Node, blueprint_id: StringName)
 
 const BottomPromptScript := preload("res://Scripts/ui/bottom_prompt.gd")
 const BlueprintManagementOverlayScript := preload("res://Scripts/ui/blueprint_management_overlay.gd")
+const VictorySummaryPanelScript := preload("res://Scripts/ui/victory_summary_panel.gd")
 
 @onready var current_goal_label: Label = %CurrentGoalLabel
 @onready var resource_summary_label: Label = %ResourceSummaryLabel
@@ -50,15 +51,10 @@ var _blueprint_panel: PanelContainer = null
 var _blueprint_list: VBoxContainer = null
 var _blueprint_source_option: OptionButton = null
 var _blueprint_name_edit: LineEdit = null
-var _blueprint_detail_label: Label = null
-var _blueprint_rule_list: VBoxContainer = null
-var _blueprint_default_brain_check: CheckBox = null
-var _blueprint_rule_template_option: OptionButton = null
-var _blueprint_draft_rules: Array = []
-var _blueprint_selected_source_id: StringName = &""
 var _forge_blueprint_picker: PanelContainer = null
 var _forge_blueprint_list: VBoxContainer = null
 var _blueprint_overlay: Control = null
+var _victory_summary_panel: Control = null
 
 func _ready() -> void:
 	set_current_goal("阶段 0：验证 MVP 测试入口")
@@ -116,6 +112,10 @@ func show_bottom_prompt(text: String, duration_seconds: float = 0.0, variant: St
 func hide_bottom_prompt() -> void:
 	if _bottom_prompt:
 		_bottom_prompt.hide_prompt()
+
+func show_victory_summary(summary: Dictionary) -> void:
+	_ensure_victory_summary_panel()
+	_victory_summary_panel.show_summary(summary)
 
 func show_processor_panel(processor: Node, recipes: Array[RecipeDef], resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
 	_ensure_operation_panel()
@@ -192,7 +192,9 @@ func _refresh_build_buttons() -> void:
 		button.custom_minimum_size = Vector2(120, 32)
 		if not _can_afford(building_def.build_cost):
 			button.modulate = Color(1.0, 0.68, 0.48, 1.0)
-		var icon := load(building_def.icon_path) as Texture2D
+		var icon: Texture2D = null
+		if not building_def.icon_path.is_empty():
+			icon = load(building_def.icon_path) as Texture2D
 		if icon:
 			button.icon = icon
 			button.expand_icon = true
@@ -279,8 +281,8 @@ func _make_cost_preview_content_key(building_def: BuildingDef, amounts: Dictiona
 	return "|".join(parts)
 
 func _position_cost_panel(screen_position: Vector2) -> void:
-	var offset := Vector2(18, 18)
-	var desired_position := screen_position + offset
+	var popup_offset := Vector2(18, 18)
+	var desired_position := screen_position + popup_offset
 	var viewport_size := get_viewport().get_visible_rect().size
 	var panel_size := _cost_panel.get_combined_minimum_size()
 	if panel_size == Vector2.ZERO:
@@ -352,6 +354,16 @@ func _ensure_blueprint_button() -> void:
 	_blueprint_button.z_index = 135
 	_blueprint_button.pressed.connect(_on_blueprint_button_pressed)
 	root_control.add_child(_blueprint_button)
+
+func _ensure_victory_summary_panel() -> void:
+	if _victory_summary_panel != null:
+		return
+	_victory_summary_panel = VictorySummaryPanelScript.new()
+	_victory_summary_panel.name = "VictorySummaryPanel"
+	_victory_summary_panel.visible = false
+	_victory_summary_panel.z_index = 180
+	_victory_summary_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	root_control.add_child(_victory_summary_panel)
 
 func _on_blueprint_button_pressed() -> void:
 	blueprint_library_requested.emit()
@@ -747,8 +759,8 @@ func _clear_operation_content() -> void:
 	_operation_cost_label = null
 
 func _position_operation_panel(screen_position: Vector2) -> void:
-	var offset := Vector2(24, -16)
-	var desired_position := screen_position + offset
+	var popup_offset := Vector2(24, -16)
+	var desired_position := screen_position + popup_offset
 	var viewport_size := get_viewport().get_visible_rect().size
 	var panel_size := _operation_panel.get_combined_minimum_size()
 	if panel_size == Vector2.ZERO:
