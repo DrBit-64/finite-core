@@ -12,6 +12,11 @@ var _events: Array[Dictionary] = []
 var _event_log: Node = null
 var _window_option: OptionButton = null
 var _type_option: OptionButton = null
+var _filter_controls: Control = null
+var _event_scroll: ScrollContainer = null
+var _collapse_button: Button = null
+var _expanded_height: float = 748.0
+var _is_collapsed: bool = false
 var _selected_window_seconds: float = 300.0
 var _selected_event_type: String = ""
 var _refresh_queued: bool = false
@@ -20,7 +25,11 @@ var _refresh_type_filter_queued: bool = false
 func _ready() -> void:
 	if title_label:
 		title_label.text = "调试事件"
+	if size.y > 0.0:
+		_expanded_height = size.y
 	_selected_window_seconds = default_window_seconds
+	_event_scroll = $MarginContainer/VBoxContainer/ScrollContainer
+	_build_header_controls()
 	_build_filter_controls()
 	_bind_event_log()
 	_refresh()
@@ -78,6 +87,7 @@ func _build_filter_controls() -> void:
 
 	var controls := HBoxContainer.new()
 	controls.name = "FilterControls"
+	_filter_controls = controls
 	controls.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	controls.add_theme_constant_override("separation", 8)
 	root_box.add_child(controls)
@@ -103,6 +113,35 @@ func _build_filter_controls() -> void:
 	_type_option.item_selected.connect(_on_type_selected)
 	controls.add_child(_type_option)
 	_refresh_type_filter()
+
+func _build_header_controls() -> void:
+	if root_box == null or title_label == null or _collapse_button != null:
+		return
+	var header := HBoxContainer.new()
+	header.name = "HeaderControls"
+	header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_theme_constant_override("separation", 8)
+	root_box.remove_child(title_label)
+	root_box.add_child(header)
+	root_box.move_child(header, 0)
+	title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(title_label)
+	_collapse_button = Button.new()
+	_collapse_button.text = "折叠"
+	_collapse_button.tooltip_text = "折叠或展开调试事件面板"
+	_collapse_button.custom_minimum_size = Vector2(64, 28)
+	_collapse_button.pressed.connect(_toggle_collapsed)
+	header.add_child(_collapse_button)
+
+func _toggle_collapsed() -> void:
+	_is_collapsed = not _is_collapsed
+	if _filter_controls:
+		_filter_controls.visible = not _is_collapsed
+	if _event_scroll:
+		_event_scroll.visible = not _is_collapsed
+	if _collapse_button:
+		_collapse_button.text = "展开" if _is_collapsed else "折叠"
+	size.y = 52.0 if _is_collapsed else _expanded_height
 
 func _add_window_option(label: String, seconds: float) -> void:
 	var index := _window_option.item_count

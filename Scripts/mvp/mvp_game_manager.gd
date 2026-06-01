@@ -9,6 +9,7 @@ const ProcessorScene := preload("res://Scenes/buildings/processor.tscn")
 const RobotForgeScene := preload("res://Scenes/buildings/robot_forge.tscn")
 const BuildingPlacementGhostScene := preload("res://Scenes/map/building_placement_ghost.tscn")
 const GridSelectionMarkerScene := preload("res://Scenes/map/grid_selection_marker.tscn")
+const GridHoverMarkerScene := preload("res://Scenes/map/grid_hover_marker.tscn")
 const ResourceNodeScene := preload("res://Scenes/map/resource_node.tscn")
 const RallyPointMarkerScene := preload("res://Scenes/map/rally_point_marker.tscn")
 const RobotScene := preload("res://Scenes/robot.tscn")
@@ -23,8 +24,8 @@ const ENEMY_CONFIG_PATH := "res://Resources/data/enemies/mvp_enemies.json"
 const OPERATION_PANEL_REFRESH_INTERVAL := 0.1
 const UNIT_INSPECTOR_REFRESH_INTERVAL := 0.2
 
-@export var stage_label: String = "阶段 7"
-@export var current_goal: String = "敌巢、守军与胜利条件"
+@export var stage_label: String = "试玩目标"
+@export var current_goal: String = "建造锻造厂，设置集结点并摧毁远处敌巢"
 @export var resource_summary_placeholder: String = "资源面板占位"
 @export var bottom_hint: String = "建造锻造厂并设置集结点；集结机器人后摧毁远处的拾荒猎犬巢穴"
 @export var hud_path: NodePath = ^"%MvpHUD"
@@ -35,6 +36,9 @@ const UNIT_INSPECTOR_REFRESH_INTERVAL := 0.2
 @export var enable_right_mouse_camera_drag: bool = true
 @export var clamp_camera_to_map_bounds: bool = true
 @export var camera_drag_start_threshold: float = 4.0
+@export var camera_zoom_min: float = 0.55
+@export var camera_zoom_max: float = 1.65
+@export var camera_zoom_step: float = 1.12
 @export var starting_inventory: Dictionary = {
 	&"construction_mass": 120,
 	&"iron_plate": 20,
@@ -57,6 +61,7 @@ var main_base: Node = null
 var active_building_def: BuildingDef = null
 var placement_ghost: Node2D = null
 var selection_marker: Node2D = null
+var hover_marker: Node2D = null
 var last_hover_cell: Vector2i = Vector2i(-9999, -9999)
 var resource_nodes_by_cell: Dictionary = {}
 var resource_nodes_by_id: Dictionary = {}
@@ -70,6 +75,7 @@ var is_camera_dragging: bool = false
 var is_camera_drag_candidate: bool = false
 var camera_drag_accumulated: float = 0.0
 var stage_started_seconds: float = 0.0
+var playtest_hud_refresh_seconds: float = 0.0
 
 func _ready() -> void:
 	_bootstrap_mvp_scene()
@@ -81,6 +87,11 @@ func _process(delta: float) -> void:
 		camera_drag_accumulated = 0.0
 	if active_building_def:
 		_update_placement_preview()
+	_update_hover_marker()
+	playtest_hud_refresh_seconds += delta
+	if playtest_hud_refresh_seconds >= 0.25:
+		playtest_hud_refresh_seconds = 0.0
+		_refresh_playtest_hud()
 	if selected_operation_building:
 		operation_panel_refresh_seconds += delta
 		if operation_panel_refresh_seconds >= OPERATION_PANEL_REFRESH_INTERVAL:
@@ -127,6 +138,14 @@ func _handle_camera_drag_input(event: InputEvent) -> bool:
 		return false
 	if event is InputEventMouseButton:
 		var mouse_event := event as InputEventMouseButton
+		if mouse_event.pressed and mouse_event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_zoom_camera_at_screen_position(camera_zoom_step, mouse_event.position)
+			get_viewport().set_input_as_handled()
+			return true
+		if mouse_event.pressed and mouse_event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_zoom_camera_at_screen_position(1.0 / camera_zoom_step, mouse_event.position)
+			get_viewport().set_input_as_handled()
+			return true
 		if mouse_event.button_index != MOUSE_BUTTON_RIGHT:
 			return false
 		if mouse_event.pressed:
@@ -152,6 +171,21 @@ func _handle_camera_drag_input(event: InputEvent) -> bool:
 			return true
 		return false
 	return false
+
+func _zoom_camera_at_screen_position(factor: float, screen_position: Vector2) -> void:
+	if main_camera == null or factor <= 0.0:
+		return
+	var old_zoom := maxf(main_camera.zoom.x, 0.001)
+	var next_zoom := clampf(old_zoom * factor, camera_zoom_min, camera_zoom_max)
+	if is_equal_approx(old_zoom, next_zoom):
+		return
+	var screen_offset := screen_position - get_viewport_rect().size * 0.5
+	var world_position_under_cursor := main_camera.global_position + screen_offset / old_zoom
+	main_camera.zoom = Vector2.ONE * next_zoom
+	main_camera.global_position = world_position_under_cursor - screen_offset / next_zoom
+	_clamp_camera_to_map_bounds()
+	if selected_operation_building:
+		_refresh_operation_panel()
 
 func _pan_camera_by_screen_delta(screen_delta: Vector2) -> void:
 	if screen_delta == Vector2.ZERO or main_camera == null:
@@ -242,12 +276,14 @@ func _configure_hud() -> void:
 	_refresh_build_options()
 	_refresh_resource_hud()
 	_refresh_blueprint_library_ui()
+	_refresh_playtest_hud()
 
 func _setup_stage_two_world() -> void:
 	if grid_map == null:
 		return
 	grid_occupancy.configure(grid_map.get("map_size_cells"))
 	_create_selection_marker()
+	_create_hover_marker()
 	_load_fixed_map()
 
 func _log_startup_status() -> void:
@@ -528,6 +564,67 @@ func _create_selection_marker() -> void:
 	selection_marker = GridSelectionMarkerScene.instantiate()
 	var layer := _get_layer("RallyLayer")
 	(layer if layer else self).add_child(selection_marker)
+
+func _create_hover_marker() -> void:
+	if hover_marker != null:
+		return
+	hover_marker = GridHoverMarkerScene.instantiate()
+	var layer := _get_layer("RallyLayer")
+	(layer if layer else self).add_child(hover_marker)
+
+func _update_hover_marker() -> void:
+	if hover_marker == null or grid_map == null:
+		return
+	if active_building_def != null:
+		hover_marker.call("clear_hover")
+		return
+	var cell := _get_mouse_grid_cell()
+	if not bool(grid_map.call("is_cell_in_bounds", cell)):
+		hover_marker.call("clear_hover")
+		return
+	hover_marker.call("show_hover", cell, _get_grid_cell_size())
+
+func _refresh_playtest_hud() -> void:
+	if hud == null:
+		return
+	var elapsed_seconds := maxf(0.0, Time.get_ticks_msec() / 1000.0 - stage_started_seconds)
+	if hud.has_method("set_elapsed_seconds"):
+		hud.call("set_elapsed_seconds", elapsed_seconds)
+	if hud.has_method("set_objective_direction"):
+		hud.call("set_objective_direction", _get_objective_direction_text())
+
+func _get_objective_direction_text() -> String:
+	var nest := _get_active_enemy_nest()
+	if nest == null:
+		return "敌巢已摧毁"
+	var target_position: Vector2 = nest.global_position
+	if nest.has_method("get_target_position"):
+		target_position = nest.call("get_target_position")
+	var origin: Vector2 = main_camera.global_position if main_camera else Vector2.ZERO
+	if main_base != null and is_instance_valid(main_base) and main_base.has_method("get_target_position"):
+		origin = main_base.call("get_target_position")
+	var offset: Vector2 = target_position - origin
+	return "敌巢方向：%s  距离约 %d" % [_format_compass_direction(offset), roundi(offset.length())]
+
+func _get_active_enemy_nest() -> Node2D:
+	for nest in enemy_nests_by_id.values():
+		if nest == null or not is_instance_valid(nest):
+			continue
+		if nest.has_method("is_alive") and not bool(nest.call("is_alive")):
+			continue
+		return nest as Node2D
+	return null
+
+func _format_compass_direction(offset: Vector2) -> String:
+	if offset.length_squared() <= 1.0:
+		return "当前位置"
+	var horizontal := ""
+	var vertical := ""
+	if absf(offset.x) >= 48.0:
+		horizontal = "东" if offset.x > 0.0 else "西"
+	if absf(offset.y) >= 48.0:
+		vertical = "南" if offset.y > 0.0 else "北"
+	return "%s%s" % [vertical, horizontal]
 
 func _show_selection_for_cell(cell: Vector2i) -> void:
 	_clear_world_unit_selection()

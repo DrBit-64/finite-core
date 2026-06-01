@@ -23,6 +23,7 @@ var health_component: HealthComponent
 var hp_bar: ProgressBar
 var collision_shape: CollisionShape2D
 var _combat_target_registry: Node = null
+var _damage_flash_tween: Tween = null
 
 func setup(def: BuildingDef, origin: Vector2i, next_cell_size: int) -> void:
 	_ensure_combat_nodes()
@@ -149,9 +150,11 @@ func _sync_combat_groups() -> void:
 	collision_mask = 0
 	_register_combat_target()
 
-func _on_health_changed(current_hp: int, current_max_hp: int, _delta: int) -> void:
+func _on_health_changed(current_hp: int, current_max_hp: int, delta: int) -> void:
 	hp = current_hp
 	max_hp = current_max_hp
+	if delta < 0:
+		_flash_damage()
 	if hp_bar:
 		hp_bar.max_value = max_hp
 		hp_bar.value = hp
@@ -161,6 +164,9 @@ func _on_health_died(reason: StringName) -> void:
 	if _destroyed:
 		return
 	_destroyed = true
+	if _damage_flash_tween:
+		_damage_flash_tween.kill()
+		_damage_flash_tween = null
 	set_deferred("collision_layer", 0)
 	if collision_shape:
 		collision_shape.set_deferred("disabled", true)
@@ -172,6 +178,18 @@ func _on_health_died(reason: StringName) -> void:
 	building_destroyed.emit(self, reason)
 	_on_building_destroyed(reason)
 	set_process(false)
+
+func _flash_damage() -> void:
+	if icon_sprite == null or _destroyed:
+		return
+	if _damage_flash_tween:
+		_damage_flash_tween.kill()
+	icon_sprite.modulate = Color(1.0, 0.46, 0.34, 1.0)
+	_damage_flash_tween = create_tween()
+	_damage_flash_tween.tween_property(icon_sprite, "modulate", Color.WHITE, 0.16)
+	_damage_flash_tween.finished.connect(func() -> void:
+		_damage_flash_tween = null
+	)
 
 func _on_building_destroyed(_reason: StringName) -> void:
 	pass

@@ -39,6 +39,16 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "资源面板占位"
 
+[node name="ElapsedTimeLabel" type="Label" parent="Root/TopBar/MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "用时 00:00"
+
+[node name="ObjectiveDirectionLabel" type="Label" parent="Root/TopBar/MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "敌巢方向：--"
+
 [node name="CurrentGoalLabel" type="Label" parent="Root/TopBar/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2

@@ -64,6 +64,8 @@ var _target_lock_until_msec: int = 0
 var _hound_has_engaged: bool = false
 var _combat_target_registry: Node = null
 var _last_damage_source_payload: Dictionary = {}
+var _damage_flash_until_msec: int = 0
+var _death_tween: Tween = null
 
 @onready var unit_sprite: Sprite2D = get_node_or_null("UnitSprite")
 @onready var hp_bar: ProgressBar = get_node_or_null("HPBar")
@@ -190,6 +192,9 @@ func set_patrol_path(path_points: Array[Vector2], loop_path: bool = true) -> voi
 		path_follow_brain.set_path(path_points, loop_path)
 
 func reset_state() -> void:
+	if _death_tween:
+		_death_tween.kill()
+		_death_tween = null
 	_is_dead = false
 	current_target = null
 	current_action = "闲置"
@@ -206,6 +211,7 @@ func reset_state() -> void:
 	_target_lock_until_msec = 0
 	_hound_has_engaged = false
 	_last_damage_source_payload.clear()
+	_damage_flash_until_msec = 0
 	_sync_runtime_groups()
 	_configure_team_collision()
 	_configure_components()
@@ -574,7 +580,7 @@ func _update_unit_visuals() -> void:
 			if texture_size.x > 0.0 and texture_size.y > 0.0:
 				unit_sprite.scale = Vector2(visual_size.x / texture_size.x, visual_size.y / texture_size.y)
 		unit_sprite.rotation = _facing_angle
-		unit_sprite.modulate = Color.WHITE
+		unit_sprite.modulate = Color(1.0, 0.48, 0.38, 1.0) if Time.get_ticks_msec() < _damage_flash_until_msec else Color.WHITE
 	if muzzle:
 		muzzle.position = Vector2.RIGHT.rotated(_facing_angle) * muzzle_distance
 	if hp_bar:
@@ -658,9 +664,11 @@ func _tick_melee_hound() -> void:
 		enemy.call("take_damage", melee_damage)
 	record_brain_trigger(&"hound_melee_attack", "撕咬目标")
 
-func _on_health_changed(current_hp: int, current_max_hp: int, _delta: int) -> void:
+func _on_health_changed(current_hp: int, current_max_hp: int, delta: int) -> void:
 	hp = current_hp
 	max_hp = current_max_hp
+	if delta < 0:
+		_damage_flash_until_msec = Time.get_ticks_msec() + 140
 	_update_unit_visuals()
 
 func _on_health_died(reason: StringName) -> void:
@@ -683,7 +691,26 @@ func _finish_death(reason: StringName) -> void:
 		source_nest.call("unregister_guard", self)
 	source_nest = null
 	robot_lost.emit(self, reason)
-	ObjectPool.return_instance(self, pool_name)
+	_play_death_fade_and_return()
+
+func _play_death_fade_and_return() -> void:
+	if hp_bar:
+		hp_bar.visible = false
+	if action_label:
+		action_label.visible = false
+	if unit_sprite == null:
+		ObjectPool.return_instance(self, pool_name)
+		return
+	if _death_tween:
+		_death_tween.kill()
+	_death_tween = create_tween()
+	_death_tween.set_parallel(true)
+	_death_tween.tween_property(unit_sprite, "modulate", Color(1.0, 0.28, 0.18, 0.0), 0.22)
+	_death_tween.tween_property(unit_sprite, "scale", unit_sprite.scale * 0.72, 0.22)
+	_death_tween.chain().tween_callback(func() -> void:
+		_death_tween = null
+		ObjectPool.return_instance(self, pool_name)
+	)
 
 func _on_lifespan_expired() -> void:
 	die(&"lifespan_expired")

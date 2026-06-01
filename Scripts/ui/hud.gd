@@ -15,6 +15,8 @@ const VictorySummaryPanelScript := preload("res://Scripts/ui/victory_summary_pan
 
 @onready var current_goal_label: Label = %CurrentGoalLabel
 @onready var resource_summary_label: Label = %ResourceSummaryLabel
+@onready var elapsed_time_label: Label = %ElapsedTimeLabel
+@onready var objective_direction_label: Label = %ObjectiveDirectionLabel
 @onready var bottom_hint_label: Label = %BottomHintLabel
 @onready var object_inspector: PanelContainer = %ObjectInspector
 @onready var debug_event_panel: PanelContainer = %DebugEventPanel
@@ -79,6 +81,15 @@ func set_current_goal(text: String) -> void:
 func set_resource_summary(text: String) -> void:
 	if resource_summary_label:
 		resource_summary_label.text = text
+
+func set_elapsed_seconds(elapsed_seconds: float) -> void:
+	if elapsed_time_label:
+		var total_seconds := maxi(0, floori(elapsed_seconds))
+		elapsed_time_label.text = "用时 %02d:%02d" % [total_seconds / 60, total_seconds % 60]
+
+func set_objective_direction(text: String) -> void:
+	if objective_direction_label:
+		objective_direction_label.text = text
 
 func set_bottom_hint(text: String) -> void:
 	if bottom_hint_label:
@@ -223,7 +234,7 @@ func _can_afford(cost: Dictionary) -> bool:
 func _format_build_tooltip(building_def: BuildingDef) -> String:
 	var parts: Array[String] = []
 	for resource_id in building_def.build_cost.keys():
-		parts.append("%s: %s" % [String(resource_id), int(building_def.build_cost[resource_id])])
+		parts.append("%s: %s" % [_get_resource_display_name(_resource_defs, resource_id), int(building_def.build_cost[resource_id])])
 	return "%s\n成本：%s" % [building_def.display_name, " / ".join(parts)]
 
 func _on_build_button_pressed(building_id: StringName) -> void:
