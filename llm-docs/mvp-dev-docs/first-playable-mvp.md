@@ -46,11 +46,11 @@
 
 玩家进入一张小型测试地图。地图包含：
 
-- 主基地初始位置。
-- 1 个铁矿点。
-- 1 个铜矿点。
-- 1 个近距离敌巢。
-- 1 个建议集结区域。
+- 可供玩家自由放置主基地的起始部署区域。
+- 2 个铁矿点。
+- 2 个铜矿点。
+- 1 个远离起始矿区的敌巢。
+- 由玩家为锻造厂自行设置的集结点。
 
 地图暂时不需要战争迷雾。敌巢可以直接显示，避免玩家把时间花在找目标上。
 
@@ -228,7 +228,7 @@ MVP 机器人必须具备：
 1. 默认每 `0.2s` 按优先级从上到下检查自定义规则。
 2. 第一条命中的规则执行动作，并结束本次 Tick。
 3. 如果没有自定义规则命中，执行默认脑干。
-4. 如果自定义规则解析失败，该规则跳过，并记录一次 `rule_failed`。
+4. 如果自定义规则解析失败，该规则跳过；失败原因记录与提示留到后续诊断设计。
 5. 如果规则目标不存在，该规则跳过，不阻塞默认脑干。
 
 `rule_triggered` 只在机器人进入一条不同的匹配规则时记录一次。持续满足同一规则时，动作可以继续执行，但不会按 Tick 重复增加触发次数。
@@ -259,7 +259,7 @@ MVP 只需要一个敌巢类型。
 敌巢行为：
 
 - 固定位置。
-- 拥有 3-5 个守军。
+- 拥有 6 个守军。
 - 可以周期性补充守军，但补充速度很慢。
 - 被摧毁后停止生成敌人。
 - 击败后触发 MVP 胜利。
@@ -282,32 +282,34 @@ MVP 只需要一个敌巢类型。
 
 这些数值不是最终平衡，只用于让第一版体验链跑通。
 
-### 初始资源
+### 当前开发调试初始资源
+
+当前开发构建从 `Resources/data/debug/mvp_debug_starting_inventory.json` 读取调试库存。该配置只用于减少手动测试等待，不代表正式试玩平衡；正式试玩前需要替换或关闭。
 
 | 资源 | 初始数量 |
 | --- | --- |
-| 铁矿 | 40 |
-| 铜矿 | 30 |
-| 铁板 | 10 |
-| 铜线 | 8 |
-| 建设质料 | 100 |
+| 铁矿 | 500 |
+| 铜矿 | 500 |
+| 铁板 | 500 |
+| 铜线 | 500 |
+| 建设质料 | 500 |
 
-初始资源应足够玩家建立第一条最小生产线，但不足以直接爆兵推平敌巢。
+正式试玩库存仍应满足：足够玩家建立第一条最小生产线，但不足以直接爆兵推平敌巢。
 
 ### 资源产出
 
 | 来源 | 产出 |
 | --- | --- |
-| 铁矿点 | 12 铁矿/分钟 |
-| 铜矿点 | 10 铜矿/分钟 |
-| 主基地 | 15 建设质料/分钟 |
+| 铁矿点 | 30 铁矿/分钟 |
+| 铜矿点 | 30 铜矿/分钟 |
+| 主基地 | 30 建设质料/分钟 |
 
 ### 加工配方
 
 | 配方 | 输入 | 输出 | 耗时 |
 | --- | --- | --- | --- |
-| 铁板 | 2 铁矿 | 1 铁板 | 3 秒 |
-| 铜线 | 1 铜矿 | 2 铜线 | 3 秒 |
+| 铁板 | 2 铁矿 | 1 铁板 | 4 秒 |
+| 铜线 | 1 铜矿 | 2 铜线 | 4 秒 |
 
 ### 建筑成本
 
@@ -368,14 +370,14 @@ MVP 只需要一个敌巢类型。
 | --- | --- |
 | 1 台机器人独自进攻 | 应失败 |
 | 2 台机器人零散进攻 | 应失败 |
-| 3-5 台机器人集结进攻 | 已实测确认可以突破 |
+| 3-5 台机器人集结进攻 | 预期可以突破，当前构建待重新实测 |
 | 6 台以上机器人集结进攻 | 应稳定成功 |
 
-这组结果是第一版平衡的核心。2026-06-01 已重新完成实测确认：单台机器人独自进攻会失败，3-5 台机器人集结进攻可以突破。后续调整敌巢护卫数量、拾荒猎犬属性、机器人伤害或锻造厂生产速度后，应重新执行战斗实测。
+这组结果是第一版平衡的核心。2026-06-01 曾完成实测确认：单台机器人独自进攻会失败，3-5 台机器人集结进攻可以突破。此后基础步枪蓝图已恢复为不内嵌自定义规则，因此当前构建需要重新执行完整人工战斗实测。后续调整敌巢护卫数量、拾荒猎犬属性、机器人伤害、锻造厂生产速度或基础蓝图规则后，也应重新执行战斗实测。
 
 ## 五、复盘事件接口
 
-第一版不需要完整复盘面板，但必须先埋事件接口。
+第一版已经实现右下角最小统计菜单。完整分析面板仍留到后续扩展，但事件接口必须持续保留。
 
 推荐新增一个全局 `CombatEventLog` 或同等职责的节点/单例。
 
@@ -384,20 +386,22 @@ MVP 只需要一个敌巢类型。
 - 保留最近 10 分钟详细事件。
 - 支持查询最近 1/5/10 分钟。
 - 每条事件至少包含 `time`、`type`、`payload`。
-- 第一版可以只在调试面板或控制台显示摘要。
+- 调试事件面板与统计菜单均提供 UI 可见摘要。
 
 ### MVP 必须记录的事件
 
 | 事件 | 触发时机 | 必要字段 |
 | --- | --- | --- |
-| robot_produced | 锻造厂完成生产 | robot_id、team、blueprint_id、blueprint_version、forge_id、cost |
-| robot_lost | 机器人死亡或失效 | robot_id、team、blueprint_id、blueprint_version、reason、killer_type |
-| enemy_killed | 敌人死亡 | enemy_id、enemy_type、killer_robot_id |
-| rule_triggered | 机器人进入一条新的匹配规则 | robot_id、blueprint_id、rule_id、rule_name、action |
-| rule_failed | 规则解析或执行失败 | robot_id、blueprint_id、rule_id、reason |
-| resource_spent | 生产或建造扣除资源 | resource_id、amount、reason |
-| resource_gained | 采集或奖励获得资源 | resource_id、amount、source |
+| robot_produced | 锻造厂完成生产 | forge、robot、blueprint_id、blueprint_name、blueprint_version、blueprint_snapshot_id、blueprint_rules、rally_point、has_rally_point |
+| robot_lost | 机器人死亡或失效 | robot_id、team、blueprint_id、blueprint_name、blueprint_version、reason |
+| enemy_killed | 敌人死亡 | enemy_id、enemy_type、reason、killer_robot_id、killer_blueprint_id、killer_blueprint_version |
+| rule_triggered | 机器人进入一条新的匹配规则 | robot、blueprint_id、blueprint_version、blueprint_snapshot_id、rule_id、rule_name、action、handled |
+| state_flag_changed | 机器人战术标记变化 | robot、blueprint_id、blueprint_version、blueprint_snapshot_id、flag、value、rule_id |
+| resource_spent | 生产或建造扣除资源 | resource_id、amount、delta、reason |
+| resource_gained | 采集或奖励获得资源 | resource_id、amount、delta、reason |
 | nest_destroyed | 敌巢被摧毁 | nest_id、time_alive、reward |
+
+`rule_failed` 作为后续诊断事件预留。失败原因记录与提示不属于当前 MVP 验收门槛。
 
 ### MVP 统计菜单
 
@@ -473,7 +477,7 @@ MVP 只需要一个敌巢类型。
 ### Task 5：第一敌巢
 
 - 创建敌巢节点。
-- 生成 4 个护卫。
+- 生成 6 个护卫。
 - 护卫死亡后慢速补充。
 - 敌巢被摧毁后触发胜利。
 
@@ -503,7 +507,7 @@ MVP 只需要一个敌巢类型。
 - 科技树完整 UI。
 - 多敌巢地图推进。
 - Boss 多阶段行为。
-- 蓝图库管理。
+- 蓝图库跨局持久化。
 - 多产线多蓝图队列。
 - 存档读写。
 - 建筑完整施工动画。
