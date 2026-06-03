@@ -12,3 +12,7 @@
 | `enemies/` | 敌方单位与敌巢图标，例如拾荒猎犬、低级敌巢 |
 
 后续手动替换资源时，优先保持文件名和路径不变，这样数据定义无需更新。
+
+后续新增或使用 AI 生成 SVG 素材时，遵守 [Logic Line SVG 图标美术指导](../../llm-docs/mvp-dev-docs/svg-art-direction-and-asset-guide.md)。
+
+全量素材规划、建议路径和生成状态见 [Logic Line SVG 美术资产 Manifest](../../llm-docs/mvp-dev-docs/svg-art-asset-manifest.md)。
