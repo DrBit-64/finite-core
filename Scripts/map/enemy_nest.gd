@@ -68,7 +68,7 @@ func get_inspector_lines() -> Array[String]:
 	lines.append("巢穴 ID：%s" % String(nest_id))
 	lines.append("守军：%s / %s" % [get_guard_count(), max_guard_count])
 	lines.append("补充倒计时：%.1fs" % replenish_seconds_remaining)
-	lines.append("奖励：%s" % JSON.stringify(reward))
+	lines.append("奖励：%s" % _format_reward_text())
 	return lines
 
 func _process(delta: float) -> void:
@@ -101,3 +101,10 @@ func _vector2i(value: Variant, fallback: Vector2i) -> Vector2i:
 	if typeof(value) != TYPE_ARRAY or value.size() < 2:
 		return fallback
 	return Vector2i(int(value[0]), int(value[1]))
+
+func _format_reward_text() -> String:
+	if reward.is_empty():
+		return "无"
+	if reward.has("technology_item"):
+		return "科技物品：%s" % str(reward.get("technology_item", "未知"))
+	return JSON.stringify(reward)

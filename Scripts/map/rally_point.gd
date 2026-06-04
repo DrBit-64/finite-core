@@ -7,11 +7,17 @@ class_name RallyPointMarker
 var grid_cell: Vector2i = Vector2i.ZERO
 var cell_size: int = 64
 
+@onready var icon_sprite: Sprite2D = get_node_or_null("IconSprite")
+
+func _ready() -> void:
+	_refresh_icon_scale()
+
 func setup(cell: Vector2i, next_cell_size: int) -> void:
 	grid_cell = cell
 	cell_size = next_cell_size
 	position = Vector2((float(cell.x) + 0.5) * float(cell_size), (float(cell.y) + 0.5) * float(cell_size))
 	visible = true
+	_refresh_icon_scale()
 	queue_redraw()
 
 func get_display_name() -> String:
@@ -29,15 +35,12 @@ func _draw() -> void:
 	var radius := float(cell_size) * 0.30
 	draw_circle(Vector2.ZERO, radius, fill_color)
 	draw_arc(Vector2.ZERO, radius, 0.0, TAU, 48, marker_color, 3.0)
-	draw_line(Vector2(0.0, -radius), Vector2(0.0, radius), marker_color, 2.0)
-	draw_line(Vector2(-radius, 0.0), Vector2(radius, 0.0), marker_color, 2.0)
 
-	var pole_top := Vector2(0.0, -radius - 16.0)
-	var pole_bottom := Vector2(0.0, -radius + 18.0)
-	draw_line(pole_top, pole_bottom, marker_color, 3.0)
-	var flag := PackedVector2Array([
-		pole_top,
-		pole_top + Vector2(18.0, 6.0),
-		pole_top + Vector2(0.0, 12.0),
-	])
-	draw_colored_polygon(flag, Color(marker_color.r, marker_color.g, marker_color.b, 0.86))
+func _refresh_icon_scale() -> void:
+	if icon_sprite == null or icon_sprite.texture == null:
+		return
+	var texture_size := icon_sprite.texture.get_size()
+	if texture_size.x <= 0.0 or texture_size.y <= 0.0:
+		return
+	var target_size := float(cell_size) * 0.56
+	icon_sprite.scale = Vector2(target_size / texture_size.x, target_size / texture_size.y)

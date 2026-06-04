@@ -4,6 +4,9 @@ class_name RobotUnit
 signal robot_lost(robot: Node, reason: StringName)
 
 const CombatTargetRegistryScript := preload("res://Scripts/map/combat_target_registry.gd")
+const ACTION_ICON_RALLY := preload("res://Resources/art/ui/state_rally.svg")
+const ACTION_ICON_WAIT := preload("res://Resources/art/ui/state_wait.svg")
+const ACTION_ICON_DEFAULT_BRAIN := preload("res://Resources/art/ui/state_default_brain.svg")
 
 @export var display_name: String = "基础步枪机器人"
 @export var max_hp: int = 60
@@ -66,6 +69,7 @@ var _combat_target_registry: Node = null
 var _last_damage_source_payload: Dictionary = {}
 var _damage_flash_until_msec: int = 0
 var _death_tween: Tween = null
+var action_icon: Sprite2D = null
 
 @onready var unit_sprite: Sprite2D = get_node_or_null("UnitSprite")
 @onready var hp_bar: ProgressBar = get_node_or_null("HPBar")
@@ -83,6 +87,7 @@ var _death_tween: Tween = null
 
 func _ready() -> void:
 	_connect_components()
+	_ensure_action_icon()
 	reset_state()
 
 func _physics_process(delta: float) -> void:
@@ -206,6 +211,8 @@ func reset_state() -> void:
 	_last_brain_trigger_msec = 0
 	_current_rule_bubble_text = ""
 	_current_rule_bubble_until_msec = 0
+	if action_icon:
+		action_icon.visible = false
 	_last_melee_attack_seconds = -9999.0
 	_locked_target = null
 	_target_lock_until_msec = 0
@@ -595,6 +602,7 @@ func _update_unit_visuals() -> void:
 			bubble_text = current_action
 		action_label.visible = is_alive() and not bubble_text.is_empty()
 		action_label.text = bubble_text
+		_update_action_icon(bubble_text, action_label.visible)
 	queue_redraw()
 
 func _update_facing(delta: float) -> void:
@@ -698,6 +706,8 @@ func _play_death_fade_and_return() -> void:
 		hp_bar.visible = false
 	if action_label:
 		action_label.visible = false
+	if action_icon:
+		action_icon.visible = false
 	if unit_sprite == null:
 		ObjectPool.return_instance(self, pool_name)
 		return
@@ -791,3 +801,35 @@ func _format_rule_bubble_text(description: String) -> String:
 	if text.begins_with("路径脑干："):
 		text = text.trim_prefix("路径脑干：")
 	return text
+
+func _ensure_action_icon() -> void:
+	if action_icon != null:
+		return
+	action_icon = get_node_or_null("ActionIcon") as Sprite2D
+	if action_icon == null:
+		action_icon = Sprite2D.new()
+		action_icon.name = "ActionIcon"
+		action_icon.z_index = 24
+		action_icon.position = Vector2(-64.0, -44.0)
+		add_child(action_icon)
+	action_icon.visible = false
+	action_icon.scale = Vector2(0.82, 0.82)
+
+func _update_action_icon(bubble_text: String, should_show: bool) -> void:
+	_ensure_action_icon()
+	if action_icon == null:
+		return
+	var icon_texture := _get_action_icon_texture(bubble_text)
+	action_icon.texture = icon_texture
+	action_icon.visible = should_show and icon_texture != null
+
+func _get_action_icon_texture(bubble_text: String) -> Texture2D:
+	if team != "Team_A":
+		return null
+	if bubble_text.contains("等待"):
+		return ACTION_ICON_WAIT
+	if bubble_text.contains("集结"):
+		return ACTION_ICON_RALLY
+	if bubble_text.contains("默认脑干") or brain_mode == "default_combat":
+		return ACTION_ICON_DEFAULT_BRAIN
+	return null

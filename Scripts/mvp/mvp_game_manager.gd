@@ -97,7 +97,7 @@ func _process(delta: float) -> void:
 		if operation_panel_refresh_seconds >= OPERATION_PANEL_REFRESH_INTERVAL:
 			operation_panel_refresh_seconds = 0.0
 			_refresh_operation_panel()
-	if selected_inspected_node:
+	if selected_inspected_node and _should_periodically_refresh_inspector():
 		unit_inspector_refresh_seconds += delta
 		if unit_inspector_refresh_seconds >= UNIT_INSPECTOR_REFRESH_INTERVAL:
 			unit_inspector_refresh_seconds = 0.0
@@ -125,6 +125,8 @@ func _handle_build_mode_input(event: InputEvent) -> void:
 	elif event is InputEventMouseButton:
 		var mouse_event := event as InputEventMouseButton
 		if mouse_event.button_index == MOUSE_BUTTON_LEFT and mouse_event.pressed:
+			if _is_pointer_over_hud():
+				return
 			_try_place_active_building()
 		elif mouse_event.button_index == MOUSE_BUTTON_RIGHT and not mouse_event.pressed:
 			_cancel_build_mode()
@@ -354,6 +356,13 @@ func _create_or_update_placement_ghost() -> void:
 func _update_placement_preview() -> void:
 	if active_building_def == null or placement_ghost == null or grid_map == null:
 		return
+	if _is_pointer_over_hud():
+		placement_ghost.visible = false
+		if hud and hud.has_method("hide_build_cost_preview"):
+			hud.call("hide_build_cost_preview")
+		last_hover_cell = Vector2i(-9999, -9999)
+		return
+	placement_ghost.visible = true
 	_update_build_cost_preview()
 	var cell := _get_mouse_grid_cell()
 	if cell == last_hover_cell:
@@ -364,6 +373,8 @@ func _update_placement_preview() -> void:
 
 func _try_place_active_building() -> void:
 	if active_building_def == null:
+		return
+	if _is_pointer_over_hud():
 		return
 	var cell := _get_mouse_grid_cell()
 	if not _can_place_building(active_building_def, cell):
@@ -406,6 +417,8 @@ func _cancel_build_mode() -> void:
 
 func _select_map_cell_under_mouse() -> void:
 	if grid_map == null:
+		return
+	if _is_pointer_over_hud():
 		return
 	var world_unit := _find_world_unit_under_mouse()
 	if world_unit:
@@ -575,7 +588,7 @@ func _create_hover_marker() -> void:
 func _update_hover_marker() -> void:
 	if hover_marker == null or grid_map == null:
 		return
-	if active_building_def != null:
+	if active_building_def != null or _is_pointer_over_hud():
 		hover_marker.call("clear_hover")
 		return
 	var cell := _get_mouse_grid_cell()
@@ -671,6 +684,11 @@ func _refresh_selected_unit_inspector() -> void:
 	if hud and hud.has_method("inspect_node"):
 		hud.call("inspect_node", selected_inspected_node)
 
+func _should_periodically_refresh_inspector() -> bool:
+	if selected_inspected_node == null or not is_instance_valid(selected_inspected_node):
+		return false
+	return selected_inspected_node is RobotUnit
+
 func _find_world_unit_under_mouse() -> Node:
 	var mouse_world := get_global_mouse_position()
 	var best_unit: Node = null
@@ -691,6 +709,11 @@ func _find_world_unit_under_mouse() -> Node:
 				best_distance_sq = distance_sq
 				best_unit = child
 	return best_unit
+
+func _is_pointer_over_hud() -> bool:
+	if hud == null or not hud.has_method("is_pointer_over_ui"):
+		return false
+	return bool(hud.call("is_pointer_over_ui", get_viewport().get_mouse_position()))
 
 func _find_building_def(building_id: StringName) -> BuildingDef:
 	for building_def in building_defs:
@@ -1179,6 +1202,8 @@ func _handle_rally_point_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mouse_event := event as InputEventMouseButton
 		if mouse_event.button_index == MOUSE_BUTTON_LEFT and mouse_event.pressed:
+			if _is_pointer_over_hud():
+				return
 			_try_set_rally_point_under_mouse()
 		elif mouse_event.button_index == MOUSE_BUTTON_RIGHT and not mouse_event.pressed:
 			_cancel_rally_point_mode(true)

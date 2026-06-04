@@ -1,6 +1,12 @@
 extends PanelContainer
 class_name DebugEventPanel
 
+const ICON_RALLY := preload("res://Resources/art/ui/state_rally.svg")
+const ICON_WAIT := preload("res://Resources/art/ui/state_wait.svg")
+const ICON_DEFAULT_BRAIN := preload("res://Resources/art/ui/state_default_brain.svg")
+const ICON_TECH_UNLOCKED := preload("res://Resources/art/ui/technology_unlocked.svg")
+const ICON_BUILDING_DAMAGED := preload("res://Resources/art/ui/building_damaged.svg")
+
 @export var max_visible_events: int = 20
 @export var default_window_seconds: float = 300.0
 
@@ -234,6 +240,15 @@ func _make_event_row(event: Dictionary) -> VBoxContainer:
 
 	var payload: Dictionary = event.get("payload", {})
 	var summary := _format_event_summary(event, not payload.is_empty())
+	var summary_row := HBoxContainer.new()
+	summary_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	summary_row.add_theme_constant_override("separation", 6)
+	row.add_child(summary_row)
+
+	var event_icon := _make_event_icon(event)
+	if event_icon:
+		summary_row.add_child(event_icon)
+
 	var summary_button := Button.new()
 	summary_button.text = summary
 	summary_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -241,7 +256,7 @@ func _make_event_row(event: Dictionary) -> VBoxContainer:
 	summary_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	summary_button.add_theme_font_size_override("font_size", 14)
 	summary_button.disabled = payload.is_empty()
-	row.add_child(summary_button)
+	summary_row.add_child(summary_button)
 
 	var payload_label := _make_event_label(_format_payload(payload))
 	payload_label.visible = false
@@ -282,3 +297,37 @@ func _make_event_label(text: String) -> Label:
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	label.add_theme_font_size_override("font_size", 14)
 	return label
+
+func _make_event_icon(event: Dictionary) -> TextureRect:
+	var icon_texture := _get_event_icon_texture(event)
+	if icon_texture == null:
+		return null
+	var icon := TextureRect.new()
+	icon.texture = icon_texture
+	icon.custom_minimum_size = Vector2(18, 18)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return icon
+
+func _get_event_icon_texture(event: Dictionary) -> Texture2D:
+	var event_type := str(event.get("type", ""))
+	var payload: Dictionary = event.get("payload", {})
+	if event_type == "rule_triggered":
+		var rule_name := str(payload.get("rule_name", payload.get("rule", "")))
+		var action := str(payload.get("action", ""))
+		if rule_name.contains("等待") or action == "wait":
+			return ICON_WAIT
+		if rule_name.contains("集结") or action == "move_to_rally":
+			return ICON_RALLY
+		if rule_name.contains("默认") or action == "default_combat":
+			return ICON_DEFAULT_BRAIN
+	if event_type == "state_flag_changed":
+		var reason := str(payload.get("reason", payload.get("flag_id", "")))
+		if reason.contains("集结") or reason.contains("rallied") or reason.contains("squad_ready"):
+			return ICON_RALLY
+	if event_type == "nest_destroyed":
+		return ICON_TECH_UNLOCKED
+	if event_type == "building_destroyed" or event_type == "building_damaged":
+		return ICON_BUILDING_DAMAGED
+	return null

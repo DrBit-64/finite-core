@@ -12,6 +12,7 @@ var source_payload: Dictionary = {}
 var _alive: bool = true
 
 @onready var life_timer: Timer = $LifeTimer
+@onready var projectile_sprite: Sprite2D = get_node_or_null("ProjectileSprite")
 
 func _ready() -> void:
 	reset_state()
@@ -32,6 +33,8 @@ func setup(spawn_team: String, spawn_damage: int, dir: Vector2, next_source_payl
 		direction = Vector2.RIGHT
 	else:
 		direction = dir.normalized()
+	if projectile_sprite:
+		projectile_sprite.rotation = direction.angle()
 	_configure_collision_mask_by_team()
 
 func _configure_collision_mask_by_team() -> void:
