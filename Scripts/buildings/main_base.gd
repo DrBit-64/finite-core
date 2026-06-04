@@ -5,7 +5,7 @@ signal inventory_changed
 
 const InventoryScript := preload("res://Scripts/economy/inventory.gd")
 
-@export var construction_mass_per_minute: int = 30
+@export var construction_mass_per_minute: int = 45
 @export var service_radius_cells: int = 8
 
 var inventory := InventoryScript.new()

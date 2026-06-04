@@ -795,10 +795,10 @@ Resources/data/maps/mvp_stage3_map.json
 - 实现蓝图快照：
   - 生产出的机器人保存蓝图 ID 和版本。
   - 后续蓝图修改不影响已出生机器人。
-- 实现 Debug 初始库存配置：
-  - MVP 调试期从 `Resources/data/debug/mvp_debug_starting_inventory.json` 读取开局库存。
-  - 默认将铁矿、铜矿、铁板、铜线、建设质料提升到约 500，减少手动测试时等待采矿和加工的时间。
-  - 该配置仅限 debug/开发调试使用，不代表正式经济平衡；进入试玩平衡阶段前需要替换或关闭。
+- 实现外部初始库存配置：
+  - 当前默认从 `Resources/data/balance/mvp_starting_inventory.json` 读取非 debug 开局库存。
+  - 调试期如需减少等待，可以临时切换到 `Resources/data/debug/mvp_debug_starting_inventory.json`。
+  - debug 库存仅限开发调试使用，不代表正式经济平衡。
 
 ### 推荐文件
 
@@ -824,7 +824,7 @@ Scripts/map/rally_point.gd
 - 锻造厂通过网格占用系统放置，但生产出来的机器人使用自由世界坐标。
 - UI 功能面板只发出命令信号，例如 `forge_rally_point_requested(forge)`，地图点击模式由 `MvpGameManager` 维护。
 - 底部提示模块不应该知道锻造厂或地图规则，只接收文本、样式和显示时长。
-- Debug 初始库存必须来自外部配置；脚本可以保留低资源 fallback，但不要把调试用 500 资源硬编码进生产逻辑。
+- 初始库存必须来自外部配置；脚本可以保留低资源 fallback，但不要把调试用 500 资源硬编码进生产逻辑或默认试玩配置。
 
 ### 美术素材需求
 

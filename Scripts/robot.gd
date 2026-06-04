@@ -603,6 +603,7 @@ func _update_unit_visuals() -> void:
 		action_label.visible = is_alive() and not bubble_text.is_empty()
 		action_label.text = bubble_text
 		_update_action_icon(bubble_text, action_label.visible)
+		_layout_action_bubble(bubble_text, action_label.visible)
 	queue_redraw()
 
 func _update_facing(delta: float) -> void:
@@ -810,7 +811,6 @@ func _ensure_action_icon() -> void:
 		action_icon = Sprite2D.new()
 		action_icon.name = "ActionIcon"
 		action_icon.z_index = 24
-		action_icon.position = Vector2(-64.0, -44.0)
 		add_child(action_icon)
 	action_icon.visible = false
 	action_icon.scale = Vector2(0.82, 0.82)
@@ -822,6 +822,34 @@ func _update_action_icon(bubble_text: String, should_show: bool) -> void:
 	var icon_texture := _get_action_icon_texture(bubble_text)
 	action_icon.texture = icon_texture
 	action_icon.visible = should_show and icon_texture != null
+
+func _layout_action_bubble(bubble_text: String, should_show: bool) -> void:
+	if action_label == null:
+		return
+	var text_width := _measure_action_label_text_width(bubble_text)
+	var label_height := 20.0
+	var icon_width := 0.0
+	var icon_gap := 0.0
+	if action_icon and action_icon.visible:
+		icon_width = 12.0
+		icon_gap = 5.0
+	var total_width := text_width + icon_width + icon_gap
+	var left := -total_width * 0.5
+	action_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	action_label.position = Vector2(left + icon_width + icon_gap, -54.0)
+	action_label.size = Vector2(text_width, label_height)
+	if action_icon:
+		action_icon.position = Vector2(left + icon_width * 0.5, -44.0)
+		action_icon.visible = should_show and action_icon.texture != null
+
+func _measure_action_label_text_width(text: String) -> float:
+	if text.is_empty() or action_label == null:
+		return 0.0
+	var font := action_label.get_theme_font("font")
+	var font_size := action_label.get_theme_font_size("font_size")
+	if font:
+		return maxf(8.0, font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size).x)
+	return maxf(8.0, float(text.length()) * 7.0)
 
 func _get_action_icon_texture(bubble_text: String) -> Texture2D:
 	if team != "Team_A":

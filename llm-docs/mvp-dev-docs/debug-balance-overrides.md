@@ -12,19 +12,21 @@
 
 | 日期 | 数值项 | 配置位置 | 修改前 | 修改后 | 调试目的 | 正式化前处理 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2026-05-28 | MVP 开局调试库存：建设质料 | `Resources/data/debug/mvp_debug_starting_inventory.json` | `120` | `500` | 减少手动测试建造等待。 | 正式平衡前关闭 debug 配置或替换为正式开局配置。 |
-| 2026-05-28 | MVP 开局调试库存：铁板 | `Resources/data/debug/mvp_debug_starting_inventory.json` | `20` | `500` | 减少手动测试加工等待。 | 正式平衡前关闭 debug 配置或替换为正式开局配置。 |
-| 2026-05-28 | MVP 开局调试库存：铜线 | `Resources/data/debug/mvp_debug_starting_inventory.json` | `12` | `500` | 减少手动测试加工等待。 | 正式平衡前关闭 debug 配置或替换为正式开局配置。 |
-| 2026-05-28 | MVP 开局调试库存：铁矿 | `Resources/data/debug/mvp_debug_starting_inventory.json` | `0` | `500` | 减少手动测试采矿等待。 | 正式平衡前关闭 debug 配置或替换为正式开局配置。 |
-| 2026-05-28 | MVP 开局调试库存：铜矿 | `Resources/data/debug/mvp_debug_starting_inventory.json` | `0` | `500` | 减少手动测试采矿等待。 | 正式平衡前关闭 debug 配置或替换为正式开局配置。 |
+| 暂无 | - | - | - | - | - | - |
 
 ## 已外部化的相关配置
 
 - 单位蓝图与属性：`Resources/data/units/mvp_unit_blueprints.json`
+- 正式开局库存：`Resources/data/balance/mvp_starting_inventory.json`
 - 调试开局库存：`Resources/data/debug/mvp_debug_starting_inventory.json`
 
 ## 已撤销的调试覆盖
 
 | 日期 | 数值项 | 配置位置 | 临时数值 | 恢复值 | 说明 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-06-05 | MVP 开局调试库存：建设质料 | `Scripts/mvp/mvp_game_manager.gd` 默认改读 `Resources/data/balance/mvp_starting_inventory.json` | `500` | `120` | 已恢复非 debug 开局库存；debug 配置文件保留但不再作为默认读取路径。 |
+| 2026-06-05 | MVP 开局调试库存：铁板 | `Scripts/mvp/mvp_game_manager.gd` 默认改读 `Resources/data/balance/mvp_starting_inventory.json` | `500` | `20` | 已恢复非 debug 开局库存；debug 配置文件保留但不再作为默认读取路径。 |
+| 2026-06-05 | MVP 开局调试库存：铜线 | `Scripts/mvp/mvp_game_manager.gd` 默认改读 `Resources/data/balance/mvp_starting_inventory.json` | `500` | `12` | 已恢复非 debug 开局库存；debug 配置文件保留但不再作为默认读取路径。 |
+| 2026-06-05 | MVP 开局调试库存：铁矿 | `Scripts/mvp/mvp_game_manager.gd` 默认改读 `Resources/data/balance/mvp_starting_inventory.json` | `500` | `0` | 已恢复非 debug 开局库存；debug 配置文件保留但不再作为默认读取路径。 |
+| 2026-06-05 | MVP 开局调试库存：铜矿 | `Scripts/mvp/mvp_game_manager.gd` 默认改读 `Resources/data/balance/mvp_starting_inventory.json` | `500` | `0` | 已恢复非 debug 开局库存；debug 配置文件保留但不再作为默认读取路径。 |
 | 2026-06-01 | 基础步枪机器人寿命 `lifespan_seconds` | `Resources/data/units/mvp_unit_blueprints.json` | `20.0s` | `120.0s` | 已恢复 MVP 原始设计值；不再为了快速观察补位而缩短玩家机器人寿命。 |

@@ -32,7 +32,7 @@ const UNIT_INSPECTOR_REFRESH_INTERVAL := 0.2
 @export var grid_map_path: NodePath = ^"%GridMap"
 @export var camera_path: NodePath = ^"MainCamera"
 @export_file("*.json") var map_config_path: String = "res://Resources/data/maps/mvp_stage3_map.json"
-@export_file("*.json") var starting_inventory_config_path: String = "res://Resources/data/debug/mvp_debug_starting_inventory.json"
+@export_file("*.json") var starting_inventory_config_path: String = "res://Resources/data/balance/mvp_starting_inventory.json"
 @export var enable_right_mouse_camera_drag: bool = true
 @export var clamp_camera_to_map_bounds: bool = true
 @export var camera_drag_start_threshold: float = 4.0
@@ -291,7 +291,7 @@ func _setup_stage_two_world() -> void:
 func _log_startup_status() -> void:
 	push_debug_event("MVP GameManager 已加载")
 	push_debug_event("当前目标：%s：%s" % [stage_label, current_goal])
-	push_debug_event("Debug 初始库存配置：%s" % starting_inventory_config_path)
+	push_debug_event("初始库存配置：%s" % starting_inventory_config_path)
 	push_debug_event("%s 数据：资源 %d 项，配方 %d 条，建筑 %d 种，矿点 %d 个" % [
 		stage_label,
 		resource_defs.size(),
@@ -687,7 +687,11 @@ func _refresh_selected_unit_inspector() -> void:
 func _should_periodically_refresh_inspector() -> bool:
 	if selected_inspected_node == null or not is_instance_valid(selected_inspected_node):
 		return false
-	return selected_inspected_node is RobotUnit
+	return (
+		selected_inspected_node is RobotUnit
+		or selected_inspected_node is BaseBuilding
+		or selected_inspected_node is EnemyNest
+	)
 
 func _find_world_unit_under_mouse() -> Node:
 	var mouse_world := get_global_mouse_position()
@@ -951,6 +955,8 @@ func _configure_building_runtime(building: Node, building_def: BuildingDef, orig
 	var inventory = _get_main_base_inventory()
 	if _is_miner_def(building_def) and building.has_method("setup_miner"):
 		building.call("setup_miner", _get_resource_node_at(origin), inventory)
+		if building.has_signal("miner_state_changed"):
+			building.connect("miner_state_changed", Callable(self, "_on_miner_state_changed").bind(building))
 	elif _is_processor_def(building_def) and building.has_method("setup_processor"):
 		building.call("setup_processor", _get_resource_recipes(), inventory)
 		if building.has_signal("processor_state_changed"):
@@ -975,7 +981,11 @@ func _show_operation_panel_for_node(node: Node) -> void:
 		_hide_operation_panel()
 		return
 	var building_def: BuildingDef = node.get("building_def")
-	if _is_processor_def(building_def):
+	if _is_miner_def(building_def):
+		selected_operation_building = node
+		operation_panel_refresh_seconds = 0.0
+		_refresh_operation_panel()
+	elif _is_processor_def(building_def):
 		selected_operation_building = node
 		operation_panel_refresh_seconds = 0.0
 		_refresh_operation_panel()
@@ -995,6 +1005,13 @@ func _refresh_operation_panel() -> void:
 			"show_processor_panel",
 			selected_operation_building,
 			_get_resource_recipes(),
+			resource_defs,
+			_world_to_screen(selected_operation_building.global_position)
+		)
+	elif _is_miner_def(building_def) and hud.has_method("show_miner_panel"):
+		hud.call(
+			"show_miner_panel",
+			selected_operation_building,
 			resource_defs,
 			_world_to_screen(selected_operation_building.global_position)
 		)
@@ -1020,6 +1037,10 @@ func _on_processor_recipe_selected(processor: Node, recipe_id: StringName) -> vo
 		processor.call("set_recipe", recipe_id)
 		push_debug_event("加工厂配方切换：%s" % String(recipe_id))
 	call_deferred("_refresh_operation_panel")
+
+func _on_miner_state_changed(miner: Node) -> void:
+	if miner == selected_operation_building:
+		call_deferred("_refresh_operation_panel")
 
 func _on_processor_state_changed(processor: Node) -> void:
 	if processor == selected_operation_building:
@@ -1063,6 +1084,7 @@ func _record_robot_produced(forge: Node, robot: Node, blueprint: UnitBlueprint) 
 			"blueprint_version": blueprint.version,
 			"blueprint_snapshot_id": blueprint.get_snapshot_key(),
 			"blueprint_rules": _get_blueprint_rule_summaries(blueprint),
+			"blueprint_templates": _get_blueprint_template_summaries(blueprint),
 			"rally_point": _format_vector2_payload(forge.get("rally_point_position")),
 			"has_rally_point": bool(forge.get("has_rally_point")),
 		})
@@ -1071,7 +1093,7 @@ func _record_robot_produced(forge: Node, robot: Node, blueprint: UnitBlueprint) 
 func _on_blueprint_library_requested() -> void:
 	_refresh_blueprint_library_ui()
 
-func _on_blueprint_save_requested(source_blueprint_id: StringName, display_name: String, embedded_rules: Array, state_flag_defaults: Dictionary, save_as_new: bool) -> void:
+func _on_blueprint_save_requested(source_blueprint_id: StringName, display_name: String, tactical_templates: Array, embedded_rules: Array, state_flag_defaults: Dictionary, save_as_new: bool) -> void:
 	if blueprint_library == null:
 		return
 	var source_blueprint := blueprint_library.get_blueprint(source_blueprint_id)
@@ -1091,6 +1113,7 @@ func _on_blueprint_save_requested(source_blueprint_id: StringName, display_name:
 	saved_blueprint.snapshot_id = &""
 	saved_blueprint.source_blueprint_id = &""
 	saved_blueprint.is_snapshot = false
+	saved_blueprint.tactical_templates = tactical_templates.duplicate(true)
 	saved_blueprint.embedded_rules = embedded_rules.duplicate(true)
 	saved_blueprint.state_flag_defaults = state_flag_defaults.duplicate(true)
 	if save_as_new:
@@ -1148,6 +1171,19 @@ func _get_blueprint_rule_summaries(blueprint: UnitBlueprint) -> Array[Dictionary
 		result.append({
 			"id": str(rule.get("id", rule.get("name", "unnamed_rule"))),
 			"name": str(rule.get("name", rule.get("id", "未命名规则"))),
+		})
+	return result
+
+func _get_blueprint_template_summaries(blueprint: UnitBlueprint) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if blueprint == null:
+		return result
+	for template in blueprint.tactical_templates:
+		if typeof(template) != TYPE_DICTIONARY:
+			continue
+		result.append({
+			"id": str(template.get("id", "")),
+			"name": str(template.get("display_name", template.get("id", "未命名模板"))),
 		})
 	return result
 

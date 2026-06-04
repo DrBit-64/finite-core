@@ -61,6 +61,7 @@ static func _create_basic_rifle_blueprint_fallback(recipe_defs: Array[RecipeDef]
 		blueprint.production_cost = recipe.inputs.duplicate(true)
 		blueprint.production_time_seconds = recipe.duration_seconds
 	blueprint.default_brain_enabled = true
+	blueprint.tactical_templates = []
 	blueprint.embedded_rules = []
 	blueprint.state_flag_defaults = {}
 	return blueprint

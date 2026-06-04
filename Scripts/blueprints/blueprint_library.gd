@@ -1,6 +1,8 @@
 extends RefCounted
 class_name BlueprintLibrary
 
+const TacticalTemplateCompilerScript := preload("res://Scripts/ai/tactical_template_compiler.gd")
+
 var _blueprints: Dictionary = {}
 var _snapshots: Dictionary = {}
 var _snapshot_ref_counts: Dictionary = {}
@@ -47,8 +49,12 @@ func create_rally_variant(source: UnitBlueprint, display_name: String) -> UnitBl
 	blueprint.source_blueprint_id = &""
 	blueprint.snapshot_id = &""
 	blueprint.is_snapshot = false
-	blueprint.state_flag_defaults = {"rallied": false, "squad_ready": false}
-	blueprint.embedded_rules = _make_rally_rules()
+	blueprint.tactical_templates = [
+		TacticalTemplateCompilerScript.make_rally_then_attack_instance()
+	]
+	var compiled: Dictionary = TacticalTemplateCompilerScript.compile_templates(blueprint.tactical_templates)
+	blueprint.state_flag_defaults = compiled.get("state_flag_defaults", {}).duplicate(true)
+	blueprint.embedded_rules = compiled.get("rules", []).duplicate(true)
 	add_blueprint(blueprint)
 	return blueprint
 
@@ -97,69 +103,7 @@ func prune_unused_snapshots(active_snapshot_ids: Array[StringName]) -> int:
 	return removed
 
 func _make_rally_rules() -> Array:
-	return [
-		{
-			"id": "move_to_rally",
-			"name": "前往集结点",
-			"subject": "self",
-			"match_mode": "all",
-			"conditions": [
-				{"type": "has_rally_point"},
-				{"type": "self_flag_is", "flag": "rallied", "value": false},
-				{"type": "distance_to_rally_greater", "value": 20.0}
-			],
-			"action": "move_to_rally"
-		},
-		{
-			"id": "mark_rallied",
-			"name": "标记已集结",
-			"subject": "self",
-			"match_mode": "all",
-			"conditions": [
-				{"type": "has_rally_point"},
-				{"type": "self_flag_is", "flag": "rallied", "value": false},
-				{"type": "distance_to_rally_less_equal", "value": 20.0}
-			],
-			"action": "set_self_flag",
-			"flag": "rallied",
-			"value": true
-		},
-		{
-			"id": "wait_for_squad",
-			"name": "等待队友",
-			"subject": "self",
-			"match_mode": "all",
-			"conditions": [
-				{"type": "has_rally_point"},
-				{"type": "self_flag_is", "flag": "rallied", "value": true},
-				{"type": "self_flag_is", "flag": "squad_ready", "value": false},
-				{"type": "allies_near_rally_less", "value": 4, "radius": 90.0}
-			],
-			"action": "wait"
-		},
-		{
-			"id": "mark_squad_ready",
-			"name": "等待队友",
-			"subject": "self",
-			"match_mode": "all",
-			"conditions": [
-				{"type": "has_rally_point"},
-				{"type": "self_flag_is", "flag": "rallied", "value": true},
-				{"type": "self_flag_is", "flag": "squad_ready", "value": false},
-				{"type": "allies_near_rally_at_least", "value": 4, "radius": 90.0}
-			],
-			"action": "set_self_flag",
-			"flag": "squad_ready",
-			"value": true
-		},
-		{
-			"id": "default_after_rally",
-			"name": "默认脑干接管",
-			"subject": "self",
-			"match_mode": "all",
-			"conditions": [
-				{"type": "self_flag_is", "flag": "squad_ready", "value": true}
-			],
-			"action": "default_combat"
-		}
-	]
+	var compiled: Dictionary = TacticalTemplateCompilerScript.compile_templates([
+		TacticalTemplateCompilerScript.make_rally_then_attack_instance()
+	])
+	return compiled.get("rules", [])

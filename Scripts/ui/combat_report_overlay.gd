@@ -160,7 +160,7 @@ func _rebuild_resource_page(rows: Array) -> void:
 
 func _rebuild_robot_page(rows: Array) -> void:
 	_page_title.text = "机器人统计"
-	_content_list.add_child(_make_table_row(["蓝图", "生产", "损失", "击杀", "规则触发"], true))
+	_content_list.add_child(_make_table_row(["蓝图", "生产", "损失", "击杀", "模板触发", "规则触发"], true))
 	if rows.is_empty():
 		_content_list.add_child(_make_label("最近 5 分钟暂无机器人数据", 14, Color(0.72, 0.78, 0.84, 1.0)))
 		return
@@ -172,29 +172,34 @@ func _rebuild_robot_page(rows: Array) -> void:
 			str(int(row.get("produced", 0))),
 			str(int(row.get("lost", 0))),
 			str(int(row.get("kills", 0))),
+			str(int(row.get("template_triggered", 0))),
 			str(int(row.get("rule_triggered", 0))),
 		]))
 		var loss_reasons: Dictionary = row.get("loss_reasons", {})
 		if not loss_reasons.is_empty():
 			block.add_child(_make_detail_label("损失原因：%s" % _format_counts(loss_reasons)))
-		_append_rule_trigger_details(block, row.get("rules", {}))
-		var never_triggered: Array = row.get("never_triggered_rules", [])
-		if not never_triggered.is_empty():
-			block.add_child(_make_detail_label("从未触发规则：%s" % " / ".join(never_triggered)))
+		_append_trigger_details(block, "战术模板触发明细：", row.get("templates", {}))
+		_append_trigger_details(block, "底层规则触发明细：", row.get("rules", {}))
+		var never_templates: Array = row.get("never_triggered_templates", [])
+		if not never_templates.is_empty():
+			block.add_child(_make_detail_label("从未触发模板：%s" % " / ".join(never_templates)))
+		var never_rules: Array = row.get("never_triggered_rules", [])
+		if not never_rules.is_empty():
+			block.add_child(_make_detail_label("从未触发规则：%s" % " / ".join(never_rules)))
 		_content_list.add_child(block)
 		_content_list.add_child(HSeparator.new())
 
-func _append_rule_trigger_details(block: VBoxContainer, rules: Dictionary) -> void:
-	if rules.is_empty():
+func _append_trigger_details(block: VBoxContainer, title: String, items: Dictionary) -> void:
+	if items.is_empty():
 		return
-	block.add_child(_make_detail_label("规则触发明细："))
-	var rule_rows: Array = rules.values()
-	rule_rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+	block.add_child(_make_detail_label(title))
+	var item_rows: Array = items.values()
+	item_rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return str(a.get("name", "")) < str(b.get("name", ""))
 	)
-	for rule in rule_rows:
-		var triggered := int(rule.get("triggered", 0))
-		var detail := _make_detail_label("  %s：%d 次" % [str(rule.get("display_name", rule.get("name", "未命名规则"))), triggered])
+	for item in item_rows:
+		var triggered := int(item.get("triggered", 0))
+		var detail := _make_detail_label("  %s：%d 次" % [str(item.get("display_name", item.get("name", "未命名"))), triggered])
 		if triggered <= 0:
 			detail.add_theme_color_override("font_color", Color(1.0, 0.68, 0.48, 1.0))
 		block.add_child(detail)
@@ -203,7 +208,7 @@ func _make_table_row(values: Array[String], is_header: bool = false) -> HBoxCont
 	var row := HBoxContainer.new()
 	row.custom_minimum_size = Vector2(880, 30 if is_header else 28)
 	row.add_theme_constant_override("separation", 8)
-	var widths := [440.0, 100.0, 100.0, 100.0, 120.0]
+	var widths := [360.0, 82.0, 82.0, 82.0, 110.0, 110.0]
 	for index in range(values.size()):
 		var label := _make_label(
 			values[index],
@@ -242,7 +247,9 @@ func _format_loss_reason(reason: String) -> String:
 			return reason
 
 func _format_signed(value: int) -> String:
-	return "+%d" % value if value > 0 else str(value)
+	if value > 0:
+		return "+%d" % value
+	return str(value)
 
 func _make_label(text: String, font_size: int, color: Color) -> Label:
 	var label := Label.new()

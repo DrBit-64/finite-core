@@ -143,6 +143,8 @@ func _add_cost_section(building_def: BuildingDef) -> void:
 func _add_building_specific_sections(node: Node) -> void:
 	if node is MainBase:
 		_add_main_base_section(node as MainBase)
+	elif node is MinerBuilding:
+		_add_miner_section(node as MinerBuilding)
 	elif node is ProcessorBuilding:
 		_add_processor_section(node as ProcessorBuilding)
 	elif node is RobotForgeBuilding:
@@ -169,6 +171,16 @@ func _add_processor_section(processor: ProcessorBuilding) -> void:
 	_detail_root.add_child(_make_info_label("进度：%d%%" % int(processor.get_progress_ratio() * 100.0)))
 	_add_cache_section("原料缓存", processor.input_cache)
 	_add_cache_section("产物缓存", processor.output_cache)
+
+func _add_miner_section(miner: MinerBuilding) -> void:
+	_detail_root.add_child(_make_section_label("开采配方"))
+	var card := RecipeSummaryCardScript.new()
+	card.setup(miner.get_mining_recipe(), _resource_defs, miner.input_cache, miner.output_cache)
+	_detail_root.add_child(card)
+	_detail_root.add_child(_make_info_label("绑定矿点：%s" % miner._get_bound_node_name()))
+	_detail_root.add_child(_make_info_label("状态：%s" % miner.status_text))
+	_detail_root.add_child(_make_info_label("进度：%d%%" % int(miner.get_progress_ratio() * 100.0)))
+	_add_cache_section("产物缓存", miner.output_cache)
 
 func _add_forge_section(forge: RobotForgeBuilding) -> void:
 	var blueprint: UnitBlueprint = forge.blueprint

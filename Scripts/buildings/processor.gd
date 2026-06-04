@@ -26,6 +26,7 @@ func set_recipe(recipe_id: StringName) -> void:
 			return
 
 func _process(delta: float) -> void:
+	_flush_output_cache_to_inventory()
 	if selected_recipe == null:
 		_set_status("未选择配方")
 		return
@@ -58,8 +59,7 @@ func _advance_production(delta: float) -> void:
 
 	progress_seconds = 0.0
 	_add_to_cache(output_cache, selected_recipe.outputs)
-	for resource_id in selected_recipe.outputs.keys():
-		target_inventory.add_resource(resource_id, int(selected_recipe.outputs[resource_id]), "%s 产出" % get_display_name())
+	_flush_output_cache_to_inventory()
 	processor_state_changed.emit()
 
 func get_progress_ratio() -> float:
@@ -77,6 +77,19 @@ func get_inspector_lines() -> Array[String]:
 func _add_to_cache(cache: Dictionary, resources: Dictionary) -> void:
 	for resource_id in resources.keys():
 		cache[resource_id] = int(cache.get(resource_id, 0)) + int(resources[resource_id])
+
+func _flush_output_cache_to_inventory() -> bool:
+	if target_inventory == null or output_cache.is_empty():
+		return false
+	var transferred := output_cache.duplicate(true)
+	output_cache.clear()
+	for resource_id in transferred.keys():
+		var amount := int(transferred[resource_id])
+		if amount <= 0:
+			continue
+		target_inventory.add_resource(resource_id, amount, "%s 抽象物流转入主库存" % get_display_name())
+	processor_state_changed.emit()
+	return true
 
 func _pull_missing_inputs_from_inventory() -> bool:
 	var changed := false

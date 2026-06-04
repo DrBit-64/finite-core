@@ -257,6 +257,9 @@ func _activate_rule(rule: Variant, rule_name: String, handled: bool) -> void:
 			"blueprint_snapshot_id": String(robot.get("blueprint_snapshot_id")) if robot else "",
 			"rule_id": rule_id,
 			"rule_name": rule_name,
+			"template_id": str(_rule_get(rule, "template_id", "")),
+			"template_name": str(_rule_get(rule, "template_name", "")),
+			"template_stage": str(_rule_get(rule, "template_stage", "")),
 			"action": str(_rule_get(rule, "action", "")),
 			"handled": handled,
 		})

@@ -1,18 +1,25 @@
 extends PanelContainer
 class_name BlueprintManagementOverlay
 
-signal save_requested(source_blueprint_id: StringName, display_name: String, embedded_rules: Array, state_flag_defaults: Dictionary, save_as_new: bool)
+signal save_requested(source_blueprint_id: StringName, display_name: String, tactical_templates: Array, embedded_rules: Array, state_flag_defaults: Dictionary, save_as_new: bool)
+
+const TacticalTemplateCompilerScript := preload("res://Scripts/ai/tactical_template_compiler.gd")
 
 var _blueprints: Array[UnitBlueprint] = []
 var _selected_source_id: StringName = &""
-var _draft_rules: Array = []
+var _selected_template_index: int = -1
+var _draft_templates: Array[Dictionary] = []
+var _compiled_rules: Array = []
+var _compiled_state_defaults: Dictionary = {}
 
 var _blueprint_list: VBoxContainer
 var _source_option: OptionButton
 var _name_edit: LineEdit
 var _detail_label: Label
-var _rule_template_option: OptionButton
-var _rule_list: VBoxContainer
+var _template_list: VBoxContainer
+var _template_option: OptionButton
+var _param_list: VBoxContainer
+var _rule_preview_list: VBoxContainer
 
 func _ready() -> void:
 	anchor_left = 0.04
@@ -65,7 +72,7 @@ func _build_layout() -> void:
 	root.add_child(body)
 
 	var library_column := VBoxContainer.new()
-	library_column.custom_minimum_size = Vector2(360, 0)
+	library_column.custom_minimum_size = Vector2(370, 0)
 	library_column.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	library_column.add_theme_constant_override("separation", 8)
 	body.add_child(library_column)
@@ -74,17 +81,16 @@ func _build_layout() -> void:
 	var blueprint_scroll := ScrollContainer.new()
 	blueprint_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	blueprint_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	blueprint_scroll.custom_minimum_size = Vector2(360, 420)
 	library_column.add_child(blueprint_scroll)
 
 	_blueprint_list = VBoxContainer.new()
-	_blueprint_list.custom_minimum_size = Vector2(340, 0)
+	_blueprint_list.custom_minimum_size = Vector2(350, 0)
 	_blueprint_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_blueprint_list.add_theme_constant_override("separation", 6)
 	blueprint_scroll.add_child(_blueprint_list)
 
 	var editor_column := VBoxContainer.new()
-	editor_column.custom_minimum_size = Vector2(760, 0)
+	editor_column.custom_minimum_size = Vector2(820, 0)
 	editor_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	editor_column.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	editor_column.add_theme_constant_override("separation", 10)
@@ -93,19 +99,18 @@ func _build_layout() -> void:
 	editor_column.add_child(_make_label("编辑草稿", 14, Color(0.78, 0.86, 0.94, 1.0)))
 
 	_source_option = OptionButton.new()
-	_source_option.custom_minimum_size = Vector2(420, 32)
+	_source_option.custom_minimum_size = Vector2(460, 32)
 	_source_option.item_selected.connect(_on_source_option_selected)
 	editor_column.add_child(_source_option)
 
 	_name_edit = LineEdit.new()
 	_name_edit.placeholder_text = "蓝图名称"
 	_name_edit.text = "集结步枪机器人"
-	_name_edit.custom_minimum_size = Vector2(420, 32)
+	_name_edit.custom_minimum_size = Vector2(460, 32)
 	editor_column.add_child(_name_edit)
 
-	_detail_label = _make_label("", 13, Color(0.84, 0.90, 0.96, 1.0))
-	_detail_label.custom_minimum_size = Vector2(720, 24)
-	_detail_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_detail_label = _make_wrapped_label("", 13, Color(0.84, 0.90, 0.96, 1.0))
+	_detail_label.custom_minimum_size = Vector2(760, 24)
 	editor_column.add_child(_detail_label)
 
 	var part_row := HBoxContainer.new()
@@ -116,48 +121,88 @@ func _build_layout() -> void:
 	part_row.add_child(_make_disabled_button("步枪模块"))
 	editor_column.add_child(part_row)
 
-	editor_column.add_child(_make_label("If-Then 规则", 14, Color(0.78, 0.86, 0.94, 1.0)))
-	var rule_toolbar := HBoxContainer.new()
-	rule_toolbar.add_theme_constant_override("separation", 8)
-	editor_column.add_child(rule_toolbar)
+	editor_column.add_child(_make_label("战术模板", 14, Color(0.78, 0.86, 0.94, 1.0)))
+	var template_toolbar := HBoxContainer.new()
+	template_toolbar.add_theme_constant_override("separation", 8)
+	editor_column.add_child(template_toolbar)
 
-	_rule_template_option = OptionButton.new()
-	_rule_template_option.custom_minimum_size = Vector2(360, 32)
-	_rule_template_option.add_item("IF 未集结且有集结点 THEN 前往集结点")
-	_rule_template_option.set_item_metadata(0, "move_to_rally")
-	_rule_template_option.add_item("IF 到达集结点 THEN 标记已集结")
-	_rule_template_option.set_item_metadata(1, "mark_rallied")
-	_rule_template_option.add_item("IF 已集结但队友不足 THEN 等待队友")
-	_rule_template_option.set_item_metadata(2, "wait_for_squad")
-	_rule_template_option.add_item("IF 队友到齐 THEN 标记小队就绪")
-	_rule_template_option.set_item_metadata(3, "mark_squad_ready")
-	_rule_template_option.add_item("IF 小队就绪 THEN 默认脑干接管")
-	_rule_template_option.set_item_metadata(4, "default_after_rally")
-	rule_toolbar.add_child(_rule_template_option)
+	_template_option = OptionButton.new()
+	_template_option.custom_minimum_size = Vector2(300, 32)
+	for template_def in TacticalTemplateCompilerScript.get_template_defs():
+		_template_option.add_item(str(template_def.get("display_name", template_def.get("id", ""))))
+		_template_option.set_item_metadata(_template_option.item_count - 1, str(template_def.get("id", "")))
+	template_toolbar.add_child(_template_option)
 
-	var add_rule_button := Button.new()
-	add_rule_button.text = "添加规则"
-	add_rule_button.custom_minimum_size = Vector2(106, 32)
-	add_rule_button.pressed.connect(_on_add_rule_pressed)
-	rule_toolbar.add_child(add_rule_button)
+	var add_template_button := Button.new()
+	add_template_button.text = "添加模板"
+	add_template_button.custom_minimum_size = Vector2(108, 32)
+	add_template_button.pressed.connect(_on_add_template_pressed)
+	template_toolbar.add_child(add_template_button)
 
-	var template_button := Button.new()
-	template_button.text = "套用集结模板"
-	template_button.custom_minimum_size = Vector2(136, 32)
-	template_button.pressed.connect(_on_apply_rally_template_pressed)
-	rule_toolbar.add_child(template_button)
+	var quick_rally_button := Button.new()
+	quick_rally_button.text = "套用集结后进攻"
+	quick_rally_button.custom_minimum_size = Vector2(154, 32)
+	quick_rally_button.pressed.connect(_on_apply_rally_template_pressed)
+	template_toolbar.add_child(quick_rally_button)
+
+	var template_and_params := HBoxContainer.new()
+	template_and_params.add_theme_constant_override("separation", 12)
+	template_and_params.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	editor_column.add_child(template_and_params)
+
+	var template_panel := PanelContainer.new()
+	template_panel.custom_minimum_size = Vector2(390, 160)
+	template_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	template_panel.add_theme_stylebox_override("panel", _make_section_style())
+	template_and_params.add_child(template_panel)
+
+	var template_margin := MarginContainer.new()
+	template_margin.add_theme_constant_override("margin_left", 10)
+	template_margin.add_theme_constant_override("margin_top", 8)
+	template_margin.add_theme_constant_override("margin_right", 10)
+	template_margin.add_theme_constant_override("margin_bottom", 8)
+	template_panel.add_child(template_margin)
+
+	_template_list = VBoxContainer.new()
+	_template_list.add_theme_constant_override("separation", 6)
+	template_margin.add_child(_template_list)
+
+	var param_panel := PanelContainer.new()
+	param_panel.custom_minimum_size = Vector2(330, 160)
+	param_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	param_panel.add_theme_stylebox_override("panel", _make_section_style())
+	template_and_params.add_child(param_panel)
+
+	var param_margin := MarginContainer.new()
+	param_margin.add_theme_constant_override("margin_left", 10)
+	param_margin.add_theme_constant_override("margin_top", 8)
+	param_margin.add_theme_constant_override("margin_right", 10)
+	param_margin.add_theme_constant_override("margin_bottom", 8)
+	param_panel.add_child(param_margin)
+
+	_param_list = VBoxContainer.new()
+	_param_list.add_theme_constant_override("separation", 6)
+	param_margin.add_child(_param_list)
+
+	var preview_header := HBoxContainer.new()
+	preview_header.add_theme_constant_override("separation", 8)
+	editor_column.add_child(preview_header)
+	preview_header.add_child(_make_label("展开底层规则（只读）", 14, Color(0.78, 0.86, 0.94, 1.0)))
+	var readonly_label := _make_label("模板会自动生成这些规则；玩家暂不直接编辑。", 12, Color(0.58, 0.68, 0.76, 1.0))
+	readonly_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	preview_header.add_child(readonly_label)
 
 	var rule_scroll := ScrollContainer.new()
 	rule_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	rule_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	rule_scroll.custom_minimum_size = Vector2(760, 240)
+	rule_scroll.custom_minimum_size = Vector2(780, 180)
 	editor_column.add_child(rule_scroll)
 
-	_rule_list = VBoxContainer.new()
-	_rule_list.custom_minimum_size = Vector2(740, 0)
-	_rule_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_rule_list.add_theme_constant_override("separation", 6)
-	rule_scroll.add_child(_rule_list)
+	_rule_preview_list = VBoxContainer.new()
+	_rule_preview_list.custom_minimum_size = Vector2(760, 0)
+	_rule_preview_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_rule_preview_list.add_theme_constant_override("separation", 6)
+	rule_scroll.add_child(_rule_preview_list)
 
 	var save_row := HBoxContainer.new()
 	save_row.add_theme_constant_override("separation", 8)
@@ -182,7 +227,6 @@ func _rebuild_blueprint_list() -> void:
 	if _blueprint_list == null:
 		return
 	for child in _blueprint_list.get_children():
-		_blueprint_list.remove_child(child)
 		child.queue_free()
 	if _blueprints.is_empty():
 		_blueprint_list.add_child(_make_label("暂无蓝图", 13, Color(0.84, 0.88, 0.92, 1.0)))
@@ -203,13 +247,15 @@ func _rebuild_source_options() -> void:
 
 func _make_blueprint_row(blueprint: UnitBlueprint) -> Control:
 	var row := HBoxContainer.new()
-	row.custom_minimum_size = Vector2(340, 58)
+	row.custom_minimum_size = Vector2(350, 64)
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_theme_constant_override("separation", 8)
+
 	var label := _make_wrapped_label(_format_blueprint_summary(blueprint), 13, Color(0.88, 0.94, 1.0, 1.0))
-	label.custom_minimum_size = Vector2(220, 52)
+	label.custom_minimum_size = Vector2(236, 58)
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(label)
+
 	var edit_button := Button.new()
 	edit_button.text = "作为模板"
 	edit_button.custom_minimum_size = Vector2(96, 32)
@@ -234,30 +280,37 @@ func _select_source(source_id: StringName) -> void:
 			_source_option.select(i)
 			break
 	_name_edit.text = source.display_name
-	_detail_label.text = "来源：%s v%s | 底盘：%s | 模块：%s | 原规则：%d" % [
+	_detail_label.text = "来源：%s v%s | 底盘：%s | 模块：%s | 模板：%d | 底层规则：%d" % [
 		source.display_name,
 		source.version,
 		source.chassis_display_name,
 		" / ".join(source.module_display_names),
+		source.tactical_templates.size(),
 		source.embedded_rules.size(),
 	]
-	_draft_rules = source.embedded_rules.duplicate(true)
-	_rebuild_rule_list()
+	_draft_templates = source.tactical_templates.duplicate(true)
+	if _draft_templates.is_empty():
+		_draft_templates = [TacticalTemplateCompilerScript.make_default_attack_instance()]
+	_selected_template_index = 0 if not _draft_templates.is_empty() else -1
+	_recompile_draft()
+	_rebuild_template_list()
+	_rebuild_param_list()
+	_rebuild_rule_preview()
 
-func _on_add_rule_pressed() -> void:
-	var template_id := str(_rule_template_option.get_item_metadata(_rule_template_option.selected))
-	_draft_rules.append(_make_rule_template(template_id))
-	_rebuild_rule_list()
+func _on_add_template_pressed() -> void:
+	if _template_option == null or _template_option.item_count <= 0:
+		return
+	var template_id := str(_template_option.get_item_metadata(_template_option.selected))
+	_draft_templates.append(TacticalTemplateCompilerScript.make_instance(template_id))
+	_selected_template_index = _draft_templates.size() - 1
+	_recompile_and_rebuild()
 
 func _on_apply_rally_template_pressed() -> void:
-	_draft_rules = [
-		_make_rule_template("move_to_rally"),
-		_make_rule_template("mark_rallied"),
-		_make_rule_template("wait_for_squad"),
-		_make_rule_template("mark_squad_ready"),
-		_make_rule_template("default_after_rally"),
+	_draft_templates = [
+		TacticalTemplateCompilerScript.make_rally_then_attack_instance()
 	]
-	_rebuild_rule_list()
+	_selected_template_index = 0
+	_recompile_and_rebuild()
 
 func _on_save_modification_pressed() -> void:
 	_emit_save_requested(false)
@@ -266,191 +319,175 @@ func _on_save_as_new_pressed() -> void:
 	_emit_save_requested(true)
 
 func _emit_save_requested(save_as_new: bool) -> void:
+	var templates := _make_templates_for_save()
+	var compiled: Dictionary = TacticalTemplateCompilerScript.compile_templates(templates)
 	save_requested.emit(
 		_selected_source_id,
 		_name_edit.text,
-		_make_rules_for_save(),
-		_infer_state_defaults(_draft_rules),
+		templates,
+		compiled.get("rules", []),
+		compiled.get("state_flag_defaults", {}),
 		save_as_new
 	)
 
-func _rebuild_rule_list() -> void:
-	if _rule_list == null:
+func _make_templates_for_save() -> Array:
+	var templates := TacticalTemplateCompilerScript.normalize_templates(_draft_templates)
+	if templates.size() == 1 and str(templates[0].get("id", "")) == TacticalTemplateCompilerScript.TEMPLATE_DEFAULT_ATTACK:
+		return []
+	return templates
+
+func _recompile_and_rebuild() -> void:
+	_recompile_draft()
+	_rebuild_template_list()
+	_rebuild_param_list()
+	_rebuild_rule_preview()
+
+func _recompile_draft() -> void:
+	var templates := _make_templates_for_save()
+	var compiled: Dictionary = TacticalTemplateCompilerScript.compile_templates(templates)
+	_compiled_rules = compiled.get("rules", [])
+	_compiled_state_defaults = compiled.get("state_flag_defaults", {})
+
+func _rebuild_template_list() -> void:
+	if _template_list == null:
 		return
-	for child in _rule_list.get_children():
-		_rule_list.remove_child(child)
+	for child in _template_list.get_children():
 		child.queue_free()
-	if _draft_rules.is_empty():
-		_rule_list.add_child(_make_label("还没有规则。可以添加规则，或套用“先集结再战斗”模板。", 13, Color(0.84, 0.88, 0.92, 1.0)))
+	_template_list.add_child(_make_label("当前模板", 13, Color(0.72, 0.80, 0.88, 1.0)))
+	if _draft_templates.is_empty():
+		_template_list.add_child(_make_label("未选择模板。默认脑干会直接接管。", 13, Color(0.84, 0.88, 0.92, 1.0)))
 		return
-	for i in range(_draft_rules.size()):
-		_rule_list.add_child(_make_rule_row(i, _draft_rules[i]))
+	for i in range(_draft_templates.size()):
+		_template_list.add_child(_make_template_row(i, _draft_templates[i]))
 
-func _make_rule_row(index: int, rule: Dictionary) -> Control:
+func _make_template_row(index: int, template: Dictionary) -> Control:
 	var row := HBoxContainer.new()
-	row.custom_minimum_size = Vector2(740, 70)
+	row.add_theme_constant_override("separation", 6)
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_theme_constant_override("separation", 8)
 
-	var index_label := _make_label("%d." % [index + 1], 13, Color(0.72, 0.80, 0.88, 1.0))
-	index_label.custom_minimum_size = Vector2(28, 28)
-	index_label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	row.add_child(index_label)
+	var select_button := Button.new()
+	select_button.text = str(template.get("display_name", template.get("id", "未命名模板")))
+	select_button.custom_minimum_size = Vector2(146, 30)
+	select_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	select_button.modulate = Color(0.68, 0.92, 1.0, 1.0) if index == _selected_template_index else Color.WHITE
+	select_button.pressed.connect(func() -> void:
+		_selected_template_index = index
+		_rebuild_template_list()
+		_rebuild_param_list()
+	)
+	row.add_child(select_button)
 
-	var content := VBoxContainer.new()
-	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	content.add_theme_constant_override("separation", 4)
-	row.add_child(content)
-
-	var name_row := HBoxContainer.new()
-	name_row.add_theme_constant_override("separation", 6)
-	content.add_child(name_row)
-
-	var name_label := _make_label("名称", 12, Color(0.72, 0.80, 0.88, 1.0))
-	name_label.custom_minimum_size = Vector2(36, 28)
-	name_label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	name_row.add_child(name_label)
-
-	var name_edit := LineEdit.new()
-	name_edit.text = str(rule.get("name", _format_rule_action(rule))).strip_edges()
-	name_edit.placeholder_text = "规则名称"
-	name_edit.custom_minimum_size = Vector2(220, 28)
-	name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_edit.text_changed.connect(_on_rule_name_changed.bind(index))
-	name_row.add_child(name_edit)
-
-	var summary := _make_wrapped_label("IF %s THEN %s" % [_format_rule_conditions(rule), _format_rule_action(rule)], 13, Color(0.88, 0.94, 1.0, 1.0))
-	summary.custom_minimum_size = Vector2(560, 28)
-	summary.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	content.add_child(summary)
+	var intent := _make_wrapped_label(TacticalTemplateCompilerScript.describe_template(template), 12, Color(0.78, 0.86, 0.92, 1.0))
+	intent.custom_minimum_size = Vector2(140, 0)
+	intent.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(intent)
 
 	var remove_button := Button.new()
-	remove_button.text = "删除"
-	remove_button.custom_minimum_size = Vector2(68, 28)
-	remove_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	remove_button.pressed.connect(_on_remove_rule_pressed.bind(index), CONNECT_DEFERRED)
+	remove_button.text = "移除"
+	remove_button.custom_minimum_size = Vector2(58, 28)
+	remove_button.pressed.connect(_on_remove_template_pressed.bind(index), CONNECT_DEFERRED)
 	row.add_child(remove_button)
 	return row
 
-func _on_rule_name_changed(text: String, index: int) -> void:
-	if index < 0 or index >= _draft_rules.size():
+func _on_remove_template_pressed(index: int) -> void:
+	if index < 0 or index >= _draft_templates.size():
 		return
-	if typeof(_draft_rules[index]) != TYPE_DICTIONARY:
+	_draft_templates.remove_at(index)
+	if _draft_templates.is_empty():
+		_draft_templates = [TacticalTemplateCompilerScript.make_default_attack_instance()]
+	_selected_template_index = clampi(index, 0, _draft_templates.size() - 1)
+	_recompile_and_rebuild()
+
+func _rebuild_param_list() -> void:
+	if _param_list == null:
 		return
-	_draft_rules[index]["name"] = text
-
-func _on_remove_rule_pressed(index: int) -> void:
-	if index < 0 or index >= _draft_rules.size():
+	for child in _param_list.get_children():
+		child.queue_free()
+	_param_list.add_child(_make_label("模板参数", 13, Color(0.72, 0.80, 0.88, 1.0)))
+	if _selected_template_index < 0 or _selected_template_index >= _draft_templates.size():
+		_param_list.add_child(_make_label("未选中模板。", 13, Color(0.84, 0.88, 0.92, 1.0)))
 		return
-	_draft_rules.remove_at(index)
-	_rebuild_rule_list()
+	var template := _draft_templates[_selected_template_index]
+	var template_def := TacticalTemplateCompilerScript.get_template_def(str(template.get("id", "")))
+	var parameters: Array = template_def.get("parameters", [])
+	if parameters.is_empty():
+		_param_list.add_child(_make_wrapped_label("这个模板暂时没有可调参数。", 13, Color(0.84, 0.88, 0.92, 1.0)))
+		return
+	var params: Dictionary = template.get("params", {})
+	for parameter in parameters:
+		_param_list.add_child(_make_param_row(parameter, params.get(str(parameter.get("id", "")), parameter.get("default"))))
 
-func _make_rules_for_save() -> Array:
-	var result: Array = _draft_rules.duplicate(true)
-	for rule in result:
-		if typeof(rule) != TYPE_DICTIONARY:
-			continue
-		var rule_name := str(rule.get("name", "")).strip_edges()
-		if rule_name.is_empty():
-			rule["name"] = _format_rule_action(rule)
-	return result
+func _make_param_row(parameter: Dictionary, value: Variant) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
 
-func _make_rule_template(template_id: String) -> Dictionary:
-	match template_id:
-		"move_to_rally":
-			return {
-				"id": "move_to_rally",
-				"name": "前往集结点",
-				"subject": "self",
-				"match_mode": "all",
-				"conditions": [
-					{"type": "has_rally_point"},
-					{"type": "self_flag_is", "flag": "rallied", "value": false},
-					{"type": "distance_to_rally_greater", "value": 20.0}
-				],
-				"action": "move_to_rally"
-			}
-		"mark_rallied":
-			return {
-				"id": "mark_rallied",
-				"name": "标记已集结",
-				"subject": "self",
-				"match_mode": "all",
-				"conditions": [
-					{"type": "has_rally_point"},
-					{"type": "self_flag_is", "flag": "rallied", "value": false},
-					{"type": "distance_to_rally_less_equal", "value": 20.0}
-				],
-				"action": "set_self_flag",
-				"flag": "rallied",
-				"value": true
-			}
-		"wait_for_squad":
-			return {
-				"id": "wait_for_squad",
-				"name": "等待队友",
-				"subject": "self",
-				"match_mode": "all",
-				"conditions": [
-					{"type": "has_rally_point"},
-					{"type": "self_flag_is", "flag": "rallied", "value": true},
-					{"type": "self_flag_is", "flag": "squad_ready", "value": false},
-					{"type": "allies_near_rally_less", "value": 4, "radius": 90.0}
-				],
-				"action": "wait"
-			}
-		"mark_squad_ready":
-			return {
-				"id": "mark_squad_ready",
-				"name": "等待队友",
-				"subject": "self",
-				"match_mode": "all",
-				"conditions": [
-					{"type": "has_rally_point"},
-					{"type": "self_flag_is", "flag": "rallied", "value": true},
-					{"type": "self_flag_is", "flag": "squad_ready", "value": false},
-					{"type": "allies_near_rally_at_least", "value": 4, "radius": 90.0}
-				],
-				"action": "set_self_flag",
-				"flag": "squad_ready",
-				"value": true
-			}
-		_:
-			return {
-				"id": "default_after_rally",
-				"name": "默认脑干接管",
-				"subject": "self",
-				"match_mode": "all",
-				"conditions": [
-					{"type": "self_flag_is", "flag": "squad_ready", "value": true}
-				],
-				"action": "default_combat"
-			}
+	var label := _make_label(str(parameter.get("display_name", parameter.get("id", "参数"))), 13, Color(0.86, 0.92, 0.98, 1.0))
+	label.custom_minimum_size = Vector2(92, 28)
+	row.add_child(label)
 
-func _infer_state_defaults(rules: Array) -> Dictionary:
-	var result := {}
-	for rule in rules:
-		if typeof(rule) != TYPE_DICTIONARY:
-			continue
-		for condition in rule.get("conditions", []):
-			if typeof(condition) == TYPE_DICTIONARY and str(condition.get("type", "")) == "self_flag_is":
-				var flag_id := str(condition.get("flag", ""))
-				if not flag_id.is_empty() and not result.has(flag_id):
-					result[flag_id] = false
-		var action := str(rule.get("action", ""))
-		if action == "set_self_flag" or action == "clear_self_flag":
-			var action_flag := str(rule.get("flag", ""))
-			if not action_flag.is_empty() and not result.has(action_flag):
-				result[action_flag] = false
-	return result
+	var spin := SpinBox.new()
+	spin.custom_minimum_size = Vector2(120, 30)
+	spin.min_value = 1.0
+	spin.max_value = 999.0
+	spin.step = 1.0
+	spin.value = float(value)
+	if str(parameter.get("type", "")) == "float":
+		spin.step = 5.0
+	spin.value_changed.connect(_on_template_param_changed.bind(str(parameter.get("id", ""))))
+	row.add_child(spin)
+	return row
+
+func _on_template_param_changed(value: float, param_id: String) -> void:
+	if _selected_template_index < 0 or _selected_template_index >= _draft_templates.size():
+		return
+	var template := _draft_templates[_selected_template_index]
+	var params: Dictionary = template.get("params", {})
+	params[param_id] = value
+	template["params"] = params
+	_draft_templates[_selected_template_index] = TacticalTemplateCompilerScript.make_instance(str(template.get("id", "")), params)
+	_recompile_draft()
+	_rebuild_template_list()
+	_rebuild_rule_preview()
+
+func _rebuild_rule_preview() -> void:
+	if _rule_preview_list == null:
+		return
+	for child in _rule_preview_list.get_children():
+		child.queue_free()
+	if _compiled_rules.is_empty():
+		_rule_preview_list.add_child(_make_wrapped_label("无底层规则。机器人将直接使用默认脑干。", 13, Color(0.84, 0.88, 0.92, 1.0)))
+		return
+	for i in range(_compiled_rules.size()):
+		var rule: Dictionary = _compiled_rules[i]
+		_rule_preview_list.add_child(_make_rule_preview_row(i, rule))
+
+func _make_rule_preview_row(index: int, rule: Dictionary) -> Control:
+	var row := VBoxContainer.new()
+	row.add_theme_constant_override("separation", 3)
+	var title := "%d. [%s] %s / %s" % [
+		index + 1,
+		str(rule.get("template_name", "底层规则")),
+		str(rule.get("name", rule.get("id", "未命名规则"))),
+		str(rule.get("template_stage", "")),
+	]
+	row.add_child(_make_label(title, 13, Color(0.90, 0.96, 1.0, 1.0)))
+	row.add_child(_make_wrapped_label("IF %s THEN %s" % [_format_rule_conditions(rule), _format_rule_action(rule)], 12, Color(0.72, 0.82, 0.90, 1.0)))
+	return row
 
 func _format_blueprint_summary(blueprint: UnitBlueprint) -> String:
-	return "%s v%s | %s | %s | 规则 %d" % [
+	var template_text := "默认脑干"
+	if not blueprint.tactical_templates.is_empty():
+		var names: Array[String] = []
+		for template in blueprint.tactical_templates:
+			if typeof(template) == TYPE_DICTIONARY:
+				names.append(str(template.get("display_name", template.get("id", "模板"))))
+		template_text = " / ".join(names)
+	return "%s v%s\n%s | %s\n模板：%s" % [
 		blueprint.display_name,
 		blueprint.version,
 		blueprint.chassis_display_name,
 		" / ".join(blueprint.module_display_names),
-		blueprint.embedded_rules.size(),
+		template_text,
 	]
 
 func _format_rule_conditions(rule: Dictionary) -> String:
@@ -458,7 +495,9 @@ func _format_rule_conditions(rule: Dictionary) -> String:
 	for condition in rule.get("conditions", []):
 		if typeof(condition) == TYPE_DICTIONARY:
 			parts.append(_format_condition(condition))
-	return " 且 ".join(parts) if not parts.is_empty() else "总是"
+	if parts.is_empty():
+		return "总是"
+	return " 且 ".join(parts)
 
 func _format_condition(condition: Dictionary) -> String:
 	match str(condition.get("type", "")):
@@ -534,4 +573,18 @@ func _make_panel_style() -> StyleBoxFlat:
 	style.corner_radius_top_right = 6
 	style.corner_radius_bottom_right = 6
 	style.corner_radius_bottom_left = 6
+	return style
+
+func _make_section_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.055, 0.065, 0.078, 0.72)
+	style.border_color = Color(0.18, 0.26, 0.32, 0.92)
+	style.border_width_left = 1
+	style.border_width_top = 1
+	style.border_width_right = 1
+	style.border_width_bottom = 1
+	style.corner_radius_top_left = 5
+	style.corner_radius_top_right = 5
+	style.corner_radius_bottom_right = 5
+	style.corner_radius_bottom_left = 5
 	return style

@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "debug_only": false,
+  "description": "MVP starting inventory for non-debug playtest balance. Enough to start the first minimal production chain, not enough to mass-produce robots immediately.",
+  "starting_inventory": {
+    "construction_mass": 200,
+    "iron_ore": 0,
+    "copper_ore": 0,
+    "iron_plate": 20,
+    "copper_wire": 12
+  }
+}

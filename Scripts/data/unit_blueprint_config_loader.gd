@@ -1,6 +1,8 @@
 extends RefCounted
 class_name UnitBlueprintConfigLoader
 
+const TacticalTemplateCompilerScript := preload("res://Scripts/ai/tactical_template_compiler.gd")
+
 static func load_unit_blueprint(path: String, unit_id: StringName, recipe_defs: Array[RecipeDef], fallback: UnitBlueprint = null) -> UnitBlueprint:
 	var blueprints := load_unit_blueprints(path, recipe_defs)
 	for blueprint in blueprints:
@@ -45,8 +47,13 @@ static func _make_blueprint(data: Dictionary, recipe_defs: Array[RecipeDef]) -> 
 	blueprint.module_display_names = _string_array(data.get("module_display_names", blueprint.module_display_names))
 	blueprint.module_icon_paths = _string_array(data.get("module_icon_paths", []))
 	blueprint.default_brain_enabled = bool(data.get("default_brain_enabled", true))
+	blueprint.tactical_templates = TacticalTemplateCompilerScript.normalize_templates(data.get("tactical_templates", []))
 	blueprint.embedded_rules = data.get("embedded_rules", []).duplicate(true)
 	blueprint.state_flag_defaults = data.get("state_flag_defaults", {}).duplicate(true)
+	if blueprint.embedded_rules.is_empty() and not blueprint.tactical_templates.is_empty():
+		var compiled: Dictionary = TacticalTemplateCompilerScript.compile_templates(blueprint.tactical_templates)
+		blueprint.embedded_rules = compiled.get("rules", []).duplicate(true)
+		blueprint.state_flag_defaults = compiled.get("state_flag_defaults", {}).duplicate(true)
 	blueprint.stats = _make_stats(data.get("stats", {}))
 
 	var recipe_id := StringName(str(data.get("production_recipe_id", "")))

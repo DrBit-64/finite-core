@@ -20,6 +20,7 @@
       ],
       "production_recipe_id": "forge_basic_rifle_robot",
       "default_brain_enabled": true,
+      "tactical_templates": [],
       "state_flag_defaults": {},
       "embedded_rules": [],
       "stats": {

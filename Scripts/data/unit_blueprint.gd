@@ -16,6 +16,7 @@ class_name UnitBlueprint
 @export var production_cost: Dictionary = {}
 @export var production_time_seconds: float = 12.0
 @export_file("*.json") var rules_path: String = ""
+@export var tactical_templates: Array = []
 @export var embedded_rules: Array = []
 @export var state_flag_defaults: Dictionary = {}
 @export var default_brain_enabled: bool = true
@@ -48,6 +49,7 @@ func make_snapshot(next_snapshot_id: StringName = &"") -> UnitBlueprint:
 	snapshot.production_cost = production_cost.duplicate(true)
 	snapshot.production_time_seconds = production_time_seconds
 	snapshot.rules_path = rules_path
+	snapshot.tactical_templates = tactical_templates.duplicate(true)
 	snapshot.embedded_rules = embedded_rules.duplicate(true)
 	snapshot.state_flag_defaults = state_flag_defaults.duplicate(true)
 	snapshot.default_brain_enabled = default_brain_enabled

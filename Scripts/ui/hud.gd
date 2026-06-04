@@ -5,7 +5,7 @@ signal build_mode_requested(building_id: StringName)
 signal processor_recipe_selected(processor: Node, recipe_id: StringName)
 signal forge_rally_point_requested(forge: Node)
 signal blueprint_library_requested
-signal blueprint_save_requested(source_blueprint_id: StringName, display_name: String, embedded_rules: Array, state_flag_defaults: Dictionary, save_as_new: bool)
+signal blueprint_save_requested(source_blueprint_id: StringName, display_name: String, tactical_templates: Array, embedded_rules: Array, state_flag_defaults: Dictionary, save_as_new: bool)
 signal forge_blueprint_selected(forge: Node, blueprint_id: StringName)
 
 const BottomPromptScript := preload("res://Scripts/ui/bottom_prompt.gd")
@@ -38,6 +38,7 @@ var _operation_panel: PanelContainer = null
 var _operation_list: VBoxContainer = null
 var _operation_mode: StringName = &""
 var _operation_processor: Node = null
+var _operation_miner: Node = null
 var _operation_recipes: Array[RecipeDef] = []
 var _operation_blueprints: Array[UnitBlueprint] = []
 var _operation_forge: Node = null
@@ -178,11 +179,26 @@ func show_processor_panel(processor: Node, recipes: Array[RecipeDef], resource_d
 	if _operation_mode != &"processor" or _operation_processor != processor or _operation_recipes.size() != recipes.size():
 		_operation_mode = &"processor"
 		_operation_processor = processor
+		_operation_miner = null
 		_operation_forge = null
 		_operation_recipes = recipes.duplicate()
 		_operation_blueprints.clear()
 		_rebuild_processor_panel(processor, recipes)
 	_update_processor_panel(processor, resource_defs)
+	_position_operation_panel(screen_position)
+
+func show_miner_panel(miner: Node, resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
+	_ensure_operation_panel()
+	_operation_panel.visible = true
+	if _operation_mode != &"miner" or _operation_miner != miner:
+		_operation_mode = &"miner"
+		_operation_miner = miner
+		_operation_processor = null
+		_operation_forge = null
+		_operation_recipes.clear()
+		_operation_blueprints.clear()
+		_rebuild_miner_panel(miner)
+	_update_miner_panel(miner, resource_defs)
 	_position_operation_panel(screen_position)
 
 func show_forge_panel(forge: Node, blueprint: UnitBlueprint, blueprints: Array[UnitBlueprint], resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
@@ -192,6 +208,7 @@ func show_forge_panel(forge: Node, blueprint: UnitBlueprint, blueprints: Array[U
 		_operation_mode = &"forge"
 		_operation_forge = forge
 		_operation_processor = null
+		_operation_miner = null
 		_operation_recipes.clear()
 		_operation_blueprints = blueprints.duplicate()
 		_rebuild_forge_panel(forge)
@@ -203,6 +220,7 @@ func hide_operation_panel() -> void:
 		_operation_panel.visible = false
 	_operation_mode = &""
 	_operation_processor = null
+	_operation_miner = null
 	_operation_forge = null
 	_operation_blueprints.clear()
 	if _forge_blueprint_picker:
@@ -516,8 +534,8 @@ func _ensure_blueprint_overlay() -> void:
 	_blueprint_overlay.save_requested.connect(_on_blueprint_overlay_save_requested)
 	root_control.add_child(_blueprint_overlay)
 
-func _on_blueprint_overlay_save_requested(source_blueprint_id: StringName, display_name: String, embedded_rules: Array, state_flag_defaults: Dictionary, save_as_new: bool) -> void:
-	blueprint_save_requested.emit(source_blueprint_id, display_name, embedded_rules, state_flag_defaults, save_as_new)
+func _on_blueprint_overlay_save_requested(source_blueprint_id: StringName, display_name: String, tactical_templates: Array, embedded_rules: Array, state_flag_defaults: Dictionary, save_as_new: bool) -> void:
+	blueprint_save_requested.emit(source_blueprint_id, display_name, tactical_templates, embedded_rules, state_flag_defaults, save_as_new)
 
 func _ensure_blueprint_panel() -> void:
 	if _blueprint_panel != null:
@@ -632,7 +650,7 @@ func _on_save_rally_blueprint_pressed() -> void:
 		return
 	var selected_index := _blueprint_source_option.selected
 	var source_id := StringName(str(_blueprint_source_option.get_item_metadata(selected_index)))
-	blueprint_save_requested.emit(source_id, _blueprint_name_edit.text if _blueprint_name_edit else "", [], {}, true)
+	blueprint_save_requested.emit(source_id, _blueprint_name_edit.text if _blueprint_name_edit else "", [], [], {}, true)
 
 func _on_blueprint_clone_rally_pressed(source_blueprint_id: StringName) -> void:
 	var display_name := "集结蓝图"
@@ -640,7 +658,7 @@ func _on_blueprint_clone_rally_pressed(source_blueprint_id: StringName) -> void:
 		if blueprint.id == source_blueprint_id:
 			display_name = "%s 集结版" % blueprint.display_name
 			break
-	blueprint_save_requested.emit(source_blueprint_id, display_name, [], {}, true)
+	blueprint_save_requested.emit(source_blueprint_id, display_name, [], [], {}, true)
 
 func _on_forge_blueprint_picker_pressed(forge: Node) -> void:
 	_show_forge_blueprint_picker(forge)
@@ -781,6 +799,51 @@ func _update_processor_panel(processor: Node, resource_defs: Array[ResourceDef])
 	_refresh_recipe_button_states(selected_recipe)
 	_operation_panel.size = _operation_panel.get_combined_minimum_size()
 
+func _rebuild_miner_panel(miner: Node) -> void:
+	_clear_operation_content()
+
+	_operation_list.add_child(_make_operation_label(miner.call("get_display_name"), Color(0.96, 0.98, 1.0, 1.0), 15))
+	_operation_list.add_child(_make_operation_label("配方", Color(0.72, 0.78, 0.84, 1.0), 12))
+	_operation_current_label = _make_operation_label("当前：开采", Color(0.9, 0.92, 0.95, 1.0), 13)
+	_operation_list.add_child(_operation_current_label)
+
+	_operation_recipe_card = RecipeSummaryCardScript.new()
+	_operation_recipe_card.custom_minimum_size = Vector2(222, 0)
+	_operation_list.add_child(_operation_recipe_card)
+
+	_operation_status_label = _make_operation_label("", Color(0.9, 0.92, 0.95, 1.0), 13)
+	_operation_list.add_child(_operation_status_label)
+	_operation_progress_label = _make_operation_label("", Color(0.78, 0.88, 1.0, 1.0), 13)
+	_operation_list.add_child(_operation_progress_label)
+
+	_operation_progress_bar = ProgressBar.new()
+	_operation_progress_bar.custom_minimum_size = Vector2(184, 10)
+	_operation_progress_bar.min_value = 0.0
+	_operation_progress_bar.max_value = 1.0
+	_operation_progress_bar.show_percentage = false
+	_operation_list.add_child(_operation_progress_bar)
+
+	_operation_list.add_child(_make_operation_label("产物缓存", Color(0.72, 0.80, 0.88, 1.0), 12))
+	_operation_output_cache_list = VBoxContainer.new()
+	_operation_output_cache_list.add_theme_constant_override("separation", 4)
+	_operation_list.add_child(_operation_output_cache_list)
+	_operation_panel.size = _operation_panel.get_combined_minimum_size()
+
+func _update_miner_panel(miner: Node, resource_defs: Array[ResourceDef]) -> void:
+	var mining_recipe: RecipeDef = miner.call("get_mining_recipe") if miner.has_method("get_mining_recipe") else null
+	if _operation_current_label:
+		_operation_current_label.text = "当前：开采"
+	if _operation_recipe_card:
+		_operation_recipe_card.call("setup", mining_recipe, resource_defs, miner.get("input_cache"), miner.get("output_cache"))
+	if _operation_status_label:
+		_operation_status_label.text = "状态：%s" % str(miner.get("status_text"))
+	if _operation_progress_label:
+		_operation_progress_label.text = _format_miner_progress_text(miner, mining_recipe)
+	if _operation_progress_bar:
+		_operation_progress_bar.value = float(miner.call("get_progress_ratio")) if miner.has_method("get_progress_ratio") else 0.0
+	_rebuild_resource_stack_list(_operation_output_cache_list, miner.get("output_cache"), resource_defs)
+	_operation_panel.size = _operation_panel.get_combined_minimum_size()
+
 func _rebuild_forge_panel(forge: Node) -> void:
 	_clear_operation_content()
 
@@ -873,6 +936,11 @@ func _refresh_recipe_button_states(selected_recipe: RecipeDef) -> void:
 func _format_processor_progress_text(processor: Node, selected_recipe: RecipeDef) -> String:
 	var current_seconds := float(processor.get("progress_seconds"))
 	var total_seconds := selected_recipe.duration_seconds if selected_recipe else 0.0
+	return "进度：%.1fs / %.1fs" % [current_seconds, total_seconds]
+
+func _format_miner_progress_text(miner: Node, mining_recipe: RecipeDef) -> String:
+	var current_seconds := float(miner.get("progress_seconds"))
+	var total_seconds := mining_recipe.duration_seconds if mining_recipe else 0.0
 	return "进度：%.1fs / %.1fs" % [current_seconds, total_seconds]
 
 func _format_processor_recipe_detail(selected_recipe: RecipeDef, resource_defs: Array[ResourceDef]) -> String:

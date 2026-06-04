@@ -13,6 +13,13 @@ static var _shared_tooltip_panel: PanelContainer = null
 static var _shared_tooltip_label: Label = null
 static var _shared_tooltip_owner_id: int = 0
 
+static func is_shared_tooltip_visible() -> bool:
+	return (
+		_shared_tooltip_layer != null
+		and is_instance_valid(_shared_tooltip_layer)
+		and _shared_tooltip_layer.visible
+	)
+
 func _ready() -> void:
 	_build()
 
@@ -93,7 +100,22 @@ func _hide_custom_tooltip() -> void:
 	_shared_tooltip_owner_id = 0
 
 func _exit_tree() -> void:
-	_hide_custom_tooltip()
+	if _shared_tooltip_owner_id != get_instance_id():
+		return
+	if _tooltip_value.is_empty() or not _is_pointer_over_slot():
+		_hide_custom_tooltip()
+		return
+
+	# Object inspectors may rebuild item slots while the pointer is still over the
+	# same visual area. Keep the shared tooltip alive long enough for the new slot
+	# to claim it, avoiding the Minecraft-style tooltip from blinking.
+	_shared_tooltip_owner_id = 0
+	var tree := get_tree()
+	if tree:
+		tree.create_timer(0.15).timeout.connect(func() -> void:
+			if _shared_tooltip_owner_id == 0 and _shared_tooltip_layer != null and is_instance_valid(_shared_tooltip_layer):
+				_shared_tooltip_layer.visible = false
+		, CONNECT_ONE_SHOT)
 
 func _position_custom_tooltip() -> void:
 	var viewport_size := get_viewport().get_visible_rect().size
