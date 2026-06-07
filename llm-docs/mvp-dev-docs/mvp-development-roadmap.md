@@ -796,8 +796,9 @@ Resources/data/maps/mvp_stage3_map.json
   - 生产出的机器人保存蓝图 ID 和版本。
   - 后续蓝图修改不影响已出生机器人。
 - 实现外部初始库存配置：
-  - 当前默认从 `Resources/data/balance/mvp_starting_inventory.json` 读取非 debug 开局库存。
-  - 调试期如需减少等待，可以临时切换到 `Resources/data/debug/mvp_debug_starting_inventory.json`。
+  - 当前通过 `Resources/data/debug/mvp_runtime_profile.json` 的 `use_debug_starting_inventory` 切换开局库存。
+  - 调试期如需减少等待，可以将该开关设为 `true`，读取 `Resources/data/debug/mvp_debug_starting_inventory.json`。
+  - 正式试玩或平衡测试前将该开关设为 `false`，读取 `Resources/data/balance/mvp_starting_inventory.json`。
   - debug 库存仅限开发调试使用，不代表正式经济平衡。
 
 ### 推荐文件

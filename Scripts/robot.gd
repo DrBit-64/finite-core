@@ -39,6 +39,8 @@ var hp: int = 60
 var blueprint_id: StringName = &""
 var blueprint_version: int = 0
 var blueprint_snapshot_id: StringName = &""
+var chassis_id: StringName = &""
+var active_upgrade_ids: Array[StringName] = []
 var rally_point_position: Vector2 = Vector2.ZERO
 var has_rally_point: bool = false
 
@@ -133,6 +135,8 @@ func setup_from_blueprint(blueprint: UnitBlueprint, next_rally_point: Vector2 = 
 	blueprint_id = blueprint.id
 	blueprint_version = blueprint.version
 	blueprint_snapshot_id = StringName(blueprint.get_snapshot_key())
+	chassis_id = blueprint.chassis_id
+	active_upgrade_ids.clear()
 	display_name = blueprint.display_name
 	if not blueprint.icon_path.is_empty():
 		icon_path = blueprint.icon_path
@@ -152,6 +156,16 @@ func setup_from_blueprint(blueprint: UnitBlueprint, next_rally_point: Vector2 = 
 	rally_point_position = next_rally_point
 	has_rally_point = next_has_rally_point
 	reset_state()
+
+func apply_campaign_upgrades(upgrade_ids: Array[StringName]) -> void:
+	active_upgrade_ids = upgrade_ids.duplicate()
+	if chassis_id == &"light_chassis":
+		if active_upgrade_ids.has(&"light_chassis_hp_1"):
+			max_hp += 20
+		if active_upgrade_ids.has(&"light_chassis_speed_1"):
+			speed *= 1.15
+	_configure_components()
+	_update_unit_visuals()
 
 func setup_debug_enemy(next_name: String, path_points: Array[Vector2], loop_path: bool = true) -> void:
 	display_name = next_name
@@ -266,6 +280,9 @@ func get_inspector_lines() -> Array[String]:
 			lines.append("战术标记：")
 			for flag_line in flag_lines:
 				lines.append("  %s" % flag_line)
+	if not active_upgrade_ids.is_empty():
+		lines.append("Tech upgrades: %s" % ", ".join(_string_name_list(active_upgrade_ids)))
+	lines.append("Stats: HP %s / Speed %.1f" % [max_hp, speed])
 	if has_rally_point:
 		lines.append("集结点：%.0f, %.0f" % [rally_point_position.x, rally_point_position.y])
 	if brain_mode == "path_patrol":
@@ -332,6 +349,12 @@ func hp_ratio() -> float:
 	if max_hp <= 0:
 		return 0.0
 	return float(hp) / float(max_hp)
+
+func _string_name_list(values: Array[StringName]) -> Array[String]:
+	var result: Array[String] = []
+	for value in values:
+		result.append(String(value))
+	return result
 
 func move_away_from_current_enemy() -> void:
 	var enemy := get_current_enemy()

@@ -13,6 +13,7 @@ const RES_COPPER_ORE := &"copper_ore"
 const RES_IRON_PLATE := &"iron_plate"
 const RES_COPPER_WIRE := &"copper_wire"
 const RES_CONSTRUCTION_MASS := &"construction_mass"
+const RES_INITIAL_SENSOR_COIL := &"initial_sensor_coil"
 
 const UNIT_BASIC_RIFLE_ROBOT := &"basic_rifle_robot"
 
@@ -20,6 +21,7 @@ const BUILDING_MAIN_BASE := &"main_base"
 const BUILDING_MINER := &"miner"
 const BUILDING_PROCESSOR := &"processor"
 const BUILDING_ROBOT_FORGE := &"robot_forge"
+const BUILDING_RESEARCH_TERMINAL := &"research_terminal"
 
 static func create_resource_defs() -> Array[ResourceDef]:
 	return [
@@ -28,6 +30,7 @@ static func create_resource_defs() -> Array[ResourceDef]:
 		_make_resource(RES_IRON_PLATE, "铁板", "res://Resources/art/resources/iron_plate.svg", "基础结构材料。"),
 		_make_resource(RES_COPPER_WIRE, "铜线", "res://Resources/art/resources/copper_wire.svg", "基础电气材料。"),
 		_make_resource(RES_CONSTRUCTION_MASS, "建设质料", "res://Resources/art/resources/construction_mass.svg", "建筑通用基础开销。"),
+		_make_resource(RES_INITIAL_SENSOR_COIL, "初级感应线圈", "res://Resources/art/resources/initial_sensor_coil.svg", "第一处敌巢抽象回收的阶段 1 关键道具。"),
 	]
 
 static func create_recipe_defs() -> Array[RecipeDef]:
@@ -76,6 +79,7 @@ static func _create_building_fallbacks(recipe_defs: Array[RecipeDef]) -> Array[B
 		_make_building(BUILDING_MINER, "采矿机", Vector2i(1, 1), recipe_defs, "res://Resources/art/buildings/miner.svg", 420),
 		_make_building(BUILDING_PROCESSOR, "基础加工厂", Vector2i(1, 1), recipe_defs, "res://Resources/art/buildings/processor.svg", 600),
 		_make_building(BUILDING_ROBOT_FORGE, "机器人锻造厂", Vector2i(1, 1), recipe_defs, "res://Resources/art/buildings/robot_forge.svg", 700),
+		_make_building(BUILDING_RESEARCH_TERMINAL, "研究终端", Vector2i(1, 1), recipe_defs, "res://Resources/art/buildings/research_terminal.svg", 520),
 	]
 
 static func _make_resource(resource_id: StringName, display_name: String, icon_path: String, description: String) -> ResourceDef:

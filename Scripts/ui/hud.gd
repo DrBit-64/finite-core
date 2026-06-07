@@ -7,16 +7,18 @@ signal forge_rally_point_requested(forge: Node)
 signal blueprint_library_requested
 signal blueprint_save_requested(source_blueprint_id: StringName, display_name: String, tactical_templates: Array, embedded_rules: Array, state_flag_defaults: Dictionary, save_as_new: bool)
 signal forge_blueprint_selected(forge: Node, blueprint_id: StringName)
+signal technology_research_requested(technology_id: StringName)
+signal new_game_requested
+signal restart_requested
 
 const BottomPromptScript := preload("res://Scripts/ui/bottom_prompt.gd")
+const BuildingOperationPanelScript := preload("res://Scripts/ui/building_operation_panel.gd")
 const BlueprintManagementOverlayScript := preload("res://Scripts/ui/blueprint_management_overlay.gd")
 const CombatReportOverlayScript := preload("res://Scripts/ui/combat_report_overlay.gd")
 const VictorySummaryPanelScript := preload("res://Scripts/ui/victory_summary_panel.gd")
-const ItemSlotGridScript := preload("res://Scripts/ui/components/item_slot_grid.gd")
-const RecipeSummaryCardScript := preload("res://Scripts/ui/components/recipe_summary_card.gd")
-const BlueprintPartSlotScript := preload("res://Scripts/ui/components/blueprint_part_slot.gd")
 const BLUEPRINT_MENU_ICON_PATH := "res://Resources/art/ui/blueprint_menu.svg"
 const STATISTICS_MENU_ICON_PATH := "res://Resources/art/ui/statistics_menu.svg"
+const TECHNOLOGY_MENU_ICON_PATH := "res://Resources/art/ui/technology_unlocked.svg"
 const STATE_RALLY_ICON_PATH := "res://Resources/art/ui/state_rally.svg"
 
 @onready var current_goal_label: Label = %CurrentGoalLabel
@@ -34,47 +36,37 @@ var _inventory_amounts: Dictionary = {}
 var _cost_panel: PanelContainer = null
 var _cost_list: VBoxContainer = null
 var _cost_preview_content_key: String = ""
-var _operation_panel: PanelContainer = null
-var _operation_list: VBoxContainer = null
-var _operation_mode: StringName = &""
-var _operation_processor: Node = null
-var _operation_miner: Node = null
-var _operation_recipes: Array[RecipeDef] = []
-var _operation_blueprints: Array[UnitBlueprint] = []
-var _operation_forge: Node = null
-var _operation_current_label: Label = null
-var _operation_recipe_detail_label: Label = null
-var _operation_recipe_card: PanelContainer = null
-var _operation_status_label: Label = null
-var _operation_progress_label: Label = null
-var _operation_progress_bar: ProgressBar = null
-var _operation_input_cache_label: Label = null
-var _operation_output_cache_label: Label = null
-var _operation_input_cache_list: VBoxContainer = null
-var _operation_output_cache_list: VBoxContainer = null
-var _operation_recipe_buttons: Dictionary = {}
-var _operation_blueprint_label: Label = null
-var _operation_alive_label: Label = null
-var _operation_rally_label: Label = null
-var _operation_cost_label: Label = null
-var _operation_blueprint_parts_row: HBoxContainer = null
-var _operation_cost_list: VBoxContainer = null
+var _building_operation_panel: Control = null
 var _bottom_prompt: BottomPrompt = null
 var _blueprint_button: Button = null
 var _statistics_button: Button = null
+var _technology_button: Button = null
 var _resource_defs: Array[ResourceDef] = []
 var _blueprints: Array[UnitBlueprint] = []
+var _campaign_state: Variant = null
+var _technology_defs: Array = []
+var _campaign_inventory_amounts: Dictionary = {}
+var _research_terminal_status: Dictionary = {}
+var _unlocked_template_ids: Array[StringName] = []
 var _blueprint_panel: PanelContainer = null
 var _blueprint_list: VBoxContainer = null
 var _blueprint_source_option: OptionButton = null
 var _blueprint_name_edit: LineEdit = null
 var _forge_blueprint_picker: PanelContainer = null
 var _forge_blueprint_list: VBoxContainer = null
+var _forge_picker_blueprints: Array[UnitBlueprint] = []
 var _blueprint_overlay: Control = null
 var _combat_report_overlay: Control = null
 var _victory_summary_panel: Control = null
+var _technology_overlay: PanelContainer = null
+var _technology_list: VBoxContainer = null
+var _pause_overlay: PanelContainer = null
+var _main_menu_overlay: PanelContainer = null
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	if root_control:
+		root_control.process_mode = Node.PROCESS_MODE_ALWAYS
 	set_current_goal("阶段 0：验证 MVP 测试入口")
 	set_resource_summary("资源面板占位")
 	set_bottom_hint("左侧检查器 / 右侧事件面板为阶段 0 占位 UI")
@@ -85,6 +77,19 @@ func _ready() -> void:
 	_ensure_bottom_prompt()
 	_ensure_blueprint_button()
 	_ensure_statistics_button()
+	_ensure_technology_button()
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		var key_event := event as InputEventKey
+		if key_event.keycode == KEY_ESCAPE:
+			if _pause_overlay != null and _pause_overlay.visible:
+				_on_pause_continue_pressed()
+			elif _main_menu_overlay != null and _main_menu_overlay.visible:
+				_on_main_menu_continue_pressed()
+			else:
+				_show_pause_menu()
+			get_viewport().set_input_as_handled()
 
 func set_current_goal(text: String) -> void:
 	if current_goal_label:
@@ -126,14 +131,18 @@ func is_pointer_over_ui(screen_position: Vector2) -> bool:
 		build_button_row,
 		bottom_hint_label,
 		_cost_panel,
-		_operation_panel,
+		_building_operation_panel,
 		_blueprint_button,
 		_statistics_button,
+		_technology_button,
 		_blueprint_panel,
 		_forge_blueprint_picker,
 		_blueprint_overlay,
 		_combat_report_overlay,
 		_victory_summary_panel,
+		_technology_overlay,
+		_pause_overlay,
+		_main_menu_overlay,
 	]
 	for control in controls:
 		if _control_contains_screen_position(control, screen_position):
@@ -175,54 +184,23 @@ func show_victory_summary(summary: Dictionary) -> void:
 
 func show_processor_panel(processor: Node, recipes: Array[RecipeDef], resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
 	_ensure_operation_panel()
-	_operation_panel.visible = true
-	if _operation_mode != &"processor" or _operation_processor != processor or _operation_recipes.size() != recipes.size():
-		_operation_mode = &"processor"
-		_operation_processor = processor
-		_operation_miner = null
-		_operation_forge = null
-		_operation_recipes = recipes.duplicate()
-		_operation_blueprints.clear()
-		_rebuild_processor_panel(processor, recipes)
-	_update_processor_panel(processor, resource_defs)
-	_position_operation_panel(screen_position)
+	_building_operation_panel.show_processor_panel(processor, recipes, resource_defs, screen_position)
 
 func show_miner_panel(miner: Node, resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
 	_ensure_operation_panel()
-	_operation_panel.visible = true
-	if _operation_mode != &"miner" or _operation_miner != miner:
-		_operation_mode = &"miner"
-		_operation_miner = miner
-		_operation_processor = null
-		_operation_forge = null
-		_operation_recipes.clear()
-		_operation_blueprints.clear()
-		_rebuild_miner_panel(miner)
-	_update_miner_panel(miner, resource_defs)
-	_position_operation_panel(screen_position)
+	_building_operation_panel.show_miner_panel(miner, resource_defs, screen_position)
 
 func show_forge_panel(forge: Node, blueprint: UnitBlueprint, blueprints: Array[UnitBlueprint], resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
 	_ensure_operation_panel()
-	_operation_panel.visible = true
-	if _operation_mode != &"forge" or _operation_forge != forge or _operation_blueprints.size() != blueprints.size():
-		_operation_mode = &"forge"
-		_operation_forge = forge
-		_operation_processor = null
-		_operation_miner = null
-		_operation_recipes.clear()
-		_operation_blueprints = blueprints.duplicate()
-		_rebuild_forge_panel(forge)
-	_update_forge_panel(forge, blueprint, resource_defs)
-	_position_operation_panel(screen_position)
+	_building_operation_panel.show_forge_panel(forge, blueprint, blueprints, resource_defs, screen_position)
+
+func show_research_terminal_panel(terminal: Node, technology_defs: Array, resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
+	_ensure_operation_panel()
+	_building_operation_panel.show_research_terminal_panel(terminal, technology_defs, resource_defs, screen_position)
 
 func hide_operation_panel() -> void:
-	if _operation_panel:
-		_operation_panel.visible = false
-	_operation_mode = &""
-	_operation_processor = null
-	_operation_miner = null
-	_operation_forge = null
-	_operation_blueprints.clear()
+	if _building_operation_panel:
+		_building_operation_panel.hide_panel()
 	if _forge_blueprint_picker:
 		_forge_blueprint_picker.visible = false
 
@@ -231,6 +209,8 @@ func set_resource_amounts(resource_defs: Array[ResourceDef], amounts: Dictionary
 	_inventory_amounts = amounts.duplicate(true)
 	var parts: Array[String] = []
 	for resource_def in resource_defs:
+		if resource_def.id == &"initial_sensor_coil" and not amounts.has(resource_def.id):
+			continue
 		parts.append("%s %s" % [resource_def.display_name, int(amounts.get(resource_def.id, 0))])
 	set_resource_summary(" / ".join(parts))
 	_refresh_build_buttons()
@@ -252,6 +232,26 @@ func set_blueprint_library(blueprints: Array[UnitBlueprint]) -> void:
 		_rebuild_blueprint_panel()
 	if _combat_report_overlay and _combat_report_overlay.has_method("configure"):
 		_combat_report_overlay.call("configure", _get_combat_event_log(), _resource_defs, _blueprints)
+
+func set_unlocked_template_ids(template_ids: Array[StringName]) -> void:
+	_unlocked_template_ids = template_ids.duplicate()
+	if _blueprint_overlay and _blueprint_overlay.has_method("set_unlocked_template_ids"):
+		_blueprint_overlay.call("set_unlocked_template_ids", _unlocked_template_ids)
+
+func set_campaign_data(
+	state: Variant,
+	technology_defs: Array,
+	resource_defs: Array[ResourceDef],
+	amounts: Dictionary,
+	research_terminal_status: Dictionary
+) -> void:
+	_campaign_state = state
+	_technology_defs = technology_defs.duplicate()
+	_resource_defs = resource_defs.duplicate()
+	_campaign_inventory_amounts = amounts.duplicate(true)
+	_research_terminal_status = research_terminal_status.duplicate(true)
+	if _technology_overlay and _technology_overlay.visible:
+		_rebuild_technology_overlay()
 
 func _refresh_build_buttons() -> void:
 	if build_button_row == null:
@@ -481,6 +481,27 @@ func _ensure_statistics_button() -> void:
 	_statistics_button.pressed.connect(_on_statistics_button_pressed)
 	root_control.add_child(_statistics_button)
 
+func _ensure_technology_button() -> void:
+	if _technology_button != null:
+		return
+	_technology_button = Button.new()
+	_technology_button.name = "TechnologyButton"
+	_technology_button.text = "科技"
+	_technology_button.icon = _load_ui_icon(TECHNOLOGY_MENU_ICON_PATH)
+	_technology_button.expand_icon = true
+	_technology_button.tooltip_text = "打开科技研究菜单"
+	_technology_button.anchor_left = 1.0
+	_technology_button.anchor_top = 1.0
+	_technology_button.anchor_right = 1.0
+	_technology_button.anchor_bottom = 1.0
+	_technology_button.offset_left = -398.0
+	_technology_button.offset_top = -150.0
+	_technology_button.offset_right = -280.0
+	_technology_button.offset_bottom = -112.0
+	_technology_button.z_index = 135
+	_technology_button.pressed.connect(_on_technology_button_pressed)
+	root_control.add_child(_technology_button)
+
 func _ensure_victory_summary_panel() -> void:
 	if _victory_summary_panel != null:
 		return
@@ -496,19 +517,292 @@ func _on_blueprint_button_pressed() -> void:
 	_ensure_blueprint_overlay()
 	if _combat_report_overlay:
 		_combat_report_overlay.visible = false
+	if _technology_overlay:
+		_technology_overlay.visible = false
 	if _blueprint_panel:
 		_blueprint_panel.visible = false
 	_blueprint_overlay.call("set_blueprints", _blueprints)
+	if _blueprint_overlay.has_method("set_unlocked_template_ids"):
+		_blueprint_overlay.call("set_unlocked_template_ids", _unlocked_template_ids)
 	_blueprint_overlay.visible = not _blueprint_overlay.visible
 
 func _on_statistics_button_pressed() -> void:
 	_ensure_combat_report_overlay()
 	if _blueprint_overlay:
 		_blueprint_overlay.visible = false
+	if _technology_overlay:
+		_technology_overlay.visible = false
 	_combat_report_overlay.call("configure", _get_combat_event_log(), _resource_defs, _blueprints)
 	_combat_report_overlay.visible = not _combat_report_overlay.visible
 	if _combat_report_overlay.visible and _combat_report_overlay.has_method("refresh_report"):
 		_combat_report_overlay.call("refresh_report")
+
+func _on_technology_button_pressed() -> void:
+	_ensure_technology_overlay()
+	if _blueprint_overlay:
+		_blueprint_overlay.visible = false
+	if _combat_report_overlay:
+		_combat_report_overlay.visible = false
+	_rebuild_technology_overlay()
+	_technology_overlay.visible = not _technology_overlay.visible
+
+func _ensure_technology_overlay() -> void:
+	if _technology_overlay != null:
+		return
+	_technology_overlay = PanelContainer.new()
+	_technology_overlay.name = "TechnologyOverlay"
+	_technology_overlay.visible = false
+	_technology_overlay.z_index = 155
+	_technology_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	_technology_overlay.anchor_left = 0.16
+	_technology_overlay.anchor_top = 0.12
+	_technology_overlay.anchor_right = 0.84
+	_technology_overlay.anchor_bottom = 0.88
+	_technology_overlay.add_theme_stylebox_override("panel", _make_operation_panel_style())
+	root_control.add_child(_technology_overlay)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 18)
+	margin.add_theme_constant_override("margin_top", 16)
+	margin.add_theme_constant_override("margin_right", 18)
+	margin.add_theme_constant_override("margin_bottom", 16)
+	_technology_overlay.add_child(margin)
+
+	var root := VBoxContainer.new()
+	root.add_theme_constant_override("separation", 12)
+	root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	root.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	margin.add_child(root)
+
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 10)
+	root.add_child(header)
+	var title := _make_operation_label("科技研究", Color(0.96, 0.98, 1.0, 1.0), 22)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(title)
+	var close_button := Button.new()
+	close_button.text = "关闭"
+	close_button.custom_minimum_size = Vector2(78, 34)
+	close_button.pressed.connect(func() -> void:
+		_technology_overlay.visible = false
+	)
+	header.add_child(close_button)
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(scroll)
+	_technology_list = VBoxContainer.new()
+	_technology_list.add_theme_constant_override("separation", 10)
+	_technology_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_technology_list)
+
+func _rebuild_technology_overlay() -> void:
+	if _technology_list == null:
+		return
+	for child in _technology_list.get_children():
+		_technology_list.remove_child(child)
+		child.queue_free()
+	_technology_list.add_child(_make_wrapped_operation_label(_format_research_terminal_status(), 14, Color(0.78, 0.88, 1.0, 1.0)))
+	if _technology_defs.is_empty():
+		_technology_list.add_child(_make_operation_label("暂无科技节点", Color(0.84, 0.88, 0.92, 1.0), 14))
+		return
+	for technology in _technology_defs:
+		_technology_list.add_child(_make_technology_row(technology))
+
+func _make_technology_row(technology: Variant) -> Control:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _make_section_panel_style())
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	panel.add_child(margin)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	margin.add_child(row)
+	var text_column := VBoxContainer.new()
+	text_column.add_theme_constant_override("separation", 4)
+	text_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(text_column)
+	text_column.add_child(_make_operation_label("%s  阶段 %d" % [technology.display_name, technology.stage], Color(0.96, 0.98, 1.0, 1.0), 16))
+	text_column.add_child(_make_wrapped_operation_label(technology.description, 13, Color(0.78, 0.84, 0.90, 1.0)))
+	text_column.add_child(_make_wrapped_operation_label("需求：%s | 耗时：%.1fs" % [
+		_format_resource_dictionary(technology.costs, _resource_defs),
+		technology.duration_seconds,
+	], 13, Color(0.86, 0.90, 0.96, 1.0)))
+	text_column.add_child(_make_wrapped_operation_label("状态：%s" % _get_technology_state_text(technology), 13, _get_technology_state_color(technology)))
+
+	var button := Button.new()
+	button.custom_minimum_size = Vector2(112, 34)
+	button.text = _get_technology_button_text(technology)
+	button.disabled = not _can_press_research(technology)
+	button.pressed.connect(func() -> void:
+		technology_research_requested.emit(technology.id)
+	)
+	row.add_child(button)
+	return panel
+
+func _format_research_terminal_status() -> String:
+	if _research_terminal_status.is_empty() or not bool(_research_terminal_status.get("has_terminal", false)):
+		return "研究终端：未建造。建造研究终端后可以执行科技研究。"
+	if bool(_research_terminal_status.get("busy", false)):
+		return "研究终端：研究中 - %s（%.0f%%）" % [
+			str(_research_terminal_status.get("active_technology_name", "")),
+			float(_research_terminal_status.get("progress_ratio", 0.0)) * 100.0,
+		]
+	return "研究终端：空闲"
+
+func _get_technology_state_text(technology: Variant) -> String:
+	if _campaign_state == null:
+		return "等待战役状态"
+	if _campaign_state.unlocked_technologies.has(technology.id):
+		return "已解锁"
+	if not technology.can_meet_key_items(_campaign_state.key_items):
+		return "缺少关键道具"
+	if not technology.can_meet_prerequisites(_campaign_state.unlocked_technologies):
+		return "前置科技未完成"
+	if not _can_afford(technology.costs):
+		return "材料不足"
+	return "可研究"
+
+func _get_technology_state_color(technology: Variant) -> Color:
+	var text := _get_technology_state_text(technology)
+	if text == "已解锁":
+		return Color(0.62, 1.0, 0.72, 1.0)
+	if text == "可研究":
+		return Color(0.72, 0.92, 1.0, 1.0)
+	return Color(1.0, 0.70, 0.48, 1.0)
+
+func _get_technology_button_text(technology: Variant) -> String:
+	if _campaign_state and _campaign_state.unlocked_technologies.has(technology.id):
+		return "已完成"
+	if bool(_research_terminal_status.get("busy", false)):
+		return "终端忙碌"
+	return "研究"
+
+func _can_press_research(technology: Variant) -> bool:
+	if _campaign_state == null:
+		return false
+	if bool(_research_terminal_status.get("busy", false)):
+		return false
+	if not bool(_research_terminal_status.get("has_terminal", false)):
+		return false
+	if not _campaign_state.can_research(technology):
+		return false
+	return _can_afford(technology.costs)
+
+func _make_section_panel_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.055, 0.065, 0.078, 0.74)
+	style.border_color = Color(0.18, 0.26, 0.32, 0.92)
+	style.border_width_left = 1
+	style.border_width_top = 1
+	style.border_width_right = 1
+	style.border_width_bottom = 1
+	style.corner_radius_top_left = 5
+	style.corner_radius_top_right = 5
+	style.corner_radius_bottom_right = 5
+	style.corner_radius_bottom_left = 5
+	return style
+
+func _show_pause_menu() -> void:
+	_ensure_pause_overlay()
+	_set_game_paused(true)
+	_pause_overlay.visible = true
+
+func _ensure_pause_overlay() -> void:
+	if _pause_overlay != null:
+		return
+	_pause_overlay = _make_center_menu_panel("PauseMenu", "Pause", [
+		{"text": "Continue", "callable": Callable(self, "_on_pause_continue_pressed")},
+		{"text": "Restart", "callable": Callable(self, "_on_pause_restart_pressed")},
+		{"text": "Main Menu", "callable": Callable(self, "_on_pause_main_menu_pressed")},
+	])
+	root_control.add_child(_pause_overlay)
+
+func _show_main_menu() -> void:
+	_ensure_main_menu_overlay()
+	_main_menu_overlay.visible = true
+
+func _ensure_main_menu_overlay() -> void:
+	if _main_menu_overlay != null:
+		return
+	_main_menu_overlay = _make_center_menu_panel("MainMenu", "Finite Core", [
+		{"text": "New Game", "callable": Callable(self, "_on_main_menu_new_game_pressed")},
+		{"text": "Continue", "callable": Callable(self, "_on_main_menu_continue_pressed")},
+		{"text": "Quit", "callable": Callable(self, "_on_main_menu_quit_pressed")},
+	])
+	root_control.add_child(_main_menu_overlay)
+
+func _on_pause_continue_pressed() -> void:
+	if _pause_overlay:
+		_pause_overlay.visible = false
+	_set_game_paused(false)
+
+func _on_pause_restart_pressed() -> void:
+	_set_game_paused(false)
+	restart_requested.emit()
+
+func _on_pause_main_menu_pressed() -> void:
+	if _pause_overlay:
+		_pause_overlay.visible = false
+	_show_main_menu()
+
+func _on_main_menu_new_game_pressed() -> void:
+	_set_game_paused(false)
+	new_game_requested.emit()
+
+func _on_main_menu_continue_pressed() -> void:
+	if _main_menu_overlay:
+		_main_menu_overlay.visible = false
+	_set_game_paused(false)
+
+func _on_main_menu_quit_pressed() -> void:
+	_set_game_paused(false)
+	get_tree().quit()
+
+func _set_game_paused(paused: bool) -> void:
+	get_tree().paused = paused
+
+func _make_center_menu_panel(panel_name: String, title_text: String, buttons: Array) -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.name = panel_name
+	panel.visible = false
+	panel.process_mode = Node.PROCESS_MODE_ALWAYS
+	panel.z_index = 220
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	panel.anchor_left = 0.5
+	panel.anchor_top = 0.5
+	panel.anchor_right = 0.5
+	panel.anchor_bottom = 0.5
+	panel.offset_left = -160
+	panel.offset_top = -140
+	panel.offset_right = 160
+	panel.offset_bottom = 140
+	panel.add_theme_stylebox_override("panel", _make_operation_panel_style())
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 18)
+	margin.add_theme_constant_override("margin_top", 16)
+	margin.add_theme_constant_override("margin_right", 18)
+	margin.add_theme_constant_override("margin_bottom", 16)
+	panel.add_child(margin)
+	var root := VBoxContainer.new()
+	root.add_theme_constant_override("separation", 12)
+	margin.add_child(root)
+	var title := _make_operation_label(title_text, Color(0.96, 0.98, 1.0, 1.0), 22)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	root.add_child(title)
+	for button_data in buttons:
+		var button := Button.new()
+		button.text = str(button_data.get("text", "按钮"))
+		button.custom_minimum_size = Vector2(220, 36)
+		var callback := button_data.get("callable", Callable()) as Callable
+		if callback.is_valid():
+			button.pressed.connect(callback)
+		root.add_child(button)
+	return panel
 
 func _ensure_combat_report_overlay() -> void:
 	if _combat_report_overlay != null:
@@ -661,6 +955,7 @@ func _on_blueprint_clone_rally_pressed(source_blueprint_id: StringName) -> void:
 	blueprint_save_requested.emit(source_blueprint_id, display_name, [], [], {}, true)
 
 func _on_forge_blueprint_picker_pressed(forge: Node) -> void:
+	_forge_picker_blueprints.clear()
 	_show_forge_blueprint_picker(forge)
 
 func _show_forge_blueprint_picker(forge: Node) -> void:
@@ -668,7 +963,7 @@ func _show_forge_blueprint_picker(forge: Node) -> void:
 	for child in _forge_blueprint_list.get_children():
 		_forge_blueprint_list.remove_child(child)
 		child.queue_free()
-	var available_blueprints := _operation_blueprints if not _operation_blueprints.is_empty() else _blueprints
+	var available_blueprints := _forge_picker_blueprints if not _forge_picker_blueprints.is_empty() else _blueprints
 	for blueprint in available_blueprints:
 		var button := Button.new()
 		button.text = "%s v%s" % [blueprint.display_name, blueprint.version]
@@ -712,314 +1007,27 @@ func _on_forge_blueprint_selected(forge: Node, blueprint_id: StringName) -> void
 	forge_blueprint_selected.emit(forge, blueprint_id)
 
 func _ensure_operation_panel() -> void:
-	if _operation_panel != null:
+	if _building_operation_panel != null:
 		return
+	_building_operation_panel = BuildingOperationPanelScript.new()
+	_building_operation_panel.processor_recipe_selected.connect(_on_operation_processor_recipe_selected)
+	_building_operation_panel.forge_rally_point_requested.connect(_on_operation_forge_rally_point_requested)
+	_building_operation_panel.forge_blueprint_picker_requested.connect(_on_operation_forge_blueprint_picker_requested)
+	_building_operation_panel.technology_panel_requested.connect(_on_operation_technology_panel_requested)
+	root_control.add_child(_building_operation_panel)
 
-	_operation_panel = PanelContainer.new()
-	_operation_panel.name = "BuildingOperationPanel"
-	_operation_panel.z_index = 90
-	_operation_panel.visible = false
-	_operation_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	_operation_panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	_operation_panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	_operation_panel.add_theme_stylebox_override("panel", _make_operation_panel_style())
-	root_control.add_child(_operation_panel)
+func _on_operation_processor_recipe_selected(processor: Node, recipe_id: StringName) -> void:
+	processor_recipe_selected.emit(processor, recipe_id)
 
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 8)
-	margin.add_theme_constant_override("margin_top", 6)
-	margin.add_theme_constant_override("margin_right", 8)
-	margin.add_theme_constant_override("margin_bottom", 6)
-	_operation_panel.add_child(margin)
+func _on_operation_forge_rally_point_requested(forge: Node) -> void:
+	forge_rally_point_requested.emit(forge)
 
-	_operation_list = VBoxContainer.new()
-	_operation_list.add_theme_constant_override("separation", 4)
-	_operation_list.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	_operation_list.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	margin.add_child(_operation_list)
+func _on_operation_forge_blueprint_picker_requested(forge: Node, blueprints: Array[UnitBlueprint]) -> void:
+	_forge_picker_blueprints = blueprints.duplicate()
+	_show_forge_blueprint_picker(forge)
 
-func _rebuild_processor_panel(processor: Node, recipes: Array[RecipeDef]) -> void:
-	_clear_operation_content()
-
-	_operation_list.add_child(_make_operation_label(processor.call("get_display_name"), Color(0.96, 0.98, 1.0, 1.0), 15))
-	_operation_list.add_child(_make_operation_label("配方", Color(0.72, 0.78, 0.84, 1.0), 12))
-
-	var recipe_row := HBoxContainer.new()
-	recipe_row.add_theme_constant_override("separation", 6)
-	for recipe in recipes:
-		var button := Button.new()
-		button.text = recipe.display_name
-		button.custom_minimum_size = Vector2(88, 28)
-		button.pressed.connect(_on_processor_recipe_button_pressed.bind(processor, recipe.id), CONNECT_DEFERRED)
-		recipe_row.add_child(button)
-		_operation_recipe_buttons[recipe.id] = button
-	_operation_list.add_child(recipe_row)
-
-	_operation_current_label = _make_operation_label("", Color(0.9, 0.92, 0.95, 1.0), 13)
-	_operation_list.add_child(_operation_current_label)
-	_operation_recipe_card = RecipeSummaryCardScript.new()
-	_operation_recipe_card.custom_minimum_size = Vector2(222, 0)
-	_operation_list.add_child(_operation_recipe_card)
-	_operation_status_label = _make_operation_label("", Color(0.9, 0.92, 0.95, 1.0), 13)
-	_operation_list.add_child(_operation_status_label)
-	_operation_progress_label = _make_operation_label("", Color(0.78, 0.88, 1.0, 1.0), 13)
-	_operation_list.add_child(_operation_progress_label)
-
-	_operation_progress_bar = ProgressBar.new()
-	_operation_progress_bar.custom_minimum_size = Vector2(184, 10)
-	_operation_progress_bar.min_value = 0.0
-	_operation_progress_bar.max_value = 1.0
-	_operation_progress_bar.show_percentage = false
-	_operation_list.add_child(_operation_progress_bar)
-
-	_operation_list.add_child(_make_operation_label("原料缓存", Color(0.72, 0.80, 0.88, 1.0), 12))
-	_operation_input_cache_list = VBoxContainer.new()
-	_operation_input_cache_list.add_theme_constant_override("separation", 4)
-	_operation_list.add_child(_operation_input_cache_list)
-	_operation_list.add_child(_make_operation_label("产物缓存", Color(0.72, 0.80, 0.88, 1.0), 12))
-	_operation_output_cache_list = VBoxContainer.new()
-	_operation_output_cache_list.add_theme_constant_override("separation", 4)
-	_operation_list.add_child(_operation_output_cache_list)
-	_operation_panel.size = _operation_panel.get_combined_minimum_size()
-
-func _update_processor_panel(processor: Node, resource_defs: Array[ResourceDef]) -> void:
-	var selected_recipe: RecipeDef = processor.get("selected_recipe")
-	if _operation_current_label:
-		_operation_current_label.text = "当前：%s" % (selected_recipe.display_name if selected_recipe else "未选择")
-	if _operation_recipe_card:
-		_operation_recipe_card.call("setup", selected_recipe, resource_defs, processor.get("input_cache"), processor.get("output_cache"))
-	if _operation_status_label:
-		_operation_status_label.text = "状态：%s" % str(processor.get("status_text"))
-	if _operation_progress_label:
-		_operation_progress_label.text = _format_processor_progress_text(processor, selected_recipe)
-	if _operation_progress_bar:
-		_operation_progress_bar.value = float(processor.call("get_progress_ratio"))
-	_rebuild_resource_stack_list(_operation_input_cache_list, processor.get("input_cache"), resource_defs)
-	_rebuild_resource_stack_list(_operation_output_cache_list, processor.get("output_cache"), resource_defs)
-	_refresh_recipe_button_states(selected_recipe)
-	_operation_panel.size = _operation_panel.get_combined_minimum_size()
-
-func _rebuild_miner_panel(miner: Node) -> void:
-	_clear_operation_content()
-
-	_operation_list.add_child(_make_operation_label(miner.call("get_display_name"), Color(0.96, 0.98, 1.0, 1.0), 15))
-	_operation_list.add_child(_make_operation_label("配方", Color(0.72, 0.78, 0.84, 1.0), 12))
-	_operation_current_label = _make_operation_label("当前：开采", Color(0.9, 0.92, 0.95, 1.0), 13)
-	_operation_list.add_child(_operation_current_label)
-
-	_operation_recipe_card = RecipeSummaryCardScript.new()
-	_operation_recipe_card.custom_minimum_size = Vector2(222, 0)
-	_operation_list.add_child(_operation_recipe_card)
-
-	_operation_status_label = _make_operation_label("", Color(0.9, 0.92, 0.95, 1.0), 13)
-	_operation_list.add_child(_operation_status_label)
-	_operation_progress_label = _make_operation_label("", Color(0.78, 0.88, 1.0, 1.0), 13)
-	_operation_list.add_child(_operation_progress_label)
-
-	_operation_progress_bar = ProgressBar.new()
-	_operation_progress_bar.custom_minimum_size = Vector2(184, 10)
-	_operation_progress_bar.min_value = 0.0
-	_operation_progress_bar.max_value = 1.0
-	_operation_progress_bar.show_percentage = false
-	_operation_list.add_child(_operation_progress_bar)
-
-	_operation_list.add_child(_make_operation_label("产物缓存", Color(0.72, 0.80, 0.88, 1.0), 12))
-	_operation_output_cache_list = VBoxContainer.new()
-	_operation_output_cache_list.add_theme_constant_override("separation", 4)
-	_operation_list.add_child(_operation_output_cache_list)
-	_operation_panel.size = _operation_panel.get_combined_minimum_size()
-
-func _update_miner_panel(miner: Node, resource_defs: Array[ResourceDef]) -> void:
-	var mining_recipe: RecipeDef = miner.call("get_mining_recipe") if miner.has_method("get_mining_recipe") else null
-	if _operation_current_label:
-		_operation_current_label.text = "当前：开采"
-	if _operation_recipe_card:
-		_operation_recipe_card.call("setup", mining_recipe, resource_defs, miner.get("input_cache"), miner.get("output_cache"))
-	if _operation_status_label:
-		_operation_status_label.text = "状态：%s" % str(miner.get("status_text"))
-	if _operation_progress_label:
-		_operation_progress_label.text = _format_miner_progress_text(miner, mining_recipe)
-	if _operation_progress_bar:
-		_operation_progress_bar.value = float(miner.call("get_progress_ratio")) if miner.has_method("get_progress_ratio") else 0.0
-	_rebuild_resource_stack_list(_operation_output_cache_list, miner.get("output_cache"), resource_defs)
-	_operation_panel.size = _operation_panel.get_combined_minimum_size()
-
-func _rebuild_forge_panel(forge: Node) -> void:
-	_clear_operation_content()
-
-	_operation_list.add_child(_make_operation_label(forge.call("get_display_name"), Color(0.96, 0.98, 1.0, 1.0), 15))
-	_operation_blueprint_label = _make_operation_label("", Color(0.84, 0.90, 1.0, 1.0), 13)
-	_operation_list.add_child(_operation_blueprint_label)
-	_operation_blueprint_parts_row = HBoxContainer.new()
-	_operation_blueprint_parts_row.add_theme_constant_override("separation", 8)
-	_operation_list.add_child(_operation_blueprint_parts_row)
-	_operation_alive_label = _make_operation_label("", Color(0.90, 0.94, 0.98, 1.0), 13)
-	_operation_list.add_child(_operation_alive_label)
-	_operation_status_label = _make_operation_label("", Color(0.90, 0.94, 0.98, 1.0), 13)
-	_operation_list.add_child(_operation_status_label)
-	_operation_progress_label = _make_operation_label("", Color(0.78, 0.88, 1.0, 1.0), 13)
-	_operation_list.add_child(_operation_progress_label)
-
-	_operation_progress_bar = ProgressBar.new()
-	_operation_progress_bar.custom_minimum_size = Vector2(206, 10)
-	_operation_progress_bar.min_value = 0.0
-	_operation_progress_bar.max_value = 1.0
-	_operation_progress_bar.show_percentage = false
-	_operation_list.add_child(_operation_progress_bar)
-
-	_operation_list.add_child(_make_operation_label("生产成本", Color(0.72, 0.80, 0.88, 1.0), 12))
-	_operation_cost_list = VBoxContainer.new()
-	_operation_cost_list.add_theme_constant_override("separation", 4)
-	_operation_list.add_child(_operation_cost_list)
-	_operation_rally_label = _make_operation_label("", Color(0.86, 0.94, 0.82, 1.0), 13)
-	_operation_list.add_child(_operation_rally_label)
-
-	var action_row := HBoxContainer.new()
-	action_row.add_theme_constant_override("separation", 6)
-	var rally_button := Button.new()
-	rally_button.text = "设置集结点"
-	rally_button.icon = _load_ui_icon(STATE_RALLY_ICON_PATH)
-	rally_button.expand_icon = true
-	rally_button.custom_minimum_size = Vector2(112, 30)
-	rally_button.pressed.connect(_on_forge_rally_button_pressed.bind(forge), CONNECT_DEFERRED)
-	action_row.add_child(rally_button)
-	var blueprint_button := Button.new()
-	blueprint_button.text = "选择蓝图"
-	blueprint_button.icon = _load_ui_icon(BLUEPRINT_MENU_ICON_PATH)
-	blueprint_button.expand_icon = true
-	blueprint_button.custom_minimum_size = Vector2(96, 30)
-	blueprint_button.pressed.connect(_on_forge_blueprint_picker_pressed.bind(forge), CONNECT_DEFERRED)
-	action_row.add_child(blueprint_button)
-	_operation_list.add_child(action_row)
-	_operation_panel.size = _operation_panel.get_combined_minimum_size()
-
-func _update_forge_panel(forge: Node, blueprint: UnitBlueprint, resource_defs: Array[ResourceDef]) -> void:
-	if _operation_blueprint_label:
-		_operation_blueprint_label.text = "蓝图：%s v%s" % [
-			blueprint.display_name if blueprint else "未绑定",
-			blueprint.version if blueprint else 0,
-		]
-	_rebuild_blueprint_part_slots(_operation_blueprint_parts_row, blueprint)
-	if _operation_alive_label:
-		_operation_alive_label.text = "存活：%s / %s" % [
-			int(forge.call("get_alive_count")) if forge.has_method("get_alive_count") else 0,
-			int(forge.get("target_alive_count")),
-		]
-	if _operation_status_label:
-		_operation_status_label.text = "状态：%s" % str(forge.get("status_text"))
-	if _operation_progress_label:
-		_operation_progress_label.text = _format_forge_progress_text(forge, blueprint)
-	if _operation_progress_bar:
-		_operation_progress_bar.value = float(forge.call("get_progress_ratio")) if forge.has_method("get_progress_ratio") else 0.0
-	_rebuild_resource_stack_list(_operation_cost_list, blueprint.production_cost if blueprint else {}, resource_defs)
-	if _operation_rally_label:
-		_operation_rally_label.text = _format_forge_rally_text(forge)
-	_operation_panel.size = _operation_panel.get_combined_minimum_size()
-
-func _format_forge_progress_text(forge: Node, blueprint: UnitBlueprint) -> String:
-	var current_seconds := float(forge.get("progress_seconds"))
-	var total_seconds := blueprint.production_time_seconds if blueprint else 0.0
-	return "进度：%.1fs / %.1fs" % [current_seconds, total_seconds]
-
-func _format_forge_rally_text(forge: Node) -> String:
-	if not bool(forge.get("has_rally_point")):
-		return "集结点：未设置"
-	var cell: Vector2i = forge.get("rally_point_cell")
-	return "集结点：%s, %s" % [cell.x, cell.y]
-
-func _refresh_recipe_button_states(selected_recipe: RecipeDef) -> void:
-	for recipe_id in _operation_recipe_buttons.keys():
-		var button := _operation_recipe_buttons[recipe_id] as Button
-		if button:
-			button.modulate = Color(0.68, 0.92, 1.0, 1.0) if selected_recipe and selected_recipe.id == recipe_id else Color.WHITE
-
-func _format_processor_progress_text(processor: Node, selected_recipe: RecipeDef) -> String:
-	var current_seconds := float(processor.get("progress_seconds"))
-	var total_seconds := selected_recipe.duration_seconds if selected_recipe else 0.0
-	return "进度：%.1fs / %.1fs" % [current_seconds, total_seconds]
-
-func _format_miner_progress_text(miner: Node, mining_recipe: RecipeDef) -> String:
-	var current_seconds := float(miner.get("progress_seconds"))
-	var total_seconds := mining_recipe.duration_seconds if mining_recipe else 0.0
-	return "进度：%.1fs / %.1fs" % [current_seconds, total_seconds]
-
-func _format_processor_recipe_detail(selected_recipe: RecipeDef, resource_defs: Array[ResourceDef]) -> String:
-	if selected_recipe == null:
-		return "配方内容：未选择"
-	return "配方内容：%s -> %s，%.1fs" % [
-		_format_resource_dictionary(selected_recipe.inputs, resource_defs),
-		_format_resource_dictionary(selected_recipe.outputs, resource_defs),
-		selected_recipe.duration_seconds,
-	]
-
-func _rebuild_resource_stack_list(list: VBoxContainer, resources: Dictionary, resource_defs: Array[ResourceDef]) -> void:
-	if list == null:
-		return
-	var grid: GridContainer = null
-	for child in list.get_children():
-		if child.has_method("setup_from_resources"):
-			grid = child as GridContainer
-			break
-	if grid == null:
-		for child in list.get_children():
-			list.remove_child(child)
-			child.queue_free()
-		grid = ItemSlotGridScript.new()
-		list.add_child(grid)
-	grid.slot_size = Vector2(34, 34)
-	grid.setup_from_resources(resources, resource_defs, {}, false, 4)
-
-func _rebuild_blueprint_part_slots(row: HBoxContainer, blueprint: UnitBlueprint) -> void:
-	if row == null:
-		return
-	for child in row.get_children():
-		row.remove_child(child)
-		child.queue_free()
-	if blueprint == null:
-		row.add_child(_make_operation_label("未绑定蓝图", Color(0.62, 0.68, 0.74, 1.0), 12))
-		return
-	var chassis_slot := BlueprintPartSlotScript.new()
-	chassis_slot.setup("底盘", blueprint.chassis_display_name, _load_ui_icon(blueprint.chassis_icon_path))
-	row.add_child(chassis_slot)
-	for index in blueprint.module_display_names.size():
-		var module_slot := BlueprintPartSlotScript.new()
-		var icon_path := blueprint.module_icon_paths[index] if index < blueprint.module_icon_paths.size() else ""
-		module_slot.setup("模块", blueprint.module_display_names[index], _load_ui_icon(icon_path))
-		row.add_child(module_slot)
-
-func _clear_operation_content() -> void:
-	for child in _operation_list.get_children():
-		_operation_list.remove_child(child)
-		child.queue_free()
-	_operation_panel.size = Vector2.ZERO
-	_operation_current_label = null
-	_operation_recipe_detail_label = null
-	_operation_recipe_card = null
-	_operation_status_label = null
-	_operation_progress_label = null
-	_operation_progress_bar = null
-	_operation_input_cache_label = null
-	_operation_output_cache_label = null
-	_operation_input_cache_list = null
-	_operation_output_cache_list = null
-	_operation_recipe_buttons.clear()
-	_operation_blueprint_label = null
-	_operation_alive_label = null
-	_operation_rally_label = null
-	_operation_cost_label = null
-	_operation_blueprint_parts_row = null
-	_operation_cost_list = null
-
-func _position_operation_panel(screen_position: Vector2) -> void:
-	var popup_offset := Vector2(24, -16)
-	var desired_position := screen_position + popup_offset
-	var viewport_size := get_viewport().get_visible_rect().size
-	var panel_size := _operation_panel.get_combined_minimum_size()
-	if panel_size == Vector2.ZERO:
-		panel_size = Vector2(196, 140)
-	desired_position.x = clampf(desired_position.x, 8.0, maxf(8.0, viewport_size.x - panel_size.x - 8.0))
-	desired_position.y = clampf(desired_position.y, 68.0, maxf(68.0, viewport_size.y - panel_size.y - 86.0))
-	_operation_panel.position = desired_position
+func _on_operation_technology_panel_requested() -> void:
+	_on_technology_button_pressed()
 
 func _make_operation_panel_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
@@ -1044,6 +1052,11 @@ func _make_operation_label(text: String, color: Color, font_size: int) -> Label:
 	label.add_theme_font_size_override("font_size", font_size)
 	return label
 
+func _make_wrapped_operation_label(text: String, font_size: int, color: Color) -> Label:
+	var label := _make_operation_label(text, color, font_size)
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	return label
+
 func _format_resource_dictionary(resources: Dictionary, resource_defs: Array[ResourceDef]) -> String:
 	if resources.is_empty():
 		return "空"
@@ -1056,9 +1069,3 @@ func _load_ui_icon(path: String) -> Texture2D:
 	if path.is_empty() or not ResourceLoader.exists(path):
 		return null
 	return load(path) as Texture2D
-
-func _on_processor_recipe_button_pressed(processor: Node, recipe_id: StringName) -> void:
-	processor_recipe_selected.emit(processor, recipe_id)
-
-func _on_forge_rally_button_pressed(forge: Node) -> void:
-	forge_rally_point_requested.emit(forge)

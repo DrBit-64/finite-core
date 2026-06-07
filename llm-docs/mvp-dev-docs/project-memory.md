@@ -109,8 +109,9 @@ var panel_size := panel.get_combined_minimum_size()
 
 调试数值优先放在外部配置中，不要散落在生产逻辑里。当前可参考：
 
-- `Resources/data/balance/mvp_starting_inventory.json`：当前默认非 debug 开局库存。
-- `Resources/data/debug/mvp_debug_starting_inventory.json`：调试开局库存，仅在需要快速测试生产链时临时切换。
+- `Resources/data/debug/mvp_runtime_profile.json`：当前运行时库存切换入口，`use_debug_starting_inventory` 决定读取正式库存或 debug 库存。
+- `Resources/data/balance/mvp_starting_inventory.json`：非 debug 开局库存。
+- `Resources/data/debug/mvp_debug_starting_inventory.json`：调试开局库存，仅在需要快速测试生产链时临时启用。
 - `Resources/data/units/mvp_unit_blueprints.json`：单位蓝图与基础机器人属性。
 
 如果临时必须改脚本常量，也要在 `debug-balance-overrides.md` 记录，并在后续尽快迁移到外部配置。

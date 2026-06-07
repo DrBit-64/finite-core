@@ -28,6 +28,13 @@
       "icon_path": "res://Resources/art/buildings/robot_forge.svg",
       "grid_size": [1, 1],
       "max_hp": 700
+    },
+    {
+      "id": "research_terminal",
+      "display_name": "研究终端",
+      "icon_path": "res://Resources/art/buildings/research_terminal.svg",
+      "grid_size": [1, 1],
+      "max_hp": 520
     }
   ]
 }

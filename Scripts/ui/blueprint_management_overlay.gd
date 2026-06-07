@@ -11,6 +11,7 @@ var _selected_template_index: int = -1
 var _draft_templates: Array[Dictionary] = []
 var _compiled_rules: Array = []
 var _compiled_state_defaults: Dictionary = {}
+var _unlocked_template_ids: Array[StringName] = []
 
 var _blueprint_list: VBoxContainer
 var _source_option: OptionButton
@@ -20,6 +21,7 @@ var _template_list: VBoxContainer
 var _template_option: OptionButton
 var _param_list: VBoxContainer
 var _rule_preview_list: VBoxContainer
+var _quick_rally_button: Button
 
 func _ready() -> void:
 	anchor_left = 0.04
@@ -34,6 +36,12 @@ func set_blueprints(blueprints: Array[UnitBlueprint]) -> void:
 	if is_inside_tree():
 		_rebuild_blueprint_list()
 		_rebuild_source_options()
+
+func set_unlocked_template_ids(template_ids: Array[StringName]) -> void:
+	_unlocked_template_ids = template_ids.duplicate()
+	if is_inside_tree():
+		_rebuild_template_options()
+		_update_quick_rally_button_state()
 
 func _build_layout() -> void:
 	var margin := MarginContainer.new()
@@ -128,9 +136,7 @@ func _build_layout() -> void:
 
 	_template_option = OptionButton.new()
 	_template_option.custom_minimum_size = Vector2(300, 32)
-	for template_def in TacticalTemplateCompilerScript.get_template_defs():
-		_template_option.add_item(str(template_def.get("display_name", template_def.get("id", ""))))
-		_template_option.set_item_metadata(_template_option.item_count - 1, str(template_def.get("id", "")))
+	_rebuild_template_options()
 	template_toolbar.add_child(_template_option)
 
 	var add_template_button := Button.new()
@@ -139,11 +145,12 @@ func _build_layout() -> void:
 	add_template_button.pressed.connect(_on_add_template_pressed)
 	template_toolbar.add_child(add_template_button)
 
-	var quick_rally_button := Button.new()
-	quick_rally_button.text = "套用集结后进攻"
-	quick_rally_button.custom_minimum_size = Vector2(154, 32)
-	quick_rally_button.pressed.connect(_on_apply_rally_template_pressed)
-	template_toolbar.add_child(quick_rally_button)
+	_quick_rally_button = Button.new()
+	_quick_rally_button.text = "套用集结后进攻"
+	_quick_rally_button.custom_minimum_size = Vector2(154, 32)
+	_quick_rally_button.pressed.connect(_on_apply_rally_template_pressed)
+	template_toolbar.add_child(_quick_rally_button)
+	_update_quick_rally_button_state()
 
 	var template_and_params := HBoxContainer.new()
 	template_and_params.add_theme_constant_override("separation", 12)
@@ -245,6 +252,30 @@ func _rebuild_source_options() -> void:
 		_source_option.select(0)
 		_select_source(StringName(str(_source_option.get_item_metadata(0))))
 
+func _rebuild_template_options() -> void:
+	if _template_option == null:
+		return
+	_template_option.clear()
+	for template_def in TacticalTemplateCompilerScript.get_template_defs():
+		var template_id := StringName(str(template_def.get("id", "")))
+		if not _is_template_available(template_id):
+			continue
+		_template_option.add_item(str(template_def.get("display_name", template_def.get("id", ""))))
+		_template_option.set_item_metadata(_template_option.item_count - 1, String(template_id))
+	_update_quick_rally_button_state()
+
+func _update_quick_rally_button_state() -> void:
+	if _quick_rally_button == null:
+		return
+	var unlocked := _is_template_available(StringName(TacticalTemplateCompilerScript.TEMPLATE_RALLY_THEN_ATTACK))
+	_quick_rally_button.disabled = not unlocked
+	_quick_rally_button.tooltip_text = "" if unlocked else "需要先完成阶段 1 的集结战术研究"
+
+func _is_template_available(template_id: StringName) -> bool:
+	if _unlocked_template_ids.is_empty():
+		return true
+	return _unlocked_template_ids.has(template_id)
+
 func _make_blueprint_row(blueprint: UnitBlueprint) -> Control:
 	var row := HBoxContainer.new()
 	row.custom_minimum_size = Vector2(350, 64)
@@ -306,6 +337,8 @@ func _on_add_template_pressed() -> void:
 	_recompile_and_rebuild()
 
 func _on_apply_rally_template_pressed() -> void:
+	if not _is_template_available(StringName(TacticalTemplateCompilerScript.TEMPLATE_RALLY_THEN_ATTACK)):
+		return
 	_draft_templates = [
 		TacticalTemplateCompilerScript.make_rally_then_attack_instance()
 	]

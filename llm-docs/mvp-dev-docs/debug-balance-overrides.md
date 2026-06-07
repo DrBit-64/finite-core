@@ -12,13 +12,15 @@
 
 | 日期 | 数值项 | 配置位置 | 修改前 | 修改后 | 调试目的 | 正式化前处理 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 暂无 | - | - | - | - | - | - |
+| 2026-06-07 | MVP 开局库存配置开关 | `Resources/data/debug/mvp_runtime_profile.json` 的 `use_debug_starting_inventory` | `false`，默认读 `Resources/data/balance/mvp_starting_inventory.json` | `true`，默认读 `Resources/data/debug/mvp_debug_starting_inventory.json` | 阶段 11 开发需要快速验证研究终端、科技菜单和战役推进，不等待早期经济爬坡。 | 正式试玩前将开关改回 `false`，或改用独立的 playtest profile。 |
+| 2026-06-07 | MVP 开局调试库存 | `Resources/data/debug/mvp_debug_starting_inventory.json` | 非 debug 库存：铁矿 0、铜矿 0、铁板 20、铜线 12、建设质料 120 | debug 库存约 500 级资源 | 减少建造研究终端、加工与锻造链路的等待时间。 | 保持 debug 文件存在，但不要作为正式平衡数值使用。 |
 
 ## 已外部化的相关配置
 
 - 单位蓝图与属性：`Resources/data/units/mvp_unit_blueprints.json`
 - 正式开局库存：`Resources/data/balance/mvp_starting_inventory.json`
 - 调试开局库存：`Resources/data/debug/mvp_debug_starting_inventory.json`
+- 运行时开局库存切换：`Resources/data/debug/mvp_runtime_profile.json`
 
 ## 已撤销的调试覆盖
 

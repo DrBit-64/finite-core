@@ -7,6 +7,7 @@ const BaseBuildingScene := preload("res://Scenes/buildings/base_building.tscn")
 const MinerScene := preload("res://Scenes/buildings/miner.tscn")
 const ProcessorScene := preload("res://Scenes/buildings/processor.tscn")
 const RobotForgeScene := preload("res://Scenes/buildings/robot_forge.tscn")
+const ResearchTerminalScene := preload("res://Scenes/buildings/research_terminal.tscn")
 const BuildingPlacementGhostScene := preload("res://Scenes/map/building_placement_ghost.tscn")
 const GridSelectionMarkerScene := preload("res://Scenes/map/grid_selection_marker.tscn")
 const GridHoverMarkerScene := preload("res://Scenes/map/grid_hover_marker.tscn")
@@ -18,9 +19,15 @@ const ScavengerHoundScene := preload("res://Scenes/units/scavenger_hound.tscn")
 const EnemyNestScene := preload("res://Scenes/map/enemy_nest.tscn")
 const MapConfigLoaderScript := preload("res://Scripts/map/map_config_loader.gd")
 const StartingInventoryConfigLoaderScript := preload("res://Scripts/data/starting_inventory_config_loader.gd")
+const RuntimeConfigLoaderScript := preload("res://Scripts/data/runtime_config_loader.gd")
 const BlueprintLibraryScript := preload("res://Scripts/blueprints/blueprint_library.gd")
 const EnemyConfigLoaderScript := preload("res://Scripts/data/enemy_config_loader.gd")
+const CampaignStateScript := preload("res://Scripts/campaign/campaign_state.gd")
+const TechnologyConfigLoaderScript := preload("res://Scripts/campaign/technology_config_loader.gd")
 const ENEMY_CONFIG_PATH := "res://Resources/data/enemies/mvp_enemies.json"
+const TECHNOLOGY_CONFIG_PATH := "res://Resources/data/technology/mvp_stage1_technologies.json"
+const KEY_ITEM_INITIAL_SENSOR_COIL := &"initial_sensor_coil"
+const FOG_REGION_SIZE_CELLS := 4
 const OPERATION_PANEL_REFRESH_INTERVAL := 0.1
 const UNIT_INSPECTOR_REFRESH_INTERVAL := 0.2
 
@@ -33,6 +40,7 @@ const UNIT_INSPECTOR_REFRESH_INTERVAL := 0.2
 @export var camera_path: NodePath = ^"MainCamera"
 @export_file("*.json") var map_config_path: String = "res://Resources/data/maps/mvp_stage3_map.json"
 @export_file("*.json") var starting_inventory_config_path: String = "res://Resources/data/balance/mvp_starting_inventory.json"
+@export_file("*.json") var runtime_profile_path: String = "res://Resources/data/debug/mvp_runtime_profile.json"
 @export var enable_right_mouse_camera_drag: bool = true
 @export var clamp_camera_to_map_bounds: bool = true
 @export var camera_drag_start_threshold: float = 4.0
@@ -54,6 +62,9 @@ var recipe_defs: Array[RecipeDef] = []
 var basic_rifle_blueprint: UnitBlueprint
 var blueprint_library: BlueprintLibrary
 var building_defs: Array[BuildingDef] = []
+var technology_defs: Array = []
+var campaign_state: Variant
+var runtime_profile: Dictionary = {}
 var enemy_config: Dictionary = {}
 var enemy_nests_by_id: Dictionary = {}
 var grid_occupancy = GridOccupancyScript.new()
@@ -76,6 +87,9 @@ var is_camera_drag_candidate: bool = false
 var camera_drag_accumulated: float = 0.0
 var stage_started_seconds: float = 0.0
 var playtest_hud_refresh_seconds: float = 0.0
+var research_terminals: Array[Node] = []
+var map_region_states: Dictionary = {}
+var map_region_signal_cells: Dictionary = {}
 
 func _ready() -> void:
 	_bootstrap_mvp_scene()
@@ -236,12 +250,22 @@ func _bootstrap_mvp_scene() -> void:
 	_log_startup_status()
 
 func _load_stage_one_data() -> void:
+	runtime_profile = RuntimeConfigLoaderScript.load_runtime_config(runtime_profile_path)
+	var configured_inventory_path := RuntimeConfigLoaderScript.get_starting_inventory_path(runtime_profile)
+	if not configured_inventory_path.is_empty():
+		starting_inventory_config_path = configured_inventory_path
+	campaign_state = CampaignStateScript.new()
+	campaign_state.seed_defaults()
+	campaign_state.unlocks_changed.connect(_on_campaign_unlocks_changed)
+	campaign_state.technology_unlocked.connect(_on_campaign_technology_unlocked)
+	campaign_state.stage_advanced.connect(_on_campaign_stage_advanced)
 	resource_defs = MvpDataDefaults.create_resource_defs()
 	recipe_defs = MvpDataDefaults.create_recipe_defs()
 	basic_rifle_blueprint = MvpDataDefaults.create_basic_rifle_blueprint()
 	blueprint_library = BlueprintLibraryScript.new()
 	blueprint_library.add_blueprint(basic_rifle_blueprint)
 	building_defs = MvpDataDefaults.create_mvp_building_defs()
+	technology_defs = TechnologyConfigLoaderScript.load_technology_defs(TECHNOLOGY_CONFIG_PATH)
 	enemy_config = EnemyConfigLoaderScript.load_enemy_config(ENEMY_CONFIG_PATH)
 	starting_inventory = StartingInventoryConfigLoaderScript.load_starting_inventory(starting_inventory_config_path, starting_inventory)
 	resource_summary_placeholder = "资源 %d / 配方 %d / 建筑 %d" % [
@@ -275,8 +299,15 @@ func _configure_hud() -> void:
 		hud.connect("blueprint_save_requested", Callable(self, "_on_blueprint_save_requested"))
 	if hud.has_signal("forge_blueprint_selected"):
 		hud.connect("forge_blueprint_selected", Callable(self, "_on_forge_blueprint_selected"))
+	if hud.has_signal("technology_research_requested"):
+		hud.connect("technology_research_requested", Callable(self, "_on_technology_research_requested"))
+	if hud.has_signal("new_game_requested"):
+		hud.connect("new_game_requested", Callable(self, "_on_new_game_requested"))
+	if hud.has_signal("restart_requested"):
+		hud.connect("restart_requested", Callable(self, "_on_restart_requested"))
 	_refresh_build_options()
 	_refresh_resource_hud()
+	_refresh_campaign_hud()
 	_refresh_blueprint_library_ui()
 	_refresh_playtest_hud()
 
@@ -292,6 +323,10 @@ func _log_startup_status() -> void:
 	push_debug_event("MVP GameManager 已加载")
 	push_debug_event("当前目标：%s：%s" % [stage_label, current_goal])
 	push_debug_event("初始库存配置：%s" % starting_inventory_config_path)
+	push_debug_event("运行时配置：%s，debug 初始资源：%s" % [
+		runtime_profile_path,
+		"是" if bool(runtime_profile.get("use_debug_starting_inventory", false)) else "否",
+	])
 	push_debug_event("%s 数据：资源 %d 项，配方 %d 条，建筑 %d 种，矿点 %d 个" % [
 		stage_label,
 		resource_defs.size(),
@@ -327,6 +362,162 @@ func set_current_goal(next_goal: String) -> void:
 	if hud and hud.has_method("set_current_goal"):
 		hud.call("set_current_goal", "%s：%s" % [stage_label, current_goal])
 	push_debug_event("目标更新：%s" % current_goal)
+
+func _refresh_campaign_hud() -> void:
+	if hud == null or campaign_state == null:
+		return
+	var inventory = _get_main_base_inventory()
+	var amounts: Dictionary = inventory.get_all() if inventory else {}
+	var terminal_status := _get_research_terminal_status()
+	if hud.has_method("set_campaign_data"):
+		hud.call("set_campaign_data", campaign_state, technology_defs, resource_defs, amounts, terminal_status)
+	if hud.has_method("set_unlocked_template_ids"):
+		hud.call("set_unlocked_template_ids", campaign_state.unlocked_templates)
+
+func _get_research_terminal_status() -> Dictionary:
+	var terminals := _get_valid_research_terminals()
+	var active: Node = null
+	for terminal in terminals:
+		if terminal.get("active_technology") != null:
+			active = terminal
+			break
+	var active_technology: Variant = null
+	var active_technology_id := ""
+	var active_technology_name := ""
+	var progress_seconds := 0.0
+	var progress_ratio := 0.0
+	if active != null:
+		active_technology = active.get("active_technology")
+		if active_technology != null:
+			active_technology_id = String(active_technology.id)
+			active_technology_name = active_technology.display_name
+		progress_seconds = float(active.get("progress_seconds"))
+		if active.has_method("get_progress_ratio"):
+			progress_ratio = float(active.call("get_progress_ratio"))
+	return {
+		"has_terminal": not terminals.is_empty(),
+		"busy": active != null,
+		"active_technology_id": active_technology_id,
+		"active_technology_name": active_technology_name,
+		"progress_seconds": progress_seconds,
+		"progress_ratio": progress_ratio,
+	}
+
+func _get_valid_research_terminals() -> Array[Node]:
+	var result: Array[Node] = []
+	for index in range(research_terminals.size() - 1, -1, -1):
+		var terminal := research_terminals[index]
+		if terminal == null or not is_instance_valid(terminal):
+			research_terminals.remove_at(index)
+			continue
+		if terminal.has_method("is_alive") and not bool(terminal.call("is_alive")):
+			continue
+		result.append(terminal)
+	return result
+
+func _on_technology_research_requested(technology_id: StringName) -> void:
+	var technology: Variant = _find_technology_def(technology_id)
+	if technology == null:
+		push_debug_event("研究失败：未知科技 %s" % String(technology_id))
+		return
+	if campaign_state == null or not campaign_state.can_research(technology):
+		push_debug_event("研究失败：门槛未满足 %s" % technology.display_name)
+		_refresh_campaign_hud()
+		return
+	var terminals := _get_valid_research_terminals()
+	if terminals.is_empty():
+		push_debug_event("研究失败：需要建造研究终端")
+		if hud and hud.has_method("show_bottom_prompt"):
+			hud.call("show_bottom_prompt", "需要先建造研究终端", 2.0, &"warning")
+		return
+	for terminal in terminals:
+		if terminal.has_method("start_research") and terminal.call("start_research", technology):
+			push_debug_event("研究开始：%s" % technology.display_name)
+			if hud and hud.has_method("show_bottom_prompt"):
+				hud.call("show_bottom_prompt", "研究开始：%s" % technology.display_name, 2.0, &"info")
+			_refresh_campaign_hud()
+			return
+	push_debug_event("研究失败：资源不足或研究终端忙碌")
+	if hud and hud.has_method("show_bottom_prompt"):
+		hud.call("show_bottom_prompt", "研究失败：资源不足或研究终端忙碌", 2.0, &"warning")
+	_refresh_campaign_hud()
+
+func _find_technology_def(technology_id: StringName) -> Variant:
+	for technology in technology_defs:
+		if technology.id == technology_id:
+			return technology
+	return null
+
+func _on_campaign_unlocks_changed() -> void:
+	_refresh_build_options()
+	_refresh_blueprint_library_ui()
+	_refresh_campaign_hud()
+
+func _on_campaign_technology_unlocked(technology_id: StringName) -> void:
+	var technology: Variant = _find_technology_def(technology_id)
+	var unlock_text := _format_technology_unlocks(technology.unlocks) if technology != null else ""
+	push_debug_event("科技解锁：%s %s" % [String(technology_id), unlock_text])
+	if hud and hud.has_method("show_bottom_prompt"):
+		hud.call("show_bottom_prompt", "科技已生效：%s" % String(technology_id), 2.5, &"info")
+
+func _on_campaign_stage_advanced(next_stage: int) -> void:
+	stage_label = "阶段 %d" % next_stage
+	set_current_goal("阶段 %d：继续在同一张地图扩张" % next_stage)
+
+func _on_new_game_requested() -> void:
+	get_tree().reload_current_scene()
+
+func _on_restart_requested() -> void:
+	get_tree().reload_current_scene()
+
+func _get_active_unit_upgrade_ids() -> Array[StringName]:
+	if campaign_state == null:
+		return []
+	return campaign_state.unlocked_upgrades.duplicate()
+
+func _format_technology_unlocks(unlocks: Dictionary) -> String:
+	var parts: Array[String] = []
+	for key in unlocks.keys():
+		var values: Variant = unlocks[key]
+		if typeof(values) == TYPE_ARRAY and not values.is_empty():
+			parts.append("%s=%s" % [str(key), ", ".join(_variant_string_array(values))])
+	if parts.is_empty():
+		return ""
+	return "(%s)" % " | ".join(parts)
+
+func _variant_string_array(values: Array) -> Array[String]:
+	var result: Array[String] = []
+	for value in values:
+		result.append(str(value))
+	return result
+
+func _string_name_array(values: Array[StringName]) -> Array[String]:
+	var result: Array[String] = []
+	for value in values:
+		result.append(String(value))
+	return result
+
+func get_campaign_save_snapshot() -> Dictionary:
+	var inventory = _get_main_base_inventory()
+	var blueprint_snapshots: Array[Dictionary] = []
+	if blueprint_library and blueprint_library.has_method("get_blueprints"):
+		for blueprint in blueprint_library.call("get_blueprints"):
+			blueprint_snapshots.append({
+				"id": String(blueprint.id),
+				"display_name": blueprint.display_name,
+				"version": blueprint.version,
+				"tactical_templates": blueprint.tactical_templates,
+				"embedded_rules": blueprint.embedded_rules,
+				"state_flag_defaults": blueprint.state_flag_defaults,
+			})
+	return {
+		"version": 1,
+		"campaign": campaign_state.to_save_snapshot() if campaign_state else {},
+		"inventory": inventory.get_all() if inventory else {},
+		"blueprints": blueprint_snapshots,
+		"map_regions": map_region_states.duplicate(true),
+		"runtime_profile_path": runtime_profile_path,
+	}
 
 func _on_build_mode_requested(building_id: StringName) -> void:
 	var building_def := _find_building_def(building_id)
@@ -538,6 +729,7 @@ func _refresh_resource_hud() -> void:
 		return
 	if hud.has_method("set_resource_amounts"):
 		hud.call("set_resource_amounts", resource_defs, inventory.get_all())
+	_refresh_campaign_hud()
 	if active_building_def:
 		_update_build_cost_preview()
 
@@ -728,6 +920,8 @@ func _find_building_def(building_id: StringName) -> BuildingDef:
 func _get_placeable_buildings() -> Array[BuildingDef]:
 	var result: Array[BuildingDef] = []
 	for building_def in building_defs:
+		if campaign_state and not campaign_state.is_building_unlocked(building_def.id):
+			continue
 		if main_base == null:
 			if _is_main_base_def(building_def):
 				result.append(building_def)
@@ -766,6 +960,9 @@ func _is_processor_def(building_def: BuildingDef) -> bool:
 func _is_robot_forge_def(building_def: BuildingDef) -> bool:
 	return building_def != null and building_def.id == MvpDataDefaults.BUILDING_ROBOT_FORGE
 
+func _is_research_terminal_def(building_def: BuildingDef) -> bool:
+	return building_def != null and building_def.id == MvpDataDefaults.BUILDING_RESEARCH_TERMINAL
+
 func _get_building_scene(building_def: BuildingDef, is_main_base: bool) -> PackedScene:
 	if is_main_base:
 		return MainBaseScene
@@ -775,6 +972,8 @@ func _get_building_scene(building_def: BuildingDef, is_main_base: bool) -> Packe
 		return ProcessorScene
 	if _is_robot_forge_def(building_def):
 		return RobotForgeScene
+	if _is_research_terminal_def(building_def):
+		return ResearchTerminalScene
 	return BaseBuildingScene
 
 func _load_fixed_map() -> void:
@@ -794,6 +993,7 @@ func _load_fixed_map() -> void:
 		if typeof(item) != TYPE_DICTIONARY:
 			continue
 		_spawn_enemy_nest(item)
+	_initialize_region_fog()
 
 func _spawn_resource_node(data: Dictionary) -> void:
 	var resource_id := StringName(str(data.get("resource_id", "")))
@@ -849,6 +1049,93 @@ func _spawn_enemy_nest(data: Dictionary) -> void:
 	nest.call_deferred("spawn_initial_guards")
 	push_debug_event("敌巢已生成：%s @ %s, %s，距离起始矿区较远" % [nest.call("get_display_name"), origin.x, origin.y])
 
+func _initialize_region_fog() -> void:
+	if grid_map == null:
+		return
+	map_region_states.clear()
+	map_region_signal_cells.clear()
+	var region_size := FOG_REGION_SIZE_CELLS
+	var map_size: Vector2i = grid_map.get("map_size_cells")
+	var region_count := Vector2i(ceili(float(map_size.x) / float(region_size)), ceili(float(map_size.y) / float(region_size)))
+	for x in range(region_count.x):
+		for y in range(region_count.y):
+			map_region_states[_region_key(Vector2i(x, y))] = "unknown"
+	_mark_starting_resource_basin_scanned(region_count, region_size)
+	for nest in enemy_nests_by_id.values():
+		if nest == null or not is_instance_valid(nest):
+			continue
+		_mark_enemy_nest_signal(nest, region_size)
+	_apply_region_fog_to_grid()
+
+func _update_region_after_nest_destroyed(nest: Node) -> void:
+	if nest == null:
+		return
+	var region_size := FOG_REGION_SIZE_CELLS
+	var nest_region := _region_for_cell(nest.get("grid_origin"), region_size)
+	var nest_key := _region_key(nest_region)
+	map_region_states[nest_key] = "controlled"
+	map_region_signal_cells.erase(nest_key)
+	for neighbor in [
+		nest_region + Vector2i(1, 0),
+		nest_region + Vector2i(0, 1),
+		nest_region + Vector2i(1, 1),
+	]:
+		var key := _region_key(neighbor)
+		if map_region_states.has(key) and str(map_region_states[key]) == "unknown":
+			map_region_states[key] = "signal"
+	_apply_region_fog_to_grid()
+
+func _apply_region_fog_to_grid() -> void:
+	if grid_map == null:
+		return
+	var overlay: Node = grid_map.get("grid_overlay")
+	if overlay and overlay.has_method("set_region_states"):
+		overlay.set("fog_region_size_cells", FOG_REGION_SIZE_CELLS)
+		overlay.call("set_region_states", map_region_states)
+		if overlay.has_method("set_region_signals"):
+			overlay.call("set_region_signals", map_region_signal_cells)
+
+func _mark_starting_resource_basin_scanned(region_count: Vector2i, region_size: int) -> void:
+	if resource_nodes_by_cell.is_empty():
+		for region in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1)]:
+			_mark_region_state(region, region_count, "scanned")
+		return
+
+	var min_region := Vector2i(999999, 999999)
+	var max_region := Vector2i(-999999, -999999)
+	for cell_value in resource_nodes_by_cell.keys():
+		var cell: Vector2i = cell_value
+		var region := _region_for_cell(cell, region_size)
+		min_region.x = mini(min_region.x, region.x)
+		min_region.y = mini(min_region.y, region.y)
+		max_region.x = maxi(max_region.x, region.x)
+		max_region.y = maxi(max_region.y, region.y)
+
+	for x in range(min_region.x, max_region.x + 1):
+		for y in range(min_region.y, max_region.y + 1):
+			_mark_region_state(Vector2i(x, y), region_count, "scanned")
+
+func _mark_enemy_nest_signal(nest: Node, region_size: int) -> void:
+	var origin: Vector2i = nest.get("grid_origin")
+	var size: Vector2i = nest.get("grid_size")
+	var nest_region := _region_for_cell(origin, region_size)
+	var key := _region_key(nest_region)
+	map_region_states[key] = "signal"
+	var centers: Array = map_region_signal_cells.get(key, [])
+	centers.append(Vector2(origin) + Vector2(size) * 0.5)
+	map_region_signal_cells[key] = centers
+
+func _mark_region_state(region: Vector2i, region_count: Vector2i, state: String) -> void:
+	if region.x < 0 or region.y < 0 or region.x >= region_count.x or region.y >= region_count.y:
+		return
+	map_region_states[_region_key(region)] = state
+
+func _region_for_cell(cell: Vector2i, region_size: int) -> Vector2i:
+	return Vector2i(floori(float(cell.x) / float(region_size)), floori(float(cell.y) / float(region_size)))
+
+func _region_key(region: Vector2i) -> String:
+	return "%d,%d" % [region.x, region.y]
+
 func _on_enemy_nest_guard_spawn_requested(nest: Node, guard_type: StringName) -> void:
 	if nest == null or not is_instance_valid(nest) or not bool(nest.call("is_alive")):
 		return
@@ -886,6 +1173,8 @@ func _on_enemy_hound_lost(hound: Node, reason: StringName) -> void:
 		event_log.call("record", &"enemy_killed", payload)
 
 func _on_enemy_nest_destroyed(nest: Node) -> void:
+	_apply_abstract_nest_reward(nest)
+	_update_region_after_nest_destroyed(nest)
 	var event_log := get_node_or_null("/root/CombatEventLog")
 	if event_log and event_log.has_method("record"):
 		event_log.call("record", &"nest_destroyed", {
@@ -896,6 +1185,26 @@ func _on_enemy_nest_destroyed(nest: Node) -> void:
 	if hud and hud.has_method("show_victory_summary"):
 		hud.call("show_victory_summary", _build_victory_summary(nest))
 	push_debug_event("胜利：敌巢已摧毁")
+	_refresh_campaign_hud()
+
+func _apply_abstract_nest_reward(nest: Node) -> void:
+	if campaign_state == null or nest == null:
+		return
+	var nest_id := StringName(str(nest.get("nest_id")))
+	campaign_state.mark_nest_defeated(nest_id)
+	var reward: Dictionary = nest.get("reward")
+	if reward.has("technology_item"):
+		var technology_item := str(reward.get("technology_item", ""))
+		var key_item_id := KEY_ITEM_INITIAL_SENSOR_COIL if technology_item == "初级感应线圈" else StringName(technology_item)
+		campaign_state.add_key_item(key_item_id)
+		push_debug_event("抽象回收关键道具：%s" % _get_key_item_display_name(key_item_id))
+		set_current_goal("建造研究终端，并在科技菜单中研究阶段 1 科技")
+
+func _get_key_item_display_name(key_item_id: StringName) -> String:
+	for resource_def in resource_defs:
+		if resource_def.id == key_item_id:
+			return resource_def.display_name
+	return String(key_item_id)
 
 func _build_victory_summary(nest: Node) -> Dictionary:
 	var event_log := get_node_or_null("/root/CombatEventLog")
@@ -967,6 +1276,14 @@ func _configure_building_runtime(building: Node, building_def: BuildingDef, orig
 			building.connect("forge_state_changed", Callable(self, "_on_forge_state_changed").bind(building))
 		if building.has_signal("robot_production_completed"):
 			building.connect("robot_production_completed", Callable(self, "_on_forge_robot_production_completed"))
+	elif _is_research_terminal_def(building_def) and building.has_method("setup_research_terminal"):
+		building.call("setup_research_terminal", inventory, campaign_state)
+		if building.has_signal("research_state_changed"):
+			building.connect("research_state_changed", Callable(self, "_on_research_terminal_state_changed").bind(building))
+		if building.has_signal("research_completed"):
+			building.connect("research_completed", Callable(self, "_on_research_completed"))
+		if not research_terminals.has(building):
+			research_terminals.append(building)
 
 func _get_resource_recipes() -> Array[RecipeDef]:
 	var result: Array[RecipeDef] = []
@@ -990,6 +1307,10 @@ func _show_operation_panel_for_node(node: Node) -> void:
 		operation_panel_refresh_seconds = 0.0
 		_refresh_operation_panel()
 	elif _is_robot_forge_def(building_def):
+		selected_operation_building = node
+		operation_panel_refresh_seconds = 0.0
+		_refresh_operation_panel()
+	elif _is_research_terminal_def(building_def):
 		selected_operation_building = node
 		operation_panel_refresh_seconds = 0.0
 		_refresh_operation_panel()
@@ -1025,6 +1346,14 @@ func _refresh_operation_panel() -> void:
 			resource_defs,
 			_world_to_screen(selected_operation_building.global_position)
 		)
+	elif _is_research_terminal_def(building_def) and hud.has_method("show_research_terminal_panel"):
+		hud.call(
+			"show_research_terminal_panel",
+			selected_operation_building,
+			technology_defs,
+			resource_defs,
+			_world_to_screen(selected_operation_building.global_position)
+		)
 
 func _hide_operation_panel() -> void:
 	selected_operation_building = null
@@ -1050,6 +1379,22 @@ func _on_forge_state_changed(forge: Node) -> void:
 	if forge == selected_operation_building:
 		call_deferred("_refresh_operation_panel")
 
+func _on_research_terminal_state_changed(terminal: Node) -> void:
+	if terminal == selected_operation_building:
+		call_deferred("_refresh_operation_panel")
+	_refresh_campaign_hud()
+
+func _on_research_completed(technology: Variant) -> void:
+	push_debug_event("研究完成：%s" % technology.display_name)
+	var event_log := get_node_or_null("/root/CombatEventLog")
+	if event_log and event_log.has_method("record"):
+		event_log.call("record", &"technology_unlocked", {
+			"technology_id": String(technology.id),
+			"display_name": technology.display_name,
+		})
+	_refresh_campaign_hud()
+	_refresh_build_options()
+
 func _on_forge_robot_production_completed(forge: Node, blueprint: UnitBlueprint) -> void:
 	if forge == null or blueprint == null:
 		return
@@ -1067,6 +1412,8 @@ func _on_forge_robot_production_completed(forge: Node, blueprint: UnitBlueprint)
 			forge.get("rally_point_position"),
 			bool(forge.get("has_rally_point"))
 		)
+	if robot.has_method("apply_campaign_upgrades"):
+		robot.call("apply_campaign_upgrades", _get_active_unit_upgrade_ids())
 	if robot.has_signal("robot_lost") and not robot.is_connected("robot_lost", Callable(self, "_on_robot_lost_for_blueprint_cleanup")):
 		robot.connect("robot_lost", Callable(self, "_on_robot_lost_for_blueprint_cleanup"))
 	if forge.has_method("register_robot"):
@@ -1085,6 +1432,7 @@ func _record_robot_produced(forge: Node, robot: Node, blueprint: UnitBlueprint) 
 			"blueprint_snapshot_id": blueprint.get_snapshot_key(),
 			"blueprint_rules": _get_blueprint_rule_summaries(blueprint),
 			"blueprint_templates": _get_blueprint_template_summaries(blueprint),
+			"active_upgrades": _string_name_array(_get_active_unit_upgrade_ids()),
 			"rally_point": _format_vector2_payload(forge.get("rally_point_position")),
 			"has_rally_point": bool(forge.get("has_rally_point")),
 		})
@@ -1140,6 +1488,8 @@ func _on_forge_blueprint_selected(forge: Node, blueprint_id: StringName) -> void
 func _refresh_blueprint_library_ui() -> void:
 	if hud and hud.has_method("set_blueprint_library"):
 		hud.call("set_blueprint_library", blueprint_library.get_blueprints() if blueprint_library else [])
+	if hud and hud.has_method("set_unlocked_template_ids") and campaign_state:
+		hud.call("set_unlocked_template_ids", campaign_state.unlocked_templates)
 
 func _create_blueprint_snapshot(blueprint: UnitBlueprint) -> UnitBlueprint:
 	if blueprint_library:

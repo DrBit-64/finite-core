@@ -81,6 +81,21 @@
       }
     },
     {
+      "id": "build_research_terminal",
+      "display_name": "建造研究终端",
+      "type": "building",
+      "target_id": "research_terminal",
+      "duration_seconds": 8.0,
+      "inputs": {
+        "construction_mass": 35,
+        "iron_plate": 6,
+        "copper_wire": 8
+      },
+      "outputs": {
+        "research_terminal": 1
+      }
+    },
+    {
       "id": "forge_basic_rifle_robot",
       "display_name": "生产基础步枪机器人",
       "type": "unit",

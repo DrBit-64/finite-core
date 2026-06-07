@@ -282,9 +282,9 @@ MVP 只需要一个敌巢类型。
 
 这些数值不是最终平衡，只用于让第一版体验链跑通。
 
-### 当前非 debug 初始资源
+### 当前初始资源配置
 
-当前开发构建默认从 `Resources/data/balance/mvp_starting_inventory.json` 读取非 debug 开局库存。该库存应足够玩家建立第一条最小生产线，但不足以直接爆兵推平敌巢。
+当前开发构建通过 `Resources/data/debug/mvp_runtime_profile.json` 的 `use_debug_starting_inventory` 切换开局库存。阶段 11 开发期间该开关可以设为 `true`，用于快速验证研究终端、科技菜单和战役推进。
 
 | 资源 | 初始数量 |
 | --- | --- |
@@ -294,7 +294,7 @@ MVP 只需要一个敌巢类型。
 | 铜线 | 12 |
 | 建设质料 | 120 |
 
-如需快速调试生产链，可以临时把 `MvpGameManager.starting_inventory_config_path` 切回 `Resources/data/debug/mvp_debug_starting_inventory.json`，但不要把 debug 库存作为默认试玩配置。
+正式试玩或经济平衡测试前，应将 `use_debug_starting_inventory` 设为 `false`，改读 `Resources/data/balance/mvp_starting_inventory.json`。debug 库存只用于开发调试。
 
 ### 资源产出
 

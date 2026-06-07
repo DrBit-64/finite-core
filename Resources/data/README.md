@@ -8,5 +8,6 @@
 - `units/mvp_unit_blueprints.json`：MVP 单位蓝图与机器人属性配置，包括生命、速度、寿命、目标锁定时间、射程和伤害。
 - `balance/mvp_starting_inventory.json`：MVP 非 debug 开局库存，作为当前默认试玩配置。
 - `debug/mvp_debug_starting_inventory.json`：MVP 调试期初始库存，用来减少手动测试等待时间，不作为正式平衡数值。
+- `debug/mvp_runtime_profile.json`：MVP 运行时配置。当前用 `use_debug_starting_inventory` 在正式库存和 debug 库存之间切换，避免为了调试反复改场景或脚本。
 
 后续平衡数值尽量放在这里。脚本负责将配置加载成类型化定义，避免硬编码成本。
