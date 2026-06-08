@@ -40,6 +40,7 @@ var blueprint_id: StringName = &""
 var blueprint_version: int = 0
 var blueprint_snapshot_id: StringName = &""
 var chassis_id: StringName = &""
+var weapon_audio_id: StringName = &"rifle_module"
 var active_upgrade_ids: Array[StringName] = []
 var rally_point_position: Vector2 = Vector2.ZERO
 var has_rally_point: bool = false
@@ -136,6 +137,7 @@ func setup_from_blueprint(blueprint: UnitBlueprint, next_rally_point: Vector2 = 
 	blueprint_version = blueprint.version
 	blueprint_snapshot_id = StringName(blueprint.get_snapshot_key())
 	chassis_id = blueprint.chassis_id
+	weapon_audio_id = _get_primary_weapon_audio_id(blueprint)
 	active_upgrade_ids.clear()
 	display_name = blueprint.display_name
 	if not blueprint.icon_path.is_empty():
@@ -243,6 +245,15 @@ func is_alive() -> bool:
 
 func get_display_name() -> String:
 	return display_name
+
+func _get_primary_weapon_audio_id(blueprint: UnitBlueprint) -> StringName:
+	for module_id in blueprint.module_ids:
+		var module_text := String(module_id)
+		if module_text.contains("rifle"):
+			return module_id
+		if module_text.contains("chainsaw"):
+			return module_id
+	return blueprint.module_ids[0] if not blueprint.module_ids.is_empty() else &"default"
 
 func get_inspector_lines() -> Array[String]:
 	var target_name := "无"

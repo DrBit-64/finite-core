@@ -34,7 +34,7 @@ const UNIT_INSPECTOR_REFRESH_INTERVAL := 0.2
 @export var stage_label: String = "试玩目标"
 @export var current_goal: String = "建造锻造厂，设置集结点并摧毁远处敌巢"
 @export var resource_summary_placeholder: String = "资源面板占位"
-@export var bottom_hint: String = "建造锻造厂并设置集结点；集结机器人后摧毁远处的拾荒猎犬巢穴"
+@export var bottom_hint: String = "从底部建造栏选择主基地，并在起始矿区附近放置。"
 @export var hud_path: NodePath = ^"%MvpHUD"
 @export var grid_map_path: NodePath = ^"%GridMap"
 @export var camera_path: NodePath = ^"MainCamera"
@@ -90,6 +90,7 @@ var playtest_hud_refresh_seconds: float = 0.0
 var research_terminals: Array[Node] = []
 var map_region_states: Dictionary = {}
 var map_region_signal_cells: Dictionary = {}
+var _stage12_soft_failure_shown: bool = false
 
 func _ready() -> void:
 	_bootstrap_mvp_scene()
@@ -310,6 +311,11 @@ func _configure_hud() -> void:
 	_refresh_campaign_hud()
 	_refresh_blueprint_library_ui()
 	_refresh_playtest_hud()
+	if main_base == null:
+		set_current_goal("请先放置主基地")
+		set_guidance_hint("从底部建造栏选择主基地，并在起始矿区附近放置。")
+		if hud.has_method("show_bottom_prompt"):
+			hud.call("show_bottom_prompt", "先从底部建造栏选择主基地，然后点击地图放置。", 4.0, &"info")
 
 func _setup_stage_two_world() -> void:
 	if grid_map == null:
@@ -362,6 +368,11 @@ func set_current_goal(next_goal: String) -> void:
 	if hud and hud.has_method("set_current_goal"):
 		hud.call("set_current_goal", "%s：%s" % [stage_label, current_goal])
 	push_debug_event("目标更新：%s" % current_goal)
+
+func set_guidance_hint(next_hint: String) -> void:
+	bottom_hint = next_hint
+	if hud and hud.has_method("set_bottom_hint"):
+		hud.call("set_bottom_hint", bottom_hint)
 
 func _refresh_campaign_hud() -> void:
 	if hud == null or campaign_state == null:
@@ -419,14 +430,17 @@ func _on_technology_research_requested(technology_id: StringName) -> void:
 	var technology: Variant = _find_technology_def(technology_id)
 	if technology == null:
 		push_debug_event("研究失败：未知科技 %s" % String(technology_id))
+		_play_audio_cue(&"build_failed")
 		return
 	if campaign_state == null or not campaign_state.can_research(technology):
 		push_debug_event("研究失败：门槛未满足 %s" % technology.display_name)
+		_play_audio_cue(&"build_failed")
 		_refresh_campaign_hud()
 		return
 	var terminals := _get_valid_research_terminals()
 	if terminals.is_empty():
 		push_debug_event("研究失败：需要建造研究终端")
+		_play_audio_cue(&"build_failed")
 		if hud and hud.has_method("show_bottom_prompt"):
 			hud.call("show_bottom_prompt", "需要先建造研究终端", 2.0, &"warning")
 		return
@@ -438,6 +452,7 @@ func _on_technology_research_requested(technology_id: StringName) -> void:
 			_refresh_campaign_hud()
 			return
 	push_debug_event("研究失败：资源不足或研究终端忙碌")
+	_play_audio_cue(&"build_failed")
 	if hud and hud.has_method("show_bottom_prompt"):
 		hud.call("show_bottom_prompt", "研究失败：资源不足或研究终端忙碌", 2.0, &"warning")
 	_refresh_campaign_hud()
@@ -457,6 +472,7 @@ func _on_campaign_technology_unlocked(technology_id: StringName) -> void:
 	var technology: Variant = _find_technology_def(technology_id)
 	var unlock_text := _format_technology_unlocks(technology.unlocks) if technology != null else ""
 	push_debug_event("科技解锁：%s %s" % [String(technology_id), unlock_text])
+	_play_audio_cue(&"technology_unlocked")
 	if hud and hud.has_method("show_bottom_prompt"):
 		hud.call("show_bottom_prompt", "科技已生效：%s" % String(technology_id), 2.5, &"info")
 
@@ -570,6 +586,7 @@ func _try_place_active_building() -> void:
 	var cell := _get_mouse_grid_cell()
 	if not _can_place_building(active_building_def, cell):
 		push_debug_event("建造失败：%s，%s" % [active_building_def.display_name, _get_place_block_reason(active_building_def, cell)])
+		_play_audio_cue(&"build_failed")
 		_update_placement_preview()
 		return
 	var is_main_base := _is_main_base_def(active_building_def)
@@ -577,16 +594,20 @@ func _try_place_active_building() -> void:
 	if not is_main_base:
 		if inventory == null:
 			push_debug_event("建造失败：请先放置主基地")
+			_play_audio_cue(&"build_failed")
 			return
 		if not inventory.spend_resources(active_building_def.build_cost, "建造 %s" % active_building_def.display_name):
 			push_debug_event("建造失败：资源不足 %s" % JSON.stringify(inventory.get_missing(active_building_def.build_cost)))
+			_play_audio_cue(&"build_failed")
 			return
 	var building := _spawn_building(active_building_def, cell, is_main_base)
 	if building:
 		push_debug_event("建造完成：%s @ %s, %s" % [active_building_def.display_name, cell.x, cell.y])
+		_play_audio_cue(&"build_success")
 		if is_main_base:
 			_setup_main_base_after_placement(building)
 		_configure_building_runtime(building, active_building_def, cell)
+		_advance_stage12_guidance_after_build(active_building_def, building)
 		_show_selection_for_node(building)
 		if hud and hud.has_method("inspect_node"):
 			hud.call("inspect_node", building)
@@ -797,6 +818,112 @@ func _refresh_playtest_hud() -> void:
 		hud.call("set_elapsed_seconds", elapsed_seconds)
 	if hud.has_method("set_objective_direction"):
 		hud.call("set_objective_direction", _get_objective_direction_text())
+	if hud.has_method("set_guidance_highlights"):
+		hud.call("set_guidance_highlights", _get_guidance_highlights())
+
+func _get_guidance_highlights() -> Dictionary:
+	var building_ids: Array[StringName] = []
+	var highlight_blueprint := false
+	var highlight_technology := false
+	var highlight_forge_blueprint_picker := false
+	if active_building_def != null or rally_point_target_forge != null:
+		return {
+			"building_ids": building_ids,
+			"blueprint_button": false,
+			"technology_button": false,
+			"forge_blueprint_picker": false,
+		}
+	if main_base == null:
+		building_ids.append(MvpDataDefaults.BUILDING_MAIN_BASE)
+	elif _count_player_buildings(MvpDataDefaults.BUILDING_MINER) < 2:
+		building_ids.append(MvpDataDefaults.BUILDING_MINER)
+	elif _count_player_buildings(MvpDataDefaults.BUILDING_PROCESSOR) < 1:
+		building_ids.append(MvpDataDefaults.BUILDING_PROCESSOR)
+	elif _count_player_buildings(MvpDataDefaults.BUILDING_ROBOT_FORGE) < 1:
+		building_ids.append(MvpDataDefaults.BUILDING_ROBOT_FORGE)
+	elif _needs_rally_blueprint_guidance():
+		highlight_blueprint = true
+		highlight_forge_blueprint_picker = true
+	elif _needs_technology_guidance():
+		if _count_player_buildings(MvpDataDefaults.BUILDING_RESEARCH_TERMINAL) < 1:
+			building_ids.append(MvpDataDefaults.BUILDING_RESEARCH_TERMINAL)
+		else:
+			highlight_technology = true
+	return {
+		"building_ids": building_ids,
+		"blueprint_button": highlight_blueprint,
+		"technology_button": highlight_technology,
+		"forge_blueprint_picker": highlight_forge_blueprint_picker,
+	}
+
+func _needs_rally_blueprint_guidance() -> bool:
+	if _count_player_buildings(MvpDataDefaults.BUILDING_ROBOT_FORGE) < 1:
+		return false
+	if not _has_rally_template_blueprint():
+		return true
+	return _has_forge_without_rally_template_blueprint()
+
+func _needs_technology_guidance() -> bool:
+	if campaign_state == null:
+		return false
+	if campaign_state.key_items.is_empty() and campaign_state.defeated_nests.is_empty():
+		return false
+	for technology in technology_defs:
+		if campaign_state.can_research(technology):
+			return true
+	return false
+
+func _count_player_buildings(building_id: StringName) -> int:
+	var count := 0
+	for building in _get_player_buildings_by_id(building_id):
+		if building.has_method("is_alive") and not bool(building.call("is_alive")):
+			continue
+		count += 1
+	return count
+
+func _get_player_buildings_by_id(building_id: StringName) -> Array[Node]:
+	var result: Array[Node] = []
+	var building_layer := _get_layer("BuildingLayer")
+	if building_layer == null:
+		return result
+	for child in building_layer.get_children():
+		if child == null or not is_instance_valid(child):
+			continue
+		var building_def: BuildingDef = child.get("building_def")
+		if building_def == null or building_def.id != building_id:
+			continue
+		if not _is_player_building(child):
+			continue
+		result.append(child)
+	return result
+
+func _is_player_building(building: Node) -> bool:
+	if building == null or not is_instance_valid(building):
+		return false
+	return str(building.get("team")) == "Team_A" or building.is_in_group("team_a")
+
+func _has_rally_template_blueprint() -> bool:
+	if blueprint_library == null:
+		return false
+	for blueprint in blueprint_library.get_blueprints():
+		if _blueprint_has_rally_template(blueprint):
+			return true
+	return false
+
+func _has_forge_without_rally_template_blueprint() -> bool:
+	for forge in _get_player_buildings_by_id(MvpDataDefaults.BUILDING_ROBOT_FORGE):
+		var forge_blueprint: UnitBlueprint = forge.get("blueprint")
+		if not _blueprint_has_rally_template(forge_blueprint):
+			return true
+	return false
+
+func _blueprint_has_rally_template(blueprint: UnitBlueprint) -> bool:
+	if blueprint == null:
+		return false
+	for template in blueprint.tactical_templates:
+		if typeof(template) == TYPE_DICTIONARY and str(template.get("id", "")) == "rally_then_attack":
+			return true
+	return false
 
 func _get_objective_direction_text() -> String:
 	var nest := _get_active_enemy_nest()
@@ -943,6 +1070,10 @@ func _setup_main_base_after_placement(base_node: Node) -> void:
 		origin.x,
 		origin.y,
 	])
+	set_current_goal("建造采矿机覆盖铁矿和铜矿，再放置基础加工厂")
+	set_guidance_hint("在铁矿和铜矿矿点上建造采矿机，然后建造基础加工厂。")
+	if hud and hud.has_method("show_bottom_prompt"):
+		hud.call("show_bottom_prompt", "主基地已部署。下一步：在矿点上建造采矿机。", 3.2, &"success")
 
 func _refresh_build_options() -> void:
 	if hud and hud.has_method("set_building_options"):
@@ -1184,6 +1315,7 @@ func _on_enemy_nest_destroyed(nest: Node) -> void:
 		})
 	if hud and hud.has_method("show_victory_summary"):
 		hud.call("show_victory_summary", _build_victory_summary(nest))
+	_play_audio_cue(&"enemy_nest_destroyed")
 	push_debug_event("胜利：敌巢已摧毁")
 	_refresh_campaign_hud()
 
@@ -1437,6 +1569,8 @@ func _record_robot_produced(forge: Node, robot: Node, blueprint: UnitBlueprint) 
 			"has_rally_point": bool(forge.get("has_rally_point")),
 		})
 	push_debug_event("锻造完成：%s -> %s" % [blueprint.display_name, robot.name])
+	if hud and hud.has_method("show_bottom_prompt") and bool(forge.get("has_rally_point")):
+		hud.call("show_bottom_prompt", "机器人已出厂，将前往锻造厂集结点。", 1.8, &"info")
 
 func _on_blueprint_library_requested() -> void:
 	_refresh_blueprint_library_ui()
@@ -1509,6 +1643,7 @@ func _on_robot_lost_for_blueprint_cleanup(robot: Node, reason: StringName) -> vo
 			"blueprint_version": int(robot.get("blueprint_version")),
 			"reason": String(reason),
 		})
+		_maybe_show_stage12_soft_failure_hint()
 	call_deferred("_prune_blueprint_snapshots")
 
 func _get_blueprint_rule_summaries(blueprint: UnitBlueprint) -> Array[Dictionary]:
@@ -1545,6 +1680,54 @@ func _on_building_destroyed(building: Node, reason: StringName) -> void:
 			"team": String(building.get("team")),
 			"reason": String(reason),
 		})
+
+func _advance_stage12_guidance_after_build(building_def: BuildingDef, _building: Node) -> void:
+	if building_def == null or hud == null:
+		return
+	if _is_main_base_def(building_def):
+		return
+	if _is_miner_def(building_def):
+		set_current_goal("保持铁矿和铜矿采集，建造基础加工厂生产铁板和铜线")
+		set_guidance_hint("继续补齐矿点；下一步建造基础加工厂，用铁矿和铜矿加工铁板、铜线。")
+		if hud.has_method("show_bottom_prompt"):
+			hud.call("show_bottom_prompt", "采矿机开始工作。继续补齐矿点，并建造基础加工厂。", 2.8, &"info")
+	elif _is_processor_def(building_def):
+		set_current_goal("选择加工配方，生产铁板和铜线；材料足够后建造机器人锻造厂")
+		set_guidance_hint("点开基础加工厂选择配方；材料足够后，在底部建造栏建造机器人锻造厂。")
+		if hud.has_method("show_bottom_prompt"):
+			hud.call("show_bottom_prompt", "点开基础加工厂选择配方。补足铁板和铜线后，在底部建造栏建造机器人锻造厂并开始生产机器人。", 4.2, &"info")
+	elif _is_robot_forge_def(building_def):
+		set_current_goal("为锻造厂设置集结点，选择集结后进攻蓝图并摧毁远处敌巢")
+		set_guidance_hint("点开锻造厂设置集结点，并在锻造厂面板中选择集结后进攻蓝图。")
+		if hud.has_method("show_bottom_prompt"):
+			hud.call("show_bottom_prompt", "锻造厂会持续生产机器人。建议先设置集结点，再绑定集结后进攻蓝图。", 3.4, &"info")
+	elif _is_research_terminal_def(building_def):
+		set_current_goal("在科技菜单选择阶段 1 科技，并等待研究终端完成")
+		set_guidance_hint("打开右下角科技菜单，选择可研究的阶段 1 科技。")
+		if hud.has_method("show_bottom_prompt"):
+			hud.call("show_bottom_prompt", "研究终端已就绪。打开右下角科技菜单开始研究。", 3.0, &"success")
+
+func _maybe_show_stage12_soft_failure_hint() -> void:
+	if _stage12_soft_failure_shown:
+		return
+	if campaign_state and not campaign_state.defeated_nests.is_empty():
+		return
+	var event_log := get_node_or_null("/root/CombatEventLog")
+	if event_log == null or not event_log.has_method("count_events"):
+		return
+	var lost_count := int(event_log.call("count_events", "robot_lost", 0.0))
+	if lost_count < 3:
+		return
+	_stage12_soft_failure_shown = true
+	_play_audio_cue(&"soft_failure")
+	set_current_goal("零散进攻损失较高：复制或选择集结后进攻蓝图，再组织小队推进")
+	if hud and hud.has_method("show_bottom_prompt"):
+		hud.call("show_bottom_prompt", "零散进攻正在损失机器人。尝试在蓝图中使用“集结后进攻”，等小队成形后再推进。", 5.0, &"warning")
+
+func _play_audio_cue(cue_id: StringName, volume_scale: float = 1.0) -> void:
+	var audio_manager := get_node_or_null("/root/AudioManager")
+	if audio_manager and audio_manager.has_method("play_cue"):
+		audio_manager.call("play_cue", cue_id, volume_scale)
 
 func _prune_blueprint_snapshots() -> void:
 	if blueprint_library == null:

@@ -33,6 +33,8 @@ var _alive_label: Label = null
 var _rally_label: Label = null
 var _blueprint_parts_row: HBoxContainer = null
 var _cost_list: VBoxContainer = null
+var _forge_blueprint_button: Button = null
+var _guidance_forge_blueprint_picker: bool = false
 
 func _init() -> void:
 	name = "BuildingOperationPanel"
@@ -115,6 +117,10 @@ func hide_panel() -> void:
 	_miner = null
 	_forge = null
 	_blueprints.clear()
+
+func set_guidance_highlights(highlights: Dictionary) -> void:
+	_guidance_forge_blueprint_picker = bool(highlights.get("forge_blueprint_picker", false))
+	_apply_guidance_button_style(_forge_blueprint_button, _guidance_forge_blueprint_picker)
 
 func _rebuild_processor_panel(processor: Node, recipes: Array[RecipeDef]) -> void:
 	_clear_content()
@@ -245,13 +251,14 @@ func _rebuild_forge_panel(forge: Node) -> void:
 	rally_button.custom_minimum_size = Vector2(112, 30)
 	rally_button.pressed.connect(_on_forge_rally_button_pressed.bind(forge), CONNECT_DEFERRED)
 	action_row.add_child(rally_button)
-	var blueprint_button := Button.new()
-	blueprint_button.text = "选择蓝图"
-	blueprint_button.icon = _load_ui_icon(BLUEPRINT_MENU_ICON_PATH)
-	blueprint_button.expand_icon = true
-	blueprint_button.custom_minimum_size = Vector2(96, 30)
-	blueprint_button.pressed.connect(_on_forge_blueprint_picker_pressed.bind(forge), CONNECT_DEFERRED)
-	action_row.add_child(blueprint_button)
+	_forge_blueprint_button = Button.new()
+	_forge_blueprint_button.text = "选择蓝图"
+	_forge_blueprint_button.icon = _load_ui_icon(BLUEPRINT_MENU_ICON_PATH)
+	_forge_blueprint_button.expand_icon = true
+	_forge_blueprint_button.custom_minimum_size = Vector2(96, 30)
+	_forge_blueprint_button.pressed.connect(_on_forge_blueprint_picker_pressed.bind(forge), CONNECT_DEFERRED)
+	_apply_guidance_button_style(_forge_blueprint_button, _guidance_forge_blueprint_picker)
+	action_row.add_child(_forge_blueprint_button)
 	_list.add_child(action_row)
 	size = get_combined_minimum_size()
 
@@ -401,6 +408,7 @@ func _clear_content() -> void:
 	_rally_label = null
 	_blueprint_parts_row = null
 	_cost_list = null
+	_forge_blueprint_button = null
 
 func _position_panel(screen_position: Vector2) -> void:
 	var popup_offset := Vector2(24, -16)
@@ -425,6 +433,44 @@ func _make_panel_style() -> StyleBoxFlat:
 	style.corner_radius_top_right = 6
 	style.corner_radius_bottom_right = 6
 	style.corner_radius_bottom_left = 6
+	return style
+
+func _apply_guidance_button_style(button: Button, active: bool) -> void:
+	if button == null or not is_instance_valid(button):
+		return
+	var states := ["normal", "hover", "pressed", "focus", "disabled"]
+	if active:
+		for state in states:
+			button.add_theme_stylebox_override(state, _make_guidance_button_style(state))
+		button.add_theme_color_override("font_color", Color(1.0, 0.95, 0.70, 1.0))
+		button.add_theme_color_override("font_hover_color", Color(1.0, 0.98, 0.78, 1.0))
+		button.add_theme_color_override("font_pressed_color", Color(1.0, 0.88, 0.50, 1.0))
+	else:
+		for state in states:
+			button.remove_theme_stylebox_override(state)
+		button.remove_theme_color_override("font_color")
+		button.remove_theme_color_override("font_hover_color")
+		button.remove_theme_color_override("font_pressed_color")
+
+func _make_guidance_button_style(state: String) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	var is_hover := state == "hover" or state == "pressed" or state == "focus"
+	style.bg_color = Color(0.14, 0.11, 0.04, 0.90) if not is_hover else Color(0.22, 0.17, 0.06, 0.96)
+	if state == "disabled":
+		style.bg_color = Color(0.10, 0.09, 0.06, 0.62)
+	style.border_color = Color(1.0, 0.82, 0.18, 0.98)
+	style.border_width_left = 2
+	style.border_width_top = 2
+	style.border_width_right = 2
+	style.border_width_bottom = 2
+	style.corner_radius_top_left = 4
+	style.corner_radius_top_right = 4
+	style.corner_radius_bottom_right = 4
+	style.corner_radius_bottom_left = 4
+	style.content_margin_left = 8
+	style.content_margin_right = 8
+	style.content_margin_top = 5
+	style.content_margin_bottom = 5
 	return style
 
 func _make_label(text: String, color: Color, font_size: int) -> Label:

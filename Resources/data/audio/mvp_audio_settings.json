@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "description": "Stage 12 runtime audio defaults. Values are 0.0-1.0 and only need to work during the current run for now.",
+  "master_volume": 0.85,
+  "music_volume": 0.30,
+  "sfx_volume": 0.75,
+  "music_enabled": true,
+  "sfx_enabled": true,
+  "music_path": "res://Resources/audio/music/tensefutureloop.ogg",
+  "music_source": {
+    "title": "Tense Future Loop",
+    "pack": "",
+    "author": "gmason",
+    "license": "CC0",
+    "source_url": "https://opengameart.org/content/tense-future-loop"
+  }
+}

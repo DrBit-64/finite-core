@@ -70,6 +70,7 @@ func _make_source_payload(owner_team: String) -> Dictionary:
 	return {
 		"team": owner_team,
 		"robot_id": str(source_unit.name),
+		"weapon_id": String(source_unit.get("weapon_audio_id")) if source_unit.get("weapon_audio_id") != null else "default",
 		"blueprint_id": String(source_unit.get("blueprint_id")) if source_unit.get("blueprint_id") != null else "",
 		"blueprint_version": int(source_unit.get("blueprint_version")) if source_unit.get("blueprint_version") != null else 0,
 		"blueprint_snapshot_id": String(source_unit.get("blueprint_snapshot_id")) if source_unit.get("blueprint_snapshot_id") != null else "",

@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "description": "First-pass synthesized Stage 12 sound cue map.",
+  "weapon_hit_cues": {
+    "rifle_module": "rifle_hit",
+    "default": "unit_hit"
+  },
+  "cues": {
+    "ui_click": {
+      "path": "res://Resources/audio/sfx/ui_click.wav",
+      "volume": 0.55,
+      "cooldown_seconds": 0.025
+    },
+    "build_success": {
+      "path": "res://Resources/audio/sfx/build_success.wav",
+      "volume": 0.82,
+      "cooldown_seconds": 0.08
+    },
+    "build_failed": {
+      "path": "res://Resources/audio/sfx/build_failed.wav",
+      "volume": 0.78,
+      "cooldown_seconds": 0.12
+    },
+    "robot_produced": {
+      "path": "res://Resources/audio/sfx/robot_produced.wav",
+      "volume": 0.76,
+      "cooldown_seconds": 0.12
+    },
+    "rule_triggered_first": {
+      "path": "res://Resources/audio/sfx/rule_triggered_first.wav",
+      "volume": 0.58,
+      "cooldown_seconds": 0.18
+    },
+    "unit_hit": {
+      "path": "res://Resources/audio/sfx/unit_hit.wav",
+      "volume": 0.38,
+      "cooldown_seconds": 0.045
+    },
+    "rifle_hit": {
+      "path": "res://Resources/audio/sfx/rifle_hit.wav",
+      "volume": 0.42,
+      "cooldown_seconds": 0.045
+    },
+    "unit_destroyed": {
+      "path": "res://Resources/audio/sfx/unit_destroyed.wav",
+      "volume": 0.68,
+      "cooldown_seconds": 0.10
+    },
+    "enemy_nest_destroyed": {
+      "path": "res://Resources/audio/sfx/enemy_nest_destroyed.wav",
+      "volume": 0.88,
+      "cooldown_seconds": 0.40
+    },
+    "technology_unlocked": {
+      "path": "res://Resources/audio/sfx/technology_unlocked.wav",
+      "volume": 0.82,
+      "cooldown_seconds": 0.20
+    },
+    "soft_failure": {
+      "path": "res://Resources/audio/sfx/soft_failure.wav",
+      "volume": 0.72,
+      "cooldown_seconds": 0.40
+    }
+  }
+}

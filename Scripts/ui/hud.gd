@@ -62,6 +62,17 @@ var _technology_overlay: PanelContainer = null
 var _technology_list: VBoxContainer = null
 var _pause_overlay: PanelContainer = null
 var _main_menu_overlay: PanelContainer = null
+var _settings_overlay: PanelContainer = null
+var _master_volume_slider: HSlider = null
+var _music_volume_slider: HSlider = null
+var _sfx_volume_slider: HSlider = null
+var _music_enabled_check: CheckBox = null
+var _sfx_enabled_check: CheckBox = null
+var _guidance_building_ids: Array[StringName] = []
+var _guidance_blueprint_button: bool = false
+var _guidance_technology_button: bool = false
+var _guidance_forge_blueprint_picker: bool = false
+var _guidance_highlight_key: String = ""
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -143,6 +154,7 @@ func is_pointer_over_ui(screen_position: Vector2) -> bool:
 		_technology_overlay,
 		_pause_overlay,
 		_main_menu_overlay,
+		_settings_overlay,
 	]
 	for control in controls:
 		if _control_contains_screen_position(control, screen_position):
@@ -203,6 +215,33 @@ func hide_operation_panel() -> void:
 		_building_operation_panel.hide_panel()
 	if _forge_blueprint_picker:
 		_forge_blueprint_picker.visible = false
+
+func set_guidance_highlights(highlights: Dictionary) -> void:
+	var next_building_ids: Array[StringName] = []
+	for building_id in highlights.get("building_ids", []):
+		next_building_ids.append(StringName(str(building_id)))
+	var next_blueprint_button := bool(highlights.get("blueprint_button", false))
+	var next_technology_button := bool(highlights.get("technology_button", false))
+	var next_forge_blueprint_picker := bool(highlights.get("forge_blueprint_picker", false))
+	var next_key := _make_guidance_highlight_key(
+		next_building_ids,
+		next_blueprint_button,
+		next_technology_button,
+		next_forge_blueprint_picker
+	)
+	if next_key == _guidance_highlight_key:
+		return
+	_guidance_highlight_key = next_key
+	_guidance_building_ids = next_building_ids
+	_guidance_blueprint_button = next_blueprint_button
+	_guidance_technology_button = next_technology_button
+	_guidance_forge_blueprint_picker = next_forge_blueprint_picker
+	_refresh_build_buttons()
+	_apply_global_button_guidance()
+	if _building_operation_panel and _building_operation_panel.has_method("set_guidance_highlights"):
+		_building_operation_panel.call("set_guidance_highlights", {
+			"forge_blueprint_picker": _guidance_forge_blueprint_picker,
+		})
 
 func set_resource_amounts(resource_defs: Array[ResourceDef], amounts: Dictionary) -> void:
 	_resource_defs = resource_defs.duplicate()
@@ -279,6 +318,7 @@ func _refresh_build_buttons() -> void:
 		if icon:
 			button.icon = icon
 			button.expand_icon = true
+		_apply_guidance_button_style(button, _guidance_building_ids.has(building_def.id))
 		button.pressed.connect(_on_build_button_pressed.bind(building_def.id))
 		build_button_row.add_child(button)
 
@@ -295,6 +335,7 @@ func _format_build_tooltip(building_def: BuildingDef) -> String:
 	return "%s\n成本：%s" % [building_def.display_name, " / ".join(parts)]
 
 func _on_build_button_pressed(building_id: StringName) -> void:
+	_play_ui_click()
 	build_mode_requested.emit(building_id)
 
 func _ensure_cost_panel() -> void:
@@ -410,6 +451,66 @@ func _make_cost_resource_row(resource_defs: Array[ResourceDef], resource_id: Str
 	row.add_child(_make_cost_label(text, color, 13))
 	return row
 
+func _apply_global_button_guidance() -> void:
+	_apply_guidance_button_style(_blueprint_button, _guidance_blueprint_button)
+	_apply_guidance_button_style(_technology_button, _guidance_technology_button)
+
+func _make_guidance_highlight_key(
+	building_ids: Array[StringName],
+	blueprint_button: bool,
+	technology_button: bool,
+	forge_blueprint_picker: bool
+) -> String:
+	var parts: Array[String] = []
+	for building_id in building_ids:
+		parts.append(String(building_id))
+	parts.sort()
+	return "%s|bp=%s|tech=%s|forge_bp=%s" % [
+		",".join(parts),
+		"1" if blueprint_button else "0",
+		"1" if technology_button else "0",
+		"1" if forge_blueprint_picker else "0",
+	]
+
+func _apply_guidance_button_style(button: Button, active: bool) -> void:
+	if button == null or not is_instance_valid(button):
+		return
+	var states := ["normal", "hover", "pressed", "focus", "disabled"]
+	if active:
+		for state in states:
+			button.add_theme_stylebox_override(state, _make_guidance_button_style(state))
+		button.add_theme_color_override("font_color", Color(1.0, 0.95, 0.70, 1.0))
+		button.add_theme_color_override("font_hover_color", Color(1.0, 0.98, 0.78, 1.0))
+		button.add_theme_color_override("font_pressed_color", Color(1.0, 0.88, 0.50, 1.0))
+	else:
+		for state in states:
+			button.remove_theme_stylebox_override(state)
+		button.remove_theme_color_override("font_color")
+		button.remove_theme_color_override("font_hover_color")
+		button.remove_theme_color_override("font_pressed_color")
+
+func _make_guidance_button_style(state: String) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	var is_hover := state == "hover" or state == "pressed" or state == "focus"
+	var is_disabled := state == "disabled"
+	style.bg_color = Color(0.12, 0.10, 0.04, 0.88) if not is_hover else Color(0.20, 0.16, 0.06, 0.94)
+	if is_disabled:
+		style.bg_color = Color(0.10, 0.09, 0.06, 0.62)
+	style.border_color = Color(1.0, 0.82, 0.18, 0.98)
+	style.border_width_left = 2
+	style.border_width_top = 2
+	style.border_width_right = 2
+	style.border_width_bottom = 2
+	style.corner_radius_top_left = 4
+	style.corner_radius_top_right = 4
+	style.corner_radius_bottom_right = 4
+	style.corner_radius_bottom_left = 4
+	style.content_margin_left = 8
+	style.content_margin_right = 8
+	style.content_margin_top = 5
+	style.content_margin_bottom = 5
+	return style
+
 func _get_resource_display_name(resource_defs: Array[ResourceDef], resource_id: StringName) -> String:
 	for resource_def in resource_defs:
 		if resource_def.id == resource_id:
@@ -459,6 +560,7 @@ func _ensure_blueprint_button() -> void:
 	_blueprint_button.z_index = 135
 	_blueprint_button.pressed.connect(_on_blueprint_button_pressed)
 	root_control.add_child(_blueprint_button)
+	_apply_global_button_guidance()
 
 func _ensure_statistics_button() -> void:
 	if _statistics_button != null:
@@ -480,6 +582,7 @@ func _ensure_statistics_button() -> void:
 	_statistics_button.z_index = 135
 	_statistics_button.pressed.connect(_on_statistics_button_pressed)
 	root_control.add_child(_statistics_button)
+	_apply_global_button_guidance()
 
 func _ensure_technology_button() -> void:
 	if _technology_button != null:
@@ -501,6 +604,7 @@ func _ensure_technology_button() -> void:
 	_technology_button.z_index = 135
 	_technology_button.pressed.connect(_on_technology_button_pressed)
 	root_control.add_child(_technology_button)
+	_apply_global_button_guidance()
 
 func _ensure_victory_summary_panel() -> void:
 	if _victory_summary_panel != null:
@@ -513,6 +617,7 @@ func _ensure_victory_summary_panel() -> void:
 	root_control.add_child(_victory_summary_panel)
 
 func _on_blueprint_button_pressed() -> void:
+	_play_ui_click()
 	blueprint_library_requested.emit()
 	_ensure_blueprint_overlay()
 	if _combat_report_overlay:
@@ -527,6 +632,7 @@ func _on_blueprint_button_pressed() -> void:
 	_blueprint_overlay.visible = not _blueprint_overlay.visible
 
 func _on_statistics_button_pressed() -> void:
+	_play_ui_click()
 	_ensure_combat_report_overlay()
 	if _blueprint_overlay:
 		_blueprint_overlay.visible = false
@@ -538,6 +644,7 @@ func _on_statistics_button_pressed() -> void:
 		_combat_report_overlay.call("refresh_report")
 
 func _on_technology_button_pressed() -> void:
+	_play_ui_click()
 	_ensure_technology_overlay()
 	if _blueprint_overlay:
 		_blueprint_overlay.visible = false
@@ -639,6 +746,7 @@ func _make_technology_row(technology: Variant) -> Control:
 	button.text = _get_technology_button_text(technology)
 	button.disabled = not _can_press_research(technology)
 	button.pressed.connect(func() -> void:
+		_play_ui_click()
 		technology_research_requested.emit(technology.id)
 	)
 	row.add_child(button)
@@ -717,6 +825,7 @@ func _ensure_pause_overlay() -> void:
 		return
 	_pause_overlay = _make_center_menu_panel("PauseMenu", "Pause", [
 		{"text": "Continue", "callable": Callable(self, "_on_pause_continue_pressed")},
+		{"text": "Settings", "callable": Callable(self, "_on_pause_settings_pressed")},
 		{"text": "Restart", "callable": Callable(self, "_on_pause_restart_pressed")},
 		{"text": "Main Menu", "callable": Callable(self, "_on_pause_main_menu_pressed")},
 	])
@@ -737,29 +846,39 @@ func _ensure_main_menu_overlay() -> void:
 	root_control.add_child(_main_menu_overlay)
 
 func _on_pause_continue_pressed() -> void:
+	_play_ui_click()
 	if _pause_overlay:
 		_pause_overlay.visible = false
 	_set_game_paused(false)
 
+func _on_pause_settings_pressed() -> void:
+	_play_ui_click()
+	_show_settings_overlay()
+
 func _on_pause_restart_pressed() -> void:
+	_play_ui_click()
 	_set_game_paused(false)
 	restart_requested.emit()
 
 func _on_pause_main_menu_pressed() -> void:
+	_play_ui_click()
 	if _pause_overlay:
 		_pause_overlay.visible = false
 	_show_main_menu()
 
 func _on_main_menu_new_game_pressed() -> void:
+	_play_ui_click()
 	_set_game_paused(false)
 	new_game_requested.emit()
 
 func _on_main_menu_continue_pressed() -> void:
+	_play_ui_click()
 	if _main_menu_overlay:
 		_main_menu_overlay.visible = false
 	_set_game_paused(false)
 
 func _on_main_menu_quit_pressed() -> void:
+	_play_ui_click()
 	_set_game_paused(false)
 	get_tree().quit()
 
@@ -803,6 +922,119 @@ func _make_center_menu_panel(panel_name: String, title_text: String, buttons: Ar
 			button.pressed.connect(callback)
 		root.add_child(button)
 	return panel
+
+func _show_settings_overlay() -> void:
+	_ensure_settings_overlay()
+	_sync_settings_controls_from_audio_manager()
+	_settings_overlay.visible = true
+
+func _ensure_settings_overlay() -> void:
+	if _settings_overlay != null:
+		return
+	_settings_overlay = PanelContainer.new()
+	_settings_overlay.name = "SettingsOverlay"
+	_settings_overlay.visible = false
+	_settings_overlay.process_mode = Node.PROCESS_MODE_ALWAYS
+	_settings_overlay.z_index = 240
+	_settings_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	_settings_overlay.anchor_left = 0.5
+	_settings_overlay.anchor_top = 0.5
+	_settings_overlay.anchor_right = 0.5
+	_settings_overlay.anchor_bottom = 0.5
+	_settings_overlay.offset_left = -220
+	_settings_overlay.offset_top = -180
+	_settings_overlay.offset_right = 220
+	_settings_overlay.offset_bottom = 180
+	_settings_overlay.add_theme_stylebox_override("panel", _make_operation_panel_style())
+	root_control.add_child(_settings_overlay)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 18)
+	margin.add_theme_constant_override("margin_top", 16)
+	margin.add_theme_constant_override("margin_right", 18)
+	margin.add_theme_constant_override("margin_bottom", 16)
+	_settings_overlay.add_child(margin)
+
+	var root := VBoxContainer.new()
+	root.add_theme_constant_override("separation", 12)
+	margin.add_child(root)
+
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 10)
+	root.add_child(header)
+	var title := _make_operation_label("音频设置", Color(0.96, 0.98, 1.0, 1.0), 22)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(title)
+	var close_button := Button.new()
+	close_button.text = "关闭"
+	close_button.custom_minimum_size = Vector2(76, 34)
+	close_button.pressed.connect(func() -> void:
+		_play_ui_click()
+		_settings_overlay.visible = false
+	)
+	header.add_child(close_button)
+
+	_master_volume_slider = _add_volume_slider(root, "主音量")
+	_music_volume_slider = _add_volume_slider(root, "音乐音量")
+	_sfx_volume_slider = _add_volume_slider(root, "音效音量")
+	_music_enabled_check = _add_audio_check(root, "启用音乐")
+	_sfx_enabled_check = _add_audio_check(root, "启用音效")
+
+	_master_volume_slider.value_changed.connect(func(_value: float) -> void: _apply_settings_controls_to_audio_manager())
+	_music_volume_slider.value_changed.connect(func(_value: float) -> void: _apply_settings_controls_to_audio_manager())
+	_sfx_volume_slider.value_changed.connect(func(_value: float) -> void: _apply_settings_controls_to_audio_manager())
+	_music_enabled_check.toggled.connect(func(_pressed: bool) -> void: _apply_settings_controls_to_audio_manager())
+	_sfx_enabled_check.toggled.connect(func(_pressed: bool) -> void: _apply_settings_controls_to_audio_manager())
+
+func _add_volume_slider(parent: VBoxContainer, label_text: String) -> HSlider:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	parent.add_child(row)
+	var label := _make_operation_label(label_text, Color(0.86, 0.92, 0.96, 1.0), 14)
+	label.custom_minimum_size = Vector2(84, 0)
+	row.add_child(label)
+	var slider := HSlider.new()
+	slider.min_value = 0.0
+	slider.max_value = 1.0
+	slider.step = 0.01
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(slider)
+	return slider
+
+func _add_audio_check(parent: VBoxContainer, label_text: String) -> CheckBox:
+	var check := CheckBox.new()
+	check.text = label_text
+	check.add_theme_font_size_override("font_size", 14)
+	parent.add_child(check)
+	return check
+
+func _sync_settings_controls_from_audio_manager() -> void:
+	var audio_manager := get_node_or_null("/root/AudioManager")
+	if audio_manager == null or not audio_manager.has_method("get_audio_settings"):
+		return
+	var settings: Dictionary = audio_manager.call("get_audio_settings")
+	_master_volume_slider.value = float(settings.get("master_volume", 0.85))
+	_music_volume_slider.value = float(settings.get("music_volume", 0.32))
+	_sfx_volume_slider.value = float(settings.get("sfx_volume", 0.75))
+	_music_enabled_check.button_pressed = bool(settings.get("music_enabled", true))
+	_sfx_enabled_check.button_pressed = bool(settings.get("sfx_enabled", true))
+
+func _apply_settings_controls_to_audio_manager() -> void:
+	var audio_manager := get_node_or_null("/root/AudioManager")
+	if audio_manager == null or not audio_manager.has_method("set_audio_settings"):
+		return
+	audio_manager.call("set_audio_settings", {
+		"master_volume": _master_volume_slider.value,
+		"music_volume": _music_volume_slider.value,
+		"sfx_volume": _sfx_volume_slider.value,
+		"music_enabled": _music_enabled_check.button_pressed,
+		"sfx_enabled": _sfx_enabled_check.button_pressed,
+	})
+
+func _play_ui_click() -> void:
+	var audio_manager := get_node_or_null("/root/AudioManager")
+	if audio_manager and audio_manager.has_method("play_ui_click"):
+		audio_manager.call("play_ui_click")
 
 func _ensure_combat_report_overlay() -> void:
 	if _combat_report_overlay != null:
@@ -1015,6 +1247,9 @@ func _ensure_operation_panel() -> void:
 	_building_operation_panel.forge_blueprint_picker_requested.connect(_on_operation_forge_blueprint_picker_requested)
 	_building_operation_panel.technology_panel_requested.connect(_on_operation_technology_panel_requested)
 	root_control.add_child(_building_operation_panel)
+	_building_operation_panel.call("set_guidance_highlights", {
+		"forge_blueprint_picker": _guidance_forge_blueprint_picker,
+	})
 
 func _on_operation_processor_recipe_selected(processor: Node, recipe_id: StringName) -> void:
 	processor_recipe_selected.emit(processor, recipe_id)

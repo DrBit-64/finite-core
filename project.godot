@@ -20,6 +20,7 @@ config/icon="res://icon.svg"
 ObjectPool="*res://Scripts/object_pool.gd"
 CombatEventLog="*res://Scripts/core/combat_event_log.gd"
 IdProvider="*res://Scripts/core/id_provider.gd"
+AudioManager="*res://Scripts/audio/audio_manager.gd"
 
 [display]
 
