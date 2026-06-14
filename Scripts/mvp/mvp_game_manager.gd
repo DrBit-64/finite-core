@@ -30,6 +30,17 @@ const KEY_ITEM_INITIAL_SENSOR_COIL := &"initial_sensor_coil"
 const FOG_REGION_SIZE_CELLS := 4
 const OPERATION_PANEL_REFRESH_INTERVAL := 0.1
 const UNIT_INSPECTOR_REFRESH_INTERVAL := 0.2
+const MINIMAP_SEMANTIC_TAGS := [
+	"water",
+	"pump_candidate",
+	"frontier",
+	"crystal_frontier",
+	"wreckage_frontier",
+	"interference_frontier",
+	"core_frontier",
+	"gate",
+	"risk_bypass",
+]
 
 @export var stage_label: String = "试玩目标"
 @export var current_goal: String = "建造锻造厂，设置集结点并摧毁远处敌巢"
@@ -90,6 +101,16 @@ var playtest_hud_refresh_seconds: float = 0.0
 var research_terminals: Array[Node] = []
 var map_region_states: Dictionary = {}
 var map_region_signal_cells: Dictionary = {}
+var map_region_definitions: Array = []
+var map_region_blocks: Dictionary = {}
+var map_region_routes: Array = []
+var map_region_connections: Array = []
+var map_water_bodies: Array = []
+var map_frontline_supply_points: Array = []
+var map_painted_region_cells_cache: Array = []
+var map_semantic_cells_by_tag_cache: Dictionary = {}
+var map_minimap_static_snapshot: Dictionary = {}
+var map_static_cache_version: int = 0
 var _stage12_soft_failure_shown: bool = false
 
 func _ready() -> void:
@@ -320,10 +341,13 @@ func _configure_hud() -> void:
 func _setup_stage_two_world() -> void:
 	if grid_map == null:
 		return
+	var map_config := MapConfigLoaderScript.load_map_config(map_config_path)
+	_configure_grid_map_from_config(map_config)
 	grid_occupancy.configure(grid_map.get("map_size_cells"))
 	_create_selection_marker()
 	_create_hover_marker()
-	_load_fixed_map()
+	_load_fixed_map(map_config)
+	_apply_camera_start_from_config(map_config)
 
 func _log_startup_status() -> void:
 	push_debug_event("MVP GameManager 已加载")
@@ -535,6 +559,17 @@ func get_campaign_save_snapshot() -> Dictionary:
 		"runtime_profile_path": runtime_profile_path,
 	}
 
+func get_region_info_for_cell(cell: Vector2i) -> Dictionary:
+	if grid_map and grid_map.has_method("get_area_info_for_cell"):
+		return _merge_region_metadata(grid_map.call("get_area_info_for_cell", cell))
+	if grid_map and grid_map.has_method("get_painted_region_info"):
+		return _merge_region_metadata(grid_map.call("get_painted_region_info", cell))
+	return {}
+
+func get_region_state_for_cell(cell: Vector2i) -> String:
+	var region := _region_for_cell(cell, FOG_REGION_SIZE_CELLS)
+	return str(map_region_states.get(_region_key(region), "unknown"))
+
 func _on_build_mode_requested(building_id: StringName) -> void:
 	var building_def := _find_building_def(building_id)
 	if building_def == null:
@@ -661,7 +696,7 @@ func _select_map_cell_under_mouse() -> void:
 		_clear_world_unit_selection()
 		_show_selection_for_cell(cell)
 		if hud and hud.has_method("inspect_cell"):
-			hud.call("inspect_cell", cell)
+			hud.call("inspect_cell", cell, get_region_info_for_cell(cell), get_region_state_for_cell(cell))
 		_hide_operation_panel()
 
 func _spawn_building(building_def: BuildingDef, origin: Vector2i, is_main_base: bool) -> Node:
@@ -688,6 +723,8 @@ func _get_place_block_reason(building_def: BuildingDef, origin: Vector2i) -> Str
 		return "地图未就绪"
 	if not bool(grid_map.call("is_rect_in_bounds", origin, building_def.grid_size)):
 		return "超出地图边界"
+	if grid_map.has_method("is_rect_blocked_by_semantic_tile") and bool(grid_map.call("is_rect_blocked_by_semantic_tile", origin, building_def.grid_size)):
+		return "地形阻挡"
 	if not grid_occupancy.can_place(origin, building_def.grid_size):
 		return "格子已被占用"
 	var resource_node := _get_resource_node_at(origin)
@@ -820,6 +857,221 @@ func _refresh_playtest_hud() -> void:
 		hud.call("set_objective_direction", _get_objective_direction_text())
 	if hud.has_method("set_guidance_highlights"):
 		hud.call("set_guidance_highlights", _get_guidance_highlights())
+	if hud.has_method("set_minimap_snapshot"):
+		hud.call("set_minimap_snapshot", _build_minimap_snapshot())
+
+func _build_minimap_snapshot() -> Dictionary:
+	if grid_map == null:
+		return {}
+	var map_size: Vector2i = grid_map.get("map_size_cells")
+	var snapshot := map_minimap_static_snapshot.duplicate(false)
+	if snapshot.is_empty():
+		snapshot = _build_minimap_static_snapshot(map_size)
+	snapshot["resources"] = _get_minimap_resource_nodes()
+	snapshot["enemy_nests"] = _get_minimap_enemy_nests()
+	snapshot["main_base"] = _get_minimap_main_base()
+	snapshot["supply_points"] = _get_minimap_supply_points()
+	snapshot["region_signals"] = _get_minimap_region_signals()
+	snapshot["water_flow_target_cell"] = _get_minimap_water_flow_target_cell()
+	snapshot["camera_cell"] = _get_minimap_camera_cell()
+	snapshot["viewport_rect"] = _get_minimap_viewport_rect()
+	return snapshot
+
+func _build_minimap_static_snapshot(map_size: Vector2i) -> Dictionary:
+	return {
+		"map_size": [map_size.x, map_size.y],
+		"static_version": map_static_cache_version,
+		"regions": map_region_definitions,
+		"region_cells": _get_minimap_region_cells(),
+		"region_connections": map_region_connections,
+		"water_bodies": map_water_bodies,
+		"water_cells": _get_minimap_semantic_cells("water"),
+		"pump_candidate_cells": _get_minimap_semantic_cells("pump_candidate"),
+		"frontier_cells": _get_minimap_semantic_cells("frontier"),
+		"frontier_cell_groups": _get_minimap_frontier_cell_groups(),
+		"gate_cells": _get_minimap_semantic_cells("gate"),
+		"risk_bypass_cells": _get_minimap_semantic_cells("risk_bypass"),
+	}
+
+func _get_minimap_region_cells() -> Array:
+	var result: Array = []
+	for cell_value in map_painted_region_cells_cache:
+		if typeof(cell_value) != TYPE_DICTIONARY:
+			continue
+		var region_cell: Dictionary = cell_value
+		var cell: Vector2i = region_cell.get("cell", Vector2i.ZERO)
+		result.append({
+			"cell": [cell.x, cell.y],
+			"region_id": str(region_cell.get("region_id", "")),
+			"display_name": str(region_cell.get("display_name", "")),
+			"minimap_color": region_cell.get("minimap_color", []),
+		})
+	return result
+
+func _get_minimap_semantic_cells(tag: String) -> Array:
+	var result: Array = []
+	var seen := {}
+	for cell_value in map_semantic_cells_by_tag_cache.get(tag, []):
+		var cell: Vector2i = cell_value
+		var key := _region_key(cell)
+		if seen.has(key):
+			continue
+		seen[key] = true
+		result.append([cell.x, cell.y])
+	return result
+
+func _get_minimap_frontier_cell_groups() -> Dictionary:
+	var result := {}
+	for tag in ["crystal_frontier", "wreckage_frontier", "interference_frontier", "core_frontier"]:
+		result[tag] = _get_minimap_semantic_cells(tag)
+	return result
+
+func _get_minimap_region_signals() -> Array:
+	var result: Array = []
+	for centers_value in map_region_signal_cells.values():
+		if typeof(centers_value) != TYPE_ARRAY:
+			continue
+		var centers: Array = centers_value
+		for signal_value in centers:
+			if typeof(signal_value) != TYPE_DICTIONARY:
+				continue
+			var signal_info: Dictionary = signal_value
+			var cell := _vector2_from_variant(signal_info.get("cell", Vector2.ZERO))
+			result.append({
+				"cell": [cell.x, cell.y],
+				"signal_type": str(signal_info.get("signal_type", "unknown")),
+			})
+	return result
+
+func _get_minimap_resource_nodes() -> Array:
+	var result: Array = []
+	for node in resource_nodes_by_id.values():
+		if node == null or not is_instance_valid(node):
+			continue
+		var origin: Vector2i = node.get("grid_origin")
+		result.append({
+			"id": String(node.get("node_id")),
+			"resource_id": String(node.get("resource_id")),
+			"cell": [origin.x, origin.y],
+			"discovered": _is_cell_discovered(origin),
+		})
+	return result
+
+func _get_minimap_enemy_nests() -> Array:
+	var result: Array = []
+	for nest in enemy_nests_by_id.values():
+		if nest == null or not is_instance_valid(nest):
+			continue
+		var origin: Vector2i = nest.get("grid_origin")
+		var size: Vector2i = nest.get("grid_size")
+		result.append({
+			"id": String(nest.name),
+			"origin": [origin.x, origin.y],
+			"size": [size.x, size.y],
+			"discovered": _is_cell_discovered(origin),
+		})
+	return result
+
+func _get_minimap_main_base() -> Dictionary:
+	if main_base == null or not is_instance_valid(main_base):
+		return {}
+	var origin: Vector2i = main_base.get("grid_origin")
+	var size: Vector2i = main_base.get("grid_size")
+	return {
+		"origin": [origin.x, origin.y],
+		"size": [size.x, size.y],
+	}
+
+func _get_minimap_supply_points() -> Array:
+	var result: Array = []
+	for point_value in map_frontline_supply_points:
+		if typeof(point_value) != TYPE_DICTIONARY:
+			continue
+		var point: Dictionary = point_value
+		var cell := MapConfigLoaderScript.get_vector2i(point, "grid_origin", MapConfigLoaderScript.get_vector2i(point, "cell", Vector2i.ZERO))
+		result.append({
+			"id": str(point.get("id", "frontline_supply")),
+			"cell": [cell.x, cell.y],
+			"discovered": _is_cell_discovered(cell),
+			"source": "map_config",
+		})
+	var building_layer := _get_layer("BuildingLayer")
+	if building_layer == null:
+		return result
+	for child in building_layer.get_children():
+		if child == null or not is_instance_valid(child):
+			continue
+		var building_def: BuildingDef = child.get("building_def")
+		var building_id := ""
+		if building_def != null:
+			building_id = String(building_def.id)
+		if not child.is_in_group("frontline_supply") and not building_id.contains("supply"):
+			continue
+		var origin: Vector2i = child.get("grid_origin")
+		result.append({
+			"id": String(child.name),
+			"cell": [origin.x, origin.y],
+			"discovered": _is_cell_discovered(origin),
+			"source": "building",
+		})
+	return result
+
+func _get_discovered_water_bodies() -> Array:
+	var result: Array = []
+	for water_value in map_water_bodies:
+		if typeof(water_value) != TYPE_DICTIONARY:
+			continue
+		var water: Dictionary = water_value
+		if _is_water_body_discovered(water):
+			result.append(water.duplicate(true))
+	return result
+
+func _is_water_body_discovered(water: Dictionary) -> bool:
+	for cell_value in water.get("pump_candidate_cells", []):
+		if _is_cell_discovered(MapConfigLoaderScript.get_vector2i({"cell": cell_value}, "cell")):
+			return true
+	for rect_value in water.get("grid_rects", []):
+		if typeof(rect_value) != TYPE_ARRAY or rect_value.size() < 4:
+			continue
+		var sample := Vector2i(int(rect_value[0]) + int(rect_value[2]) / 2, int(rect_value[1]) + int(rect_value[3]) / 2)
+		if _is_cell_discovered(sample):
+			return true
+	return false
+
+func _get_minimap_water_flow_target_cell() -> Array:
+	if main_base == null or not is_instance_valid(main_base):
+		return [-1, -1]
+	var origin: Vector2i = main_base.get("grid_origin")
+	var size: Vector2i = main_base.get("grid_size")
+	var center := origin + Vector2i(size.x / 2, size.y / 2)
+	return [center.x, center.y]
+
+func _get_minimap_camera_cell() -> Array:
+	if main_camera == null or grid_map == null:
+		return [-1, -1]
+	var cell: Vector2i = grid_map.call("world_to_grid", main_camera.global_position)
+	return [cell.x, cell.y]
+
+func _get_minimap_viewport_rect() -> Dictionary:
+	if main_camera == null or grid_map == null:
+		return {}
+	var cell_size := float(_get_grid_cell_size())
+	var viewport_size := get_viewport_rect().size
+	var zoom := main_camera.zoom
+	var half_view_world := Vector2(
+		viewport_size.x / maxf(zoom.x * 2.0, 0.001),
+		viewport_size.y / maxf(zoom.y * 2.0, 0.001)
+	)
+	var top_left_world := main_camera.global_position - half_view_world
+	var view_size_world := half_view_world * 2.0
+	return {
+		"position": [top_left_world.x / cell_size, top_left_world.y / cell_size],
+		"size": [view_size_world.x / cell_size, view_size_world.y / cell_size],
+	}
+
+func _is_cell_discovered(cell: Vector2i) -> bool:
+	var state := get_region_state_for_cell(cell)
+	return state == "scanned" or state == "visible" or state == "controlled" or state == "signal"
 
 func _get_guidance_highlights() -> Dictionary:
 	var building_ids: Array[StringName] = []
@@ -1107,8 +1359,29 @@ func _get_building_scene(building_def: BuildingDef, is_main_base: bool) -> Packe
 		return ResearchTerminalScene
 	return BaseBuildingScene
 
-func _load_fixed_map() -> void:
-	var map_config := MapConfigLoaderScript.load_map_config(map_config_path)
+func _configure_grid_map_from_config(map_config: Dictionary) -> void:
+	if grid_map == null:
+		return
+	var current_size: Vector2i = grid_map.get("map_size_cells")
+	var map_size := MapConfigLoaderScript.get_vector2i(map_config, "map_size", current_size)
+	var next_cell_size := int(map_config.get("cell_size", int(grid_map.get("cell_size"))))
+	if grid_map.has_method("configure"):
+		grid_map.call("configure", map_size, next_cell_size)
+	else:
+		grid_map.set("map_size_cells", map_size)
+		grid_map.set("cell_size", next_cell_size)
+
+func _apply_camera_start_from_config(map_config: Dictionary) -> void:
+	if main_camera == null or grid_map == null:
+		return
+	var camera_start_cell := MapConfigLoaderScript.get_vector2i(map_config, "camera_start_cell", Vector2i(-1, -1))
+	if camera_start_cell.x >= 0 and camera_start_cell.y >= 0 and grid_map.has_method("grid_to_world"):
+		main_camera.global_position = grid_map.call("grid_to_world", camera_start_cell)
+		_clamp_camera_to_map_bounds()
+
+func _load_fixed_map(map_config: Dictionary = {}) -> void:
+	if map_config.is_empty():
+		map_config = MapConfigLoaderScript.load_map_config(map_config_path)
 	var resource_items: Array = map_config.get("resource_nodes", [])
 	for item in resource_items:
 		if typeof(item) != TYPE_DICTIONARY:
@@ -1124,7 +1397,7 @@ func _load_fixed_map() -> void:
 		if typeof(item) != TYPE_DICTIONARY:
 			continue
 		_spawn_enemy_nest(item)
-	_initialize_region_fog()
+	_initialize_region_fog(map_config)
 
 func _spawn_resource_node(data: Dictionary) -> void:
 	var resource_id := StringName(str(data.get("resource_id", "")))
@@ -1180,17 +1453,25 @@ func _spawn_enemy_nest(data: Dictionary) -> void:
 	nest.call_deferred("spawn_initial_guards")
 	push_debug_event("敌巢已生成：%s @ %s, %s，距离起始矿区较远" % [nest.call("get_display_name"), origin.x, origin.y])
 
-func _initialize_region_fog() -> void:
+func _initialize_region_fog(map_config: Dictionary = {}) -> void:
 	if grid_map == null:
 		return
 	map_region_states.clear()
 	map_region_signal_cells.clear()
+	map_region_definitions = map_config.get("regions", []).duplicate(true)
+	map_region_routes = map_config.get("region_routes", []).duplicate(true)
+	map_region_connections = map_config.get("region_connections", []).duplicate(true)
+	map_water_bodies = map_config.get("water_bodies", []).duplicate(true)
+	map_frontline_supply_points = map_config.get("frontline_supply_points", []).duplicate(true)
 	var region_size := FOG_REGION_SIZE_CELLS
 	var map_size: Vector2i = grid_map.get("map_size_cells")
 	var region_count := Vector2i(ceili(float(map_size.x) / float(region_size)), ceili(float(map_size.y) / float(region_size)))
+	_rebuild_static_map_cache()
 	for x in range(region_count.x):
 		for y in range(region_count.y):
 			map_region_states[_region_key(Vector2i(x, y))] = "unknown"
+	map_region_blocks = _build_region_blocks_from_cached_tiles(region_count, region_size)
+	_apply_region_default_discovery_states(region_count)
 	_mark_starting_resource_basin_scanned(region_count, region_size)
 	for nest in enemy_nests_by_id.values():
 		if nest == null or not is_instance_valid(nest):
@@ -1226,6 +1507,106 @@ func _apply_region_fog_to_grid() -> void:
 		if overlay.has_method("set_region_signals"):
 			overlay.call("set_region_signals", map_region_signal_cells)
 
+func _rebuild_static_map_cache() -> void:
+	map_painted_region_cells_cache.clear()
+	map_semantic_cells_by_tag_cache.clear()
+	map_minimap_static_snapshot.clear()
+	if grid_map == null:
+		return
+	if grid_map.has_method("invalidate_semantic_cache"):
+		grid_map.call("invalidate_semantic_cache")
+	if grid_map.has_method("get_painted_region_cells"):
+		for cell_value in grid_map.call("get_painted_region_cells"):
+			if typeof(cell_value) != TYPE_DICTIONARY:
+				continue
+			var painted_cell: Dictionary = cell_value
+			map_painted_region_cells_cache.append(_merge_region_metadata(painted_cell))
+	if grid_map.has_method("get_semantic_cells_by_tags"):
+		var batched: Dictionary = grid_map.call("get_semantic_cells_by_tags", MINIMAP_SEMANTIC_TAGS)
+		for tag in MINIMAP_SEMANTIC_TAGS:
+			map_semantic_cells_by_tag_cache[tag] = batched.get(tag, [])
+	elif grid_map.has_method("get_semantic_cells_by_tag"):
+		for tag in MINIMAP_SEMANTIC_TAGS:
+			map_semantic_cells_by_tag_cache[tag] = grid_map.call("get_semantic_cells_by_tag", tag)
+	var map_size: Vector2i = grid_map.get("map_size_cells")
+	map_static_cache_version += 1
+	map_minimap_static_snapshot = _build_minimap_static_snapshot(map_size)
+
+func _build_region_blocks_from_cached_tiles(region_count: Vector2i, region_size: int) -> Dictionary:
+	var block_counts := {}
+	var block_infos := {}
+	for cell_value in map_painted_region_cells_cache:
+		if typeof(cell_value) != TYPE_DICTIONARY:
+			continue
+		var region_info: Dictionary = cell_value
+		var region_id := str(region_info.get("region_id", ""))
+		if region_id.is_empty():
+			continue
+		var cell: Vector2i = region_info.get("cell", Vector2i.ZERO)
+		var region := _region_for_cell(cell, region_size)
+		if region.x < 0 or region.y < 0 or region.x >= region_count.x or region.y >= region_count.y:
+			continue
+		var key := _region_key(region)
+		if not block_counts.has(key):
+			block_counts[key] = {}
+			block_infos[key] = {}
+		var counts: Dictionary = block_counts[key]
+		counts[region_id] = int(counts.get(region_id, 0)) + 1
+		block_counts[key] = counts
+		var infos: Dictionary = block_infos[key]
+		infos[region_id] = region_info
+		block_infos[key] = infos
+	var result := {}
+	for key in block_counts.keys():
+		var counts: Dictionary = block_counts[key]
+		var best_region_id := ""
+		var best_count := -1
+		for region_id_value in counts.keys():
+			var region_id := str(region_id_value)
+			var count := int(counts[region_id_value])
+			if count > best_count:
+				best_count = count
+				best_region_id = region_id
+		if best_region_id.is_empty():
+			continue
+		var infos: Dictionary = block_infos.get(key, {})
+		result[key] = infos.get(best_region_id, {}).duplicate(true)
+	return result
+
+func _merge_region_metadata(region_info: Dictionary) -> Dictionary:
+	if region_info.is_empty():
+		return {}
+	var result := region_info.duplicate(true)
+	var region_id := str(result.get("region_id", ""))
+	if region_id.is_empty():
+		return result
+	for region_value in map_region_definitions:
+		if typeof(region_value) != TYPE_DICTIONARY:
+			continue
+		var region: Dictionary = region_value
+		if str(region.get("region_id", "")) != region_id:
+			continue
+		for key in ["region_type", "display_name", "threat_level", "recommended_stage", "discovery_state", "minimap_color"]:
+			if region.has(key):
+				result[key] = region[key]
+		break
+	return result
+
+func _apply_region_default_discovery_states(region_count: Vector2i) -> void:
+	for region_value in map_region_definitions:
+		if typeof(region_value) != TYPE_DICTIONARY:
+			continue
+		var region: Dictionary = region_value
+		var discovery_state := str(region.get("discovery_state", "unknown"))
+		if discovery_state == "unknown":
+			continue
+		for key in map_region_blocks.keys():
+			var block: Dictionary = map_region_blocks[key]
+			if str(block.get("region_id", "")) != str(region.get("region_id", "")):
+				continue
+			var region_cell := _parse_region_key(str(key))
+			_mark_region_state(region_cell, region_count, discovery_state)
+
 func _mark_starting_resource_basin_scanned(region_count: Vector2i, region_size: int) -> void:
 	if resource_nodes_by_cell.is_empty():
 		for region in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1)]:
@@ -1253,7 +1634,10 @@ func _mark_enemy_nest_signal(nest: Node, region_size: int) -> void:
 	var key := _region_key(nest_region)
 	map_region_states[key] = "signal"
 	var centers: Array = map_region_signal_cells.get(key, [])
-	centers.append(Vector2(origin) + Vector2(size) * 0.5)
+	centers.append({
+		"cell": Vector2(origin) + Vector2(size) * 0.5,
+		"signal_type": "weak_nest",
+	})
 	map_region_signal_cells[key] = centers
 
 func _mark_region_state(region: Vector2i, region_count: Vector2i, state: String) -> void:
@@ -1266,6 +1650,12 @@ func _region_for_cell(cell: Vector2i, region_size: int) -> Vector2i:
 
 func _region_key(region: Vector2i) -> String:
 	return "%d,%d" % [region.x, region.y]
+
+func _parse_region_key(key: String) -> Vector2i:
+	var parts := key.split(",")
+	if parts.size() < 2:
+		return Vector2i.ZERO
+	return Vector2i(int(parts[0]), int(parts[1]))
 
 func _on_enemy_nest_guard_spawn_requested(nest: Node, guard_type: StringName) -> void:
 	if nest == null or not is_instance_valid(nest) or not bool(nest.call("is_alive")):
@@ -1826,6 +2216,22 @@ func _create_or_update_rally_marker(forge: Node, cell: Vector2i) -> void:
 		forge.set("rally_marker", marker)
 	if marker.has_method("setup"):
 		marker.call("setup", cell, _get_grid_cell_size())
+
+func _vector2_from_variant(value: Variant) -> Vector2:
+	match typeof(value):
+		TYPE_VECTOR2:
+			return value
+		TYPE_VECTOR2I:
+			var vector_i: Vector2i = value
+			return Vector2(vector_i)
+		TYPE_ARRAY:
+			var array: Array = value
+			if array.size() >= 2:
+				return Vector2(float(array[0]), float(array[1]))
+		TYPE_DICTIONARY:
+			var dict: Dictionary = value
+			return Vector2(float(dict.get("x", 0.0)), float(dict.get("y", 0.0)))
+	return Vector2.ZERO
 
 func _format_vector2_payload(value: Variant) -> Dictionary:
 	var vector: Vector2 = value

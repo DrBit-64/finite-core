@@ -16,6 +16,7 @@ const BuildingOperationPanelScript := preload("res://Scripts/ui/building_operati
 const BlueprintManagementOverlayScript := preload("res://Scripts/ui/blueprint_management_overlay.gd")
 const CombatReportOverlayScript := preload("res://Scripts/ui/combat_report_overlay.gd")
 const VictorySummaryPanelScript := preload("res://Scripts/ui/victory_summary_panel.gd")
+const MinimapPanelScript := preload("res://Scripts/ui/minimap_panel.gd")
 const BLUEPRINT_MENU_ICON_PATH := "res://Resources/art/ui/blueprint_menu.svg"
 const STATISTICS_MENU_ICON_PATH := "res://Resources/art/ui/statistics_menu.svg"
 const TECHNOLOGY_MENU_ICON_PATH := "res://Resources/art/ui/technology_unlocked.svg"
@@ -63,6 +64,7 @@ var _technology_list: VBoxContainer = null
 var _pause_overlay: PanelContainer = null
 var _main_menu_overlay: PanelContainer = null
 var _settings_overlay: PanelContainer = null
+var _minimap_panel: Control = null
 var _master_volume_slider: HSlider = null
 var _music_volume_slider: HSlider = null
 var _sfx_volume_slider: HSlider = null
@@ -89,6 +91,7 @@ func _ready() -> void:
 	_ensure_blueprint_button()
 	_ensure_statistics_button()
 	_ensure_technology_button()
+	_ensure_minimap_panel()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -119,6 +122,11 @@ func set_objective_direction(text: String) -> void:
 	if objective_direction_label:
 		objective_direction_label.text = text
 
+func set_minimap_snapshot(snapshot: Dictionary) -> void:
+	_ensure_minimap_panel()
+	if _minimap_panel and _minimap_panel.has_method("set_snapshot"):
+		_minimap_panel.call("set_snapshot", snapshot)
+
 func set_bottom_hint(text: String) -> void:
 	if bottom_hint_label:
 		bottom_hint_label.text = text
@@ -127,9 +135,9 @@ func inspect_node(node: Node) -> void:
 	if object_inspector:
 		object_inspector.inspect_node(node)
 
-func inspect_cell(cell: Vector2i) -> void:
+func inspect_cell(cell: Vector2i, region_info: Dictionary = {}, region_state: String = "") -> void:
 	if object_inspector and object_inspector.has_method("inspect_cell"):
-		object_inspector.call("inspect_cell", cell)
+		object_inspector.call("inspect_cell", cell, region_info, region_state)
 
 func push_debug_event(text: String) -> void:
 	if debug_event_panel:
@@ -605,6 +613,21 @@ func _ensure_technology_button() -> void:
 	_technology_button.pressed.connect(_on_technology_button_pressed)
 	root_control.add_child(_technology_button)
 	_apply_global_button_guidance()
+
+func _ensure_minimap_panel() -> void:
+	if _minimap_panel != null:
+		return
+	_minimap_panel = MinimapPanelScript.new()
+	_minimap_panel.anchor_left = 1.0
+	_minimap_panel.anchor_top = 1.0
+	_minimap_panel.anchor_right = 1.0
+	_minimap_panel.anchor_bottom = 1.0
+	_minimap_panel.offset_left = -292.0
+	_minimap_panel.offset_top = -360.0
+	_minimap_panel.offset_right = -24.0
+	_minimap_panel.offset_bottom = -160.0
+	_minimap_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root_control.add_child(_minimap_panel)
 
 func _ensure_victory_summary_panel() -> void:
 	if _victory_summary_panel != null:

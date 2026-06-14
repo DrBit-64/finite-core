@@ -1,43 +1,262 @@
 {
-  "schema_version": 1,
-  "map_id": "mvp_stage3",
-  "map_size": [64, 64],
+  "schema_version": 2,
+  "map_id": "mvp_stage13_world_graybox",
+  "map_size": [128, 128],
+  "cell_size": 64,
+  "camera_start_cell": [60, 60],
+  "region_block_size": 4,
+  "regions": [
+	{
+	  "region_id": "starting_basin",
+	  "region_type": "starting_basin",
+	  "display_name": "起始盆地",
+	  "threat_level": 0,
+	  "recommended_stage": 0,
+	  "discovery_state": "scanned",
+	  "grid_rects": [[44, 44, 34, 34], [52, 38, 18, 8], [54, 78, 16, 8]],
+	  "fill_color": [0.055, 0.075, 0.092, 0.24],
+	  "border_color": [0.24, 0.42, 0.50, 0.0],
+	  "pattern_color": [0.42, 0.58, 0.64, 0.07],
+	  "pattern": "basin",
+	  "visual_outline_cells": [[48, 43], [60, 39], [72, 44], [78, 58], [72, 76], [58, 84], [44, 76], [40, 60]],
+	  "visual_features": [
+		{"type": "basin_scan_ring", "center_cell": [60, 61], "radius_cells": 17},
+		{"type": "basin_scan_ring", "center_cell": [60, 61], "radius_cells": 25}
+	  ],
+	  "resource_tendency": ["iron_ore", "copper_ore"],
+	  "enemy_tendency": ["weak_scavenger_nest"],
+	  "minimap_color": [0.15, 0.28, 0.34, 1.0]
+	},
+	{
+	  "region_id": "crystal_wasteland",
+	  "region_type": "crystal_wasteland",
+	  "display_name": "晶体荒原",
+	  "threat_level": 2,
+	  "recommended_stage": 2,
+	  "discovery_state": "unknown",
+	  "grid_rects": [[78, 36, 38, 50], [72, 50, 10, 20], [100, 86, 16, 12]],
+	  "fill_color": [0.07, 0.18, 0.22, 0.07],
+	  "border_color": [0.30, 0.88, 0.94, 0.0],
+	  "pattern_color": [0.62, 0.92, 1.0, 0.12],
+	  "pattern": "crystal",
+	  "visual_outline_cells": [[74, 44], [86, 34], [104, 36], [118, 48], [116, 78], [106, 94], [88, 92], [74, 70]],
+	  "visual_features": [
+		{"type": "crystal_cluster", "cells": [[86, 48], [94, 58], [108, 70], [102, 88]]},
+		{"type": "asset_stamp", "asset_id": "crystal_cluster_small", "cells": [[86, 62], [101, 86]], "size_cells": [0.92, 1.0], "rotation_degrees": [18, -10], "alpha": 0.28, "tint": [0.70, 0.94, 1.0, 1.0]},
+		{"type": "fracture_line", "path_cells": [[74, 55], [80, 57], [88, 58], [94, 62]]},
+		{"type": "fracture_line", "path_cells": [[86, 90], [94, 92], [104, 90], [112, 84]]},
+		{"type": "scan_noise_band", "grid_rects": [[72, 50, 7, 22], [108, 38, 7, 18]]}
+	  ],
+	  "resource_tendency": ["crystal", "coal", "water"],
+	  "enemy_tendency": ["armored_activity", "high_energy"],
+	  "minimap_color": [0.10, 0.58, 0.66, 1.0]
+	},
+	{
+	  "region_id": "interference_highlands",
+	  "region_type": "interference_highlands",
+	  "display_name": "干扰高地",
+	  "threat_level": 3,
+	  "recommended_stage": 3,
+	  "discovery_state": "unknown",
+	  "grid_rects": [[46, 12, 36, 28], [58, 4, 18, 10], [72, 24, 16, 14]],
+	  "fill_color": [0.13, 0.18, 0.08, 0.18],
+	  "border_color": [0.72, 0.92, 0.36, 0.0],
+	  "pattern_color": [0.68, 1.0, 0.40, 0.10],
+	  "pattern": "interference",
+	  "visual_outline_cells": [[48, 36], [52, 20], [62, 8], [78, 12], [88, 28], [78, 40], [62, 38]],
+	  "visual_features": [
+		{"type": "scan_noise_band", "grid_rects": [[50, 18, 28, 7], [62, 28, 24, 8]]},
+		{"type": "asset_stamp", "asset_id": "interference_tick", "cells": [[56, 18], [66, 24], [76, 30], [82, 22]], "scale": 0.82, "rotation_degrees": [0, -6, 5, -12], "alpha": 0.28, "tint": [0.78, 1.0, 0.44, 1.0]},
+		{"type": "interference_ticks", "cells": [[56, 18], [66, 24], [76, 30], [82, 22]]}
+	  ],
+	  "resource_tendency": ["silica", "signal_material"],
+	  "enemy_tendency": ["jammer_source"],
+	  "minimap_color": [0.52, 0.76, 0.18, 1.0]
+	},
+	{
+	  "region_id": "wreckage_battlefield",
+	  "region_type": "wreckage_battlefield",
+	  "display_name": "残骸战场",
+	  "threat_level": 3,
+	  "recommended_stage": 3,
+	  "discovery_state": "unknown",
+	  "grid_rects": [[10, 42, 32, 38], [0, 54, 12, 20], [22, 80, 20, 14]],
+	  "fill_color": [0.20, 0.13, 0.08, 0.28],
+	  "border_color": [0.86, 0.54, 0.28, 0.16],
+	  "pattern_color": [1.0, 0.68, 0.36, 0.20],
+	  "pattern": "wreckage",
+	  "visual_outline_cells": [[8, 52], [18, 44], [34, 42], [44, 56], [40, 78], [28, 92], [10, 82], [2, 64]],
+	  "visual_features": [
+		{"type": "wreckage_marks", "cells": [[18, 58], [28, 66], [36, 74], [22, 84]]},
+		{"type": "asset_stamp", "asset_id": "wreckage_mark", "cells": [[18, 58], [28, 66], [36, 74], [22, 84]], "scale": 0.86, "rotation_degrees": [12, -18, 6, -8], "alpha": 0.34, "tint": [1.0, 0.66, 0.34, 1.0]},
+		{"type": "hazard_stripes", "grid_rects": [[8, 66, 18, 4], [26, 50, 14, 4]]},
+		{"type": "fracture_line", "path_cells": [[14, 54], [24, 58], [34, 56], [42, 62]]}
+	  ],
+	  "resource_tendency": ["wreckage", "rare_drop"],
+	  "enemy_tendency": ["salvage_guard"],
+	  "minimap_color": [0.72, 0.38, 0.18, 1.0]
+	},
+	{
+	  "region_id": "brain_core_outer",
+	  "region_type": "brain_core_outer",
+	  "display_name": "主脑核心外围",
+	  "threat_level": 4,
+	  "recommended_stage": 4,
+	  "discovery_state": "unknown",
+	  "grid_rects": [[44, 86, 42, 30], [58, 116, 22, 10], [80, 96, 20, 18]],
+	  "fill_color": [0.13, 0.06, 0.22, 0.30],
+	  "border_color": [0.78, 0.38, 1.0, 0.18],
+	  "pattern_color": [0.92, 0.50, 1.0, 0.22],
+	  "pattern": "core",
+	  "visual_outline_cells": [[48, 88], [62, 84], [84, 92], [100, 108], [86, 124], [58, 124], [42, 110]],
+	  "visual_features": [
+		{"type": "core_rings", "center_cell": [72, 106], "radius_cells": 8},
+		{"type": "core_rings", "center_cell": [84, 112], "radius_cells": 5},
+		{"type": "asset_stamp", "asset_id": "core_ring_mark", "cells": [[72, 106], [84, 112]], "scale": 1.1, "rotation_degrees": [0, 18], "alpha": 0.34, "tint": [0.84, 0.48, 1.0, 1.0]},
+		{"type": "hazard_stripes", "grid_rects": [[52, 94, 18, 4], [78, 116, 16, 4]]}
+	  ],
+	  "resource_tendency": ["antimatter", "ultimate_material"],
+	  "enemy_tendency": ["brain_core"],
+	  "minimap_color": [0.58, 0.22, 0.82, 1.0]
+	}
+  ],
+  "region_routes": [
+	{
+	  "id": "basin_to_crystal_main",
+	  "route_type": "main",
+	  "display_name": "晶体荒原主入口",
+	  "path_cells": [[72, 60], [78, 60], [84, 62], [92, 62]],
+	  "color": [0.50, 0.90, 1.0, 0.16]
+	},
+	{
+	  "id": "basin_to_crystal_risk_bypass",
+	  "route_type": "risk",
+	  "display_name": "晶体荒原高风险绕行",
+	  "path_cells": [[68, 76], [76, 84], [88, 90], [102, 92]],
+	  "color": [1.0, 0.56, 0.24, 0.15]
+	},
+	{
+	  "id": "basin_to_interference_main",
+	  "route_type": "main",
+	  "display_name": "干扰高地主入口",
+	  "path_cells": [[60, 44], [62, 36], [64, 28]],
+	  "color": [0.68, 1.0, 0.44, 0.18]
+	},
+	{
+	  "id": "basin_to_wreckage_main",
+	  "route_type": "main",
+	  "display_name": "残骸战场入口",
+	  "path_cells": [[44, 62], [36, 62], [28, 62]],
+	  "color": [1.0, 0.64, 0.34, 0.18]
+	},
+	{
+	  "id": "basin_to_core_outer_main",
+	  "route_type": "main",
+	  "display_name": "主脑核心外围方向",
+	  "path_cells": [[60, 78], [62, 86], [64, 96]],
+	  "color": [0.82, 0.42, 1.0, 0.18]
+	}
+  ],
+  "frontier_zones": [],
+  "region_connections": [
+	{
+	  "from_region_id": "starting_basin",
+	  "to_region_id": "crystal_wasteland",
+	  "connection_type": "main_gate",
+	  "gate_cells": [[72, 58], [73, 58], [74, 59], [75, 60]],
+	  "route_id": "basin_to_crystal_main",
+	  "revealed_by": "enemy_nest_001_destroyed"
+	},
+	{
+	  "from_region_id": "starting_basin",
+	  "to_region_id": "crystal_wasteland",
+	  "connection_type": "risk_bypass",
+	  "gate_cells": [[70, 78], [72, 80], [74, 82]],
+	  "route_id": "basin_to_crystal_risk_bypass"
+	},
+	{
+	  "from_region_id": "starting_basin",
+	  "to_region_id": "interference_highlands",
+	  "connection_type": "main_gate",
+	  "gate_cells": [[60, 44], [62, 40], [64, 36]],
+	  "route_id": "basin_to_interference_main"
+	},
+	{
+	  "from_region_id": "starting_basin",
+	  "to_region_id": "wreckage_battlefield",
+	  "connection_type": "main_gate",
+	  "gate_cells": [[44, 62], [40, 62], [36, 62]],
+	  "route_id": "basin_to_wreckage_main"
+	},
+	{
+	  "from_region_id": "starting_basin",
+	  "to_region_id": "brain_core_outer",
+	  "connection_type": "main_gate",
+	  "gate_cells": [[60, 78], [62, 84], [64, 90]],
+	  "route_id": "basin_to_core_outer_main"
+	}
+  ],
+  "water_bodies": [
+	{
+	  "id": "crystal_wasteland_north_pool",
+	  "region_id": "crystal_wasteland",
+	  "grid_rects": [[84, 46, 5, 7], [89, 49, 3, 4], [82, 51, 2, 4]],
+	  "pump_candidate_cells": [[83, 48], [83, 53], [89, 54], [92, 51]],
+	  "fill_color": [0.02, 0.30, 0.42, 0.36],
+	  "border_color": [0.36, 0.86, 1.0, 0.50]
+	},
+	{
+	  "id": "crystal_wasteland_south_pool",
+	  "region_id": "crystal_wasteland",
+	  "grid_rects": [[96, 80, 6, 4], [102, 82, 4, 3], [99, 84, 4, 3]],
+	  "pump_candidate_cells": [[95, 82], [101, 79], [106, 84], [102, 88]],
+	  "fill_color": [0.02, 0.30, 0.42, 0.32],
+	  "border_color": [0.36, 0.86, 1.0, 0.46]
+	}
+  ],
+  "frontline_supply_points": [
+	{
+	  "id": "stage14_crystal_frontline_supply_candidate",
+	  "display_name": "晶体荒原前线补给点候选",
+	  "grid_origin": [76, 66]
+	}
+  ],
   "resource_nodes": [
-    {
-      "id": "iron_ore_001",
-      "resource_id": "iron_ore",
-      "grid_origin": [8, 8],
-      "grid_size": [1, 1],
-      "amount": 10000
-    },
-    {
-      "id": "copper_ore_001",
-      "resource_id": "copper_ore",
-      "grid_origin": [12, 8],
-      "grid_size": [1, 1],
-      "amount": 10000
-    },
-    {
-      "id": "iron_ore_002",
-      "resource_id": "iron_ore",
-      "grid_origin": [8, 13],
-      "grid_size": [1, 1],
-      "amount": 10000
-    },
-    {
-      "id": "copper_ore_002",
-      "resource_id": "copper_ore",
-      "grid_origin": [13, 13],
-      "grid_size": [1, 1],
-      "amount": 10000
-    }
+	{
+	  "id": "iron_ore_001",
+	  "resource_id": "iron_ore",
+	  "grid_origin": [56, 56],
+	  "grid_size": [1, 1],
+	  "amount": 10000
+	},
+	{
+	  "id": "copper_ore_001",
+	  "resource_id": "copper_ore",
+	  "grid_origin": [62, 56],
+	  "grid_size": [1, 1],
+	  "amount": 10000
+	},
+	{
+	  "id": "iron_ore_002",
+	  "resource_id": "iron_ore",
+	  "grid_origin": [56, 66],
+	  "grid_size": [1, 1],
+	  "amount": 10000
+	},
+	{
+	  "id": "copper_ore_002",
+	  "resource_id": "copper_ore",
+	  "grid_origin": [66, 66],
+	  "grid_size": [1, 1],
+	  "amount": 10000
+	}
   ],
   "debug_enemies": [],
   "enemy_nests": [
-    {
-      "id": "enemy_nest_001",
-      "nest_type": "weak_scavenger_nest",
-      "grid_origin": [34, 30]
-    }
+	{
+	  "id": "enemy_nest_001",
+	  "nest_type": "weak_scavenger_nest",
+	  "grid_origin": [84, 74]
+	}
   ]
 }

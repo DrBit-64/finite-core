@@ -12,6 +12,7 @@
 - `mvp-dev-docs/project-memory.md`：项目长期记忆，记录已经验证过的工程经验、坑点和推荐实现方案。后续遇到类似问题时优先检索这里。
 - `mvp-dev-docs/debug-balance-overrides.md`：调试数值覆盖登记，记录所有为了调试效率而临时修改的数值、修改前后值和正式化前处理建议。
 - `mvp-dev-docs/post-mvp-development-roadmap.md`：MVP 完成后的开发路线与工程指导，按战役阶段拆分后续系统、验收标准和范围控制。
+- `mvp-dev-docs/radar-map-region-development-guide.md`：雷达图标风地图区域、第二资源圈、自然关隘和程序绘制地貌的开发指导。
 - `mvp-dev-docs/svg-art-direction-and-asset-guide.md`：基于现有 `Resources/art/` SVG 图标的美术规范、阶段视觉预算、生成模板和验收流程。
 - `mvp-dev-docs/svg-art-asset-manifest.md`：完整战役 SVG 素材登记表，记录稳定 ID、建议路径、生成状态、优先级和候选设计。
 

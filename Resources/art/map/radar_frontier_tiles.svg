@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="576" height="64" viewBox="0 0 576 64">
+  <defs>
+    <style>
+      .grid { fill: #071014; stroke: #19323a; stroke-width: 1; }
+      .water { fill: #063646; stroke: #36bfe8; stroke-width: 1.4; opacity: 0.82; }
+      .waterLine { fill: none; stroke: #7ee8ff; stroke-width: 2; stroke-linecap: round; opacity: 0.72; }
+      .ridge { fill: #12242a; stroke: #6bd8ef; stroke-width: 1.2; opacity: 0.78; }
+      .ridgeLine { stroke: #a2f0ff; stroke-width: 2; stroke-linecap: round; opacity: 0.68; }
+      .noise { stroke: #93ff6f; stroke-width: 1.6; stroke-linecap: round; opacity: 0.58; }
+      .wreck { stroke: #f0a058; stroke-width: 2; stroke-linecap: round; opacity: 0.68; }
+      .gate { fill: #0b1518; stroke: #7de7ff; stroke-width: 1.4; opacity: 0.72; }
+      .bypass { fill: #15110d; stroke: #ff9b45; stroke-width: 1.4; opacity: 0.72; }
+      .pump { fill: none; stroke: #8df7ff; stroke-width: 2; opacity: 0.82; }
+    </style>
+    <clipPath id="tile_clip">
+      <rect x="0" y="0" width="64" height="64"/>
+    </clipPath>
+  </defs>
+
+  <g id="water_full" transform="translate(0 0)">
+    <rect class="water" x="6" y="6" width="52" height="52" rx="3"/>
+    <path class="waterLine" d="M16 24 C22 20 28 28 34 24 S46 23 50 26"/>
+    <path class="waterLine" d="M14 40 C21 36 27 44 34 40 S45 38 51 42"/>
+  </g>
+
+  <g id="water_edge" transform="translate(64 0)">
+    <rect class="grid" x="6" y="6" width="52" height="52" rx="3"/>
+    <path class="waterLine" d="M12 16 H24 M32 16 H52"/>
+    <path class="waterLine" d="M12 48 H28 M36 48 H52"/>
+    <path class="waterLine" d="M16 24 C22 21 28 27 34 24"/>
+  </g>
+
+  <g id="ridge_full" transform="translate(128 0)">
+    <rect class="ridge" x="7" y="7" width="50" height="50" rx="3"/>
+    <path class="ridgeLine" d="M18 46 L31 16 L45 45"/>
+    <path class="ridgeLine" d="M24 36 L34 30 L42 34"/>
+  </g>
+
+  <g id="ridge_edge" transform="translate(192 0)">
+    <rect class="grid" x="6" y="6" width="52" height="52" rx="3"/>
+    <path class="ridgeLine" d="M12 42 L24 22 L35 43 L48 18"/>
+    <path class="ridgeLine" d="M20 33 L32 29"/>
+  </g>
+
+  <g id="frontier_noise" transform="translate(256 0)">
+    <rect class="grid" x="6" y="6" width="52" height="52" rx="3"/>
+    <path class="noise" d="M14 20 H28 M36 20 H50"/>
+    <path class="noise" d="M18 31 H34 M42 31 H52"/>
+    <path class="noise" d="M12 43 H24 M34 43 H48"/>
+  </g>
+
+  <g id="wreckage_block" transform="translate(320 0)">
+    <rect class="grid" x="6" y="6" width="52" height="52" rx="3"/>
+    <path class="wreck" d="M16 18 L48 46"/>
+    <path class="wreck" d="M46 16 L20 42"/>
+    <path class="wreck" d="M25 20 H40"/>
+  </g>
+
+  <g id="gate_floor" transform="translate(384 0)" clip-path="url(#tile_clip)">
+    <rect fill="#081316" stroke="#245363" stroke-width="1" x="0" y="0" width="64" height="64" opacity="0.74"/>
+    <rect fill="#0c252b" x="0" y="20" width="64" height="24" opacity="0.58"/>
+    <rect fill="#0c252b" x="20" y="0" width="24" height="64" opacity="0.46"/>
+    <path fill="none" stroke="#7de7ff" stroke-width="1.8" stroke-linecap="square" opacity="0.78" d="M0 24 H64 M0 40 H64"/>
+    <path fill="none" stroke="#7de7ff" stroke-width="1.8" stroke-linecap="square" opacity="0.62" d="M24 0 V64 M40 0 V64"/>
+    <path fill="none" stroke="#7de7ff" stroke-width="1.2" stroke-linecap="square" opacity="0.34" d="M0 32 H18 M28 32 H64 M32 0 V18 M32 28 V64"/>
+    <path fill="none" stroke="#b8f6ff" stroke-width="1" stroke-linecap="square" opacity="0.18" d="M16 0 V64 M48 0 V64 M0 16 H64 M0 48 H64"/>
+  </g>
+
+  <g id="bypass_floor_a" transform="translate(448 0)" clip-path="url(#tile_clip)">
+    <rect fill="#15100b" stroke="#5c3518" stroke-width="1" x="0" y="0" width="64" height="64" opacity="0.76"/>
+    <path fill="none" stroke="#ff9b45" stroke-width="2" stroke-linecap="square" opacity="0.64" d="M-8 56 L56 -8 M8 72 L72 8"/>
+    <path fill="none" stroke="#ffbd72" stroke-width="1.2" stroke-linecap="square" opacity="0.32" d="M-16 28 L28 -16 M36 80 L80 36"/>
+    <path fill="none" stroke="#ff9b45" stroke-width="1.2" stroke-linecap="square" opacity="0.30" d="M0 24 H64 M0 40 H64"/>
+  </g>
+
+  <g id="pump_anchor" transform="translate(512 0)">
+    <rect class="grid" x="6" y="6" width="52" height="52" rx="3"/>
+    <circle class="pump" cx="32" cy="32" r="10"/>
+    <circle class="pump" cx="32" cy="32" r="3"/>
+    <path class="waterLine" d="M18 32 H24 M40 32 H46"/>
+  </g>
+</svg>

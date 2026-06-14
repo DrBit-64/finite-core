@@ -48,13 +48,64 @@ func inspect_node(node: Node) -> void:
 			]
 		body_label.text = "\n".join(lines)
 
-func inspect_cell(cell: Vector2i) -> void:
+func inspect_cell(cell: Vector2i, region_info: Dictionary = {}, region_state: String = "") -> void:
 	_clear_detail_root()
 	if title_label:
 		title_label.text = "空地"
 	if body_label:
 		body_label.visible = true
-		body_label.text = "网格：%s, %s\n状态：未占用" % [cell.x, cell.y]
+		var lines: Array[String] = [
+			"网格：%s, %s" % [cell.x, cell.y],
+			"状态：未占用",
+		]
+		lines.append_array(_format_region_lines(region_info, region_state))
+		body_label.text = "\n".join(lines)
+
+func _format_region_lines(region_info: Dictionary, region_state: String) -> Array[String]:
+	var lines: Array[String] = []
+	if region_info.is_empty() and region_state.is_empty():
+		return lines
+	lines.append("")
+	lines.append("区域信息")
+	if not region_info.is_empty():
+		lines.append("区域：%s" % str(region_info.get("display_name", "未知区域")))
+		lines.append("区域 ID：%s" % str(region_info.get("region_id", "-")))
+		lines.append("类型：%s" % _format_region_type(str(region_info.get("region_type", ""))))
+		lines.append("威胁等级：%s" % int(region_info.get("threat_level", 0)))
+		lines.append("推荐阶段：%s" % int(region_info.get("recommended_stage", 0)))
+	else:
+		lines.append("区域：未配置")
+	if not region_state.is_empty():
+		lines.append("发现状态：%s" % _format_region_state(region_state))
+	return lines
+
+func _format_region_type(region_type: String) -> String:
+	match region_type:
+		"starting_basin":
+			return "起始盆地"
+		"crystal_wasteland":
+			return "晶体荒原"
+		"interference_highlands":
+			return "干扰高地"
+		"wreckage_battlefield":
+			return "残骸战场"
+		"brain_core_outer":
+			return "主脑核心外围"
+	return region_type if not region_type.is_empty() else "-"
+
+func _format_region_state(region_state: String) -> String:
+	match region_state:
+		"unknown":
+			return "未知"
+		"signal":
+			return "信号"
+		"scanned":
+			return "已扫描"
+		"visible":
+			return "实时可见"
+		"controlled":
+			return "已控制"
+	return region_state
 
 func _try_render_building(node: Node) -> bool:
 	var building_def: BuildingDef = node.get("building_def")

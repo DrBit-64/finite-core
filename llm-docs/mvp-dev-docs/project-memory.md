@@ -205,3 +205,29 @@ var panel_size := panel.get_combined_minimum_size()
 ```powershell
 .\Tools\check_building_projectile_destruction.cmd
 ```
+
+## Godot 编辑器工具脚本交付前检查
+
+**记录时间**：2026-06-13
+**适用范围**：`@tool` 脚本、编辑器内地图绘制工具、TileMap 辅助工具、任何会在 Godot 编辑器检查器中加载的脚本。
+
+### 背景
+
+`Scripts/map/frontier_path_painter.gd` 曾因为 GDScript 类型推断警告被当作错误处理，导致 Godot 编辑器无法加载 `FrontierPathPainter` 工具脚本。具体原因是局部变量从 Variant 表达式推断类型，例如 `abs(delta.x)`，在项目配置下会触发静态解析错误。
+
+### 长期规则
+
+后续修改 `@tool` 或编辑器工具脚本后，交付前必须至少执行一次稳定场景加载检查：
+
+```powershell
+& 'D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe' --headless --path 'D:\Godot\finite-core' --quit-after 2 res://Scenes/mvp/mvp_test_map.tscn
+```
+
+不要只依赖肉眼检查或文本搜索判断脚本可加载。
+
+### 编码建议
+
+- 对由 Variant API、数学函数或容器读取结果得到的局部变量显式标注类型，例如 `var abs_x: int = abs(delta.x)`。
+- `@tool` 脚本新增导出属性后，要同步检查已打开场景中是否残留旧导出字段。
+- 如果工具会写入 TileMap atlas 坐标，要确认 TileSet 中对应 atlas frame 已存在；否则会在编辑器内刷 `Index p_frame is out of bounds`。
+- 默认优先使用场景加载检查，不使用已知可能触发原生崩溃的 `--script` smoke test。

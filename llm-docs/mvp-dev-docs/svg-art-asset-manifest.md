@@ -370,6 +370,21 @@
 | `interference_highlands_tile` | 干扰高地底纹 | `Resources/art/map/interference_highlands_tile.svg` | `64x64` | `generate` | 可平铺、少量信号断线符号。 |
 | `brain_core_zone_tile` | 主脑核心区底纹 | `Resources/art/map/brain_core_zone_tile.svg` | `64x64` | `generate` | 可平铺、终局高对比符号克制使用。 |
 
+### 1.1 雷达地貌符号 Stamp
+
+这些素材不是传统地貌贴图，不用于平铺整张地图；它们是透明背景的小型雷达符号，由程序按地图配置稀疏盖章，并可在运行时调透明度和颜色。
+
+| 稳定 ID | 显示名 | 建议路径 | 尺寸 | 状态 | 说明 |
+| --- | --- | --- | --- | --- | --- |
+| `water_ripple_mark` | 水体波纹标记 | `Resources/art/map/terrain_signatures/water_ripple_mark.svg` | `32x32` | `done` | 水体内部短波纹。 |
+| `shoreline_dash` | 断续岸线标记 | `Resources/art/map/terrain_signatures/shoreline_dash.svg` | `32x32` | `done` | 水体边缘短弧/短线。 |
+| `pump_anchor` | 水泵锚点 | `Resources/art/map/terrain_signatures/pump_anchor.svg` | `32x32` | `done` | 水泵候选格圆环。 |
+| `crystal_cluster_small` | 小型晶体簇 | `Resources/art/map/terrain_signatures/crystal_cluster_small.svg` | `32x32` | `done` | 晶体荒原身份符号。 |
+| `fracture_line_mark` | 断层裂线 | `Resources/art/map/terrain_signatures/fracture_line_mark.svg` | `32x32` | `done` | 晶体断层和峡谷边。 |
+| `interference_tick` | 干扰扫描短线 | `Resources/art/map/terrain_signatures/interference_tick.svg` | `32x32` | `done` | 干扰高地信号错位。 |
+| `wreckage_mark` | 残骸碎片标记 | `Resources/art/map/terrain_signatures/wreckage_mark.svg` | `32x32` | `done` | 残骸战场小型碎片。 |
+| `core_ring_mark` | 主脑约束环 | `Resources/art/map/terrain_signatures/core_ring_mark.svg` | `32x32` | `done` | 主脑外围双环/约束线。 |
+
 ### 2. 敌巢信号轮廓
 
 | 稳定 ID | 显示名 | 建议路径 | 尺寸 | 状态 |

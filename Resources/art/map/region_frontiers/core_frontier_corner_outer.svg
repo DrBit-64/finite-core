@@ -1,0 +1,12 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <clipPath id="tile_clip"><rect x="0" y="0" width="64" height="64"/></clipPath>
+  </defs>
+  <g clip-path="url(#tile_clip)">
+    <rect x="0" y="0" width="64" height="64" fill="#120a18"/>
+        <rect x="0" y="0" width="64" height="64" fill="#291431" opacity="0.58"/>
+    <path d="M0 32 H64 M32 0 V64" fill="none" stroke="#d091ff" stroke-width="1" opacity="0.10"/>
+    <path d="M64 33 H43 C35 33 30 28 30 20 V0" fill="none" stroke="#d091ff" stroke-width="2.5" opacity="0.74"/>
+    <path d="M14 45 C24 28 37 19 55 16" fill="none" stroke="#ff9be8" stroke-width="1.5" opacity="0.48"/>
+  </g>
+</svg>

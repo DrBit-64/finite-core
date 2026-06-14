@@ -1,0 +1,322 @@
+﻿{
+    "tile_size":  64,
+    "columns":  10,
+    "rows":  4,
+    "output":  "Resources/art/map/region_frontiers/region_frontier_atlas.svg",
+    "order":  [
+                  "fill",
+                  "edge_h",
+                  "edge_v",
+                  "corner_ne",
+                  "corner_nw",
+                  "corner_se",
+                  "corner_sw",
+                  "end_cap",
+                  "edge_diag_down",
+                  "edge_diag_up"
+              ],
+    "rows_meaning":  [
+                         {
+                             "region_id":  "crystal_wasteland",
+                             "label":  "Crystal Wasteland",
+                             "prefix":  "crystal_frontier"
+                         },
+                         {
+                             "region_id":  "wreckage_battlefield",
+                             "label":  "Wreckage Battlefield",
+                             "prefix":  "wreckage_frontier"
+                         },
+                         {
+                             "region_id":  "interference_highland",
+                             "label":  "Interference Highland",
+                             "prefix":  "interference_frontier"
+                         },
+                         {
+                             "region_id":  "core_perimeter",
+                             "label":  "Core Perimeter",
+                             "prefix":  "core_frontier"
+                         }
+                     ],
+    "tiles":  [
+                  {
+                      "id":  "crystal_frontier_fill",
+                      "region_id":  "crystal_wasteland",
+                      "label":  "Crystal Wasteland",
+                      "kind":  "fill",
+                      "path":  "Resources/art/map/region_frontiers/crystal_frontier_fill.svg"
+                  },
+                  {
+                      "id":  "crystal_frontier_edge_h",
+                      "region_id":  "crystal_wasteland",
+                      "label":  "Crystal Wasteland",
+                      "kind":  "edge_h",
+                      "path":  "Resources/art/map/region_frontiers/crystal_frontier_edge_h.svg"
+                  },
+                  {
+                      "id":  "crystal_frontier_edge_v",
+                      "region_id":  "crystal_wasteland",
+                      "label":  "Crystal Wasteland",
+                      "kind":  "edge_v",
+                      "path":  "Resources/art/map/region_frontiers/crystal_frontier_edge_v.svg"
+                  },
+                  {
+                      "id":  "crystal_frontier_corner_ne",
+                      "region_id":  "crystal_wasteland",
+                      "label":  "Crystal Wasteland",
+                      "kind":  "corner_ne",
+                      "path":  "Resources/art/map/region_frontiers/crystal_frontier_corner_ne.svg"
+                  },
+                  {
+                      "id":  "crystal_frontier_corner_nw",
+                      "region_id":  "crystal_wasteland",
+                      "label":  "Crystal Wasteland",
+                      "kind":  "corner_nw",
+                      "path":  "Resources/art/map/region_frontiers/crystal_frontier_corner_nw.svg"
+                  },
+                  {
+                      "id":  "crystal_frontier_corner_se",
+                      "region_id":  "crystal_wasteland",
+                      "label":  "Crystal Wasteland",
+                      "kind":  "corner_se",
+                      "path":  "Resources/art/map/region_frontiers/crystal_frontier_corner_se.svg"
+                  },
+                  {
+                      "id":  "crystal_frontier_corner_sw",
+                      "region_id":  "crystal_wasteland",
+                      "label":  "Crystal Wasteland",
+                      "kind":  "corner_sw",
+                      "path":  "Resources/art/map/region_frontiers/crystal_frontier_corner_sw.svg"
+                  },
+                  {
+                      "id":  "crystal_frontier_end_cap",
+                      "region_id":  "crystal_wasteland",
+                      "label":  "Crystal Wasteland",
+                      "kind":  "end_cap",
+                      "path":  "Resources/art/map/region_frontiers/crystal_frontier_end_cap.svg"
+                  },
+                  {
+                      "id":  "crystal_frontier_edge_diag_down",
+                      "region_id":  "crystal_wasteland",
+                      "label":  "Crystal Wasteland",
+                      "kind":  "edge_diag_down",
+                      "path":  "Resources/art/map/region_frontiers/crystal_frontier_edge_diag_down.svg"
+                  },
+                  {
+                      "id":  "crystal_frontier_edge_diag_up",
+                      "region_id":  "crystal_wasteland",
+                      "label":  "Crystal Wasteland",
+                      "kind":  "edge_diag_up",
+                      "path":  "Resources/art/map/region_frontiers/crystal_frontier_edge_diag_up.svg"
+                  },
+                  {
+                      "id":  "wreckage_frontier_fill",
+                      "region_id":  "wreckage_battlefield",
+                      "label":  "Wreckage Battlefield",
+                      "kind":  "fill",
+                      "path":  "Resources/art/map/region_frontiers/wreckage_frontier_fill.svg"
+                  },
+                  {
+                      "id":  "wreckage_frontier_edge_h",
+                      "region_id":  "wreckage_battlefield",
+                      "label":  "Wreckage Battlefield",
+                      "kind":  "edge_h",
+                      "path":  "Resources/art/map/region_frontiers/wreckage_frontier_edge_h.svg"
+                  },
+                  {
+                      "id":  "wreckage_frontier_edge_v",
+                      "region_id":  "wreckage_battlefield",
+                      "label":  "Wreckage Battlefield",
+                      "kind":  "edge_v",
+                      "path":  "Resources/art/map/region_frontiers/wreckage_frontier_edge_v.svg"
+                  },
+                  {
+                      "id":  "wreckage_frontier_corner_ne",
+                      "region_id":  "wreckage_battlefield",
+                      "label":  "Wreckage Battlefield",
+                      "kind":  "corner_ne",
+                      "path":  "Resources/art/map/region_frontiers/wreckage_frontier_corner_ne.svg"
+                  },
+                  {
+                      "id":  "wreckage_frontier_corner_nw",
+                      "region_id":  "wreckage_battlefield",
+                      "label":  "Wreckage Battlefield",
+                      "kind":  "corner_nw",
+                      "path":  "Resources/art/map/region_frontiers/wreckage_frontier_corner_nw.svg"
+                  },
+                  {
+                      "id":  "wreckage_frontier_corner_se",
+                      "region_id":  "wreckage_battlefield",
+                      "label":  "Wreckage Battlefield",
+                      "kind":  "corner_se",
+                      "path":  "Resources/art/map/region_frontiers/wreckage_frontier_corner_se.svg"
+                  },
+                  {
+                      "id":  "wreckage_frontier_corner_sw",
+                      "region_id":  "wreckage_battlefield",
+                      "label":  "Wreckage Battlefield",
+                      "kind":  "corner_sw",
+                      "path":  "Resources/art/map/region_frontiers/wreckage_frontier_corner_sw.svg"
+                  },
+                  {
+                      "id":  "wreckage_frontier_end_cap",
+                      "region_id":  "wreckage_battlefield",
+                      "label":  "Wreckage Battlefield",
+                      "kind":  "end_cap",
+                      "path":  "Resources/art/map/region_frontiers/wreckage_frontier_end_cap.svg"
+                  },
+                  {
+                      "id":  "wreckage_frontier_edge_diag_down",
+                      "region_id":  "wreckage_battlefield",
+                      "label":  "Wreckage Battlefield",
+                      "kind":  "edge_diag_down",
+                      "path":  "Resources/art/map/region_frontiers/wreckage_frontier_edge_diag_down.svg"
+                  },
+                  {
+                      "id":  "wreckage_frontier_edge_diag_up",
+                      "region_id":  "wreckage_battlefield",
+                      "label":  "Wreckage Battlefield",
+                      "kind":  "edge_diag_up",
+                      "path":  "Resources/art/map/region_frontiers/wreckage_frontier_edge_diag_up.svg"
+                  },
+                  {
+                      "id":  "interference_frontier_fill",
+                      "region_id":  "interference_highland",
+                      "label":  "Interference Highland",
+                      "kind":  "fill",
+                      "path":  "Resources/art/map/region_frontiers/interference_frontier_fill.svg"
+                  },
+                  {
+                      "id":  "interference_frontier_edge_h",
+                      "region_id":  "interference_highland",
+                      "label":  "Interference Highland",
+                      "kind":  "edge_h",
+                      "path":  "Resources/art/map/region_frontiers/interference_frontier_edge_h.svg"
+                  },
+                  {
+                      "id":  "interference_frontier_edge_v",
+                      "region_id":  "interference_highland",
+                      "label":  "Interference Highland",
+                      "kind":  "edge_v",
+                      "path":  "Resources/art/map/region_frontiers/interference_frontier_edge_v.svg"
+                  },
+                  {
+                      "id":  "interference_frontier_corner_ne",
+                      "region_id":  "interference_highland",
+                      "label":  "Interference Highland",
+                      "kind":  "corner_ne",
+                      "path":  "Resources/art/map/region_frontiers/interference_frontier_corner_ne.svg"
+                  },
+                  {
+                      "id":  "interference_frontier_corner_nw",
+                      "region_id":  "interference_highland",
+                      "label":  "Interference Highland",
+                      "kind":  "corner_nw",
+                      "path":  "Resources/art/map/region_frontiers/interference_frontier_corner_nw.svg"
+                  },
+                  {
+                      "id":  "interference_frontier_corner_se",
+                      "region_id":  "interference_highland",
+                      "label":  "Interference Highland",
+                      "kind":  "corner_se",
+                      "path":  "Resources/art/map/region_frontiers/interference_frontier_corner_se.svg"
+                  },
+                  {
+                      "id":  "interference_frontier_corner_sw",
+                      "region_id":  "interference_highland",
+                      "label":  "Interference Highland",
+                      "kind":  "corner_sw",
+                      "path":  "Resources/art/map/region_frontiers/interference_frontier_corner_sw.svg"
+                  },
+                  {
+                      "id":  "interference_frontier_end_cap",
+                      "region_id":  "interference_highland",
+                      "label":  "Interference Highland",
+                      "kind":  "end_cap",
+                      "path":  "Resources/art/map/region_frontiers/interference_frontier_end_cap.svg"
+                  },
+                  {
+                      "id":  "interference_frontier_edge_diag_down",
+                      "region_id":  "interference_highland",
+                      "label":  "Interference Highland",
+                      "kind":  "edge_diag_down",
+                      "path":  "Resources/art/map/region_frontiers/interference_frontier_edge_diag_down.svg"
+                  },
+                  {
+                      "id":  "interference_frontier_edge_diag_up",
+                      "region_id":  "interference_highland",
+                      "label":  "Interference Highland",
+                      "kind":  "edge_diag_up",
+                      "path":  "Resources/art/map/region_frontiers/interference_frontier_edge_diag_up.svg"
+                  },
+                  {
+                      "id":  "core_frontier_fill",
+                      "region_id":  "core_perimeter",
+                      "label":  "Core Perimeter",
+                      "kind":  "fill",
+                      "path":  "Resources/art/map/region_frontiers/core_frontier_fill.svg"
+                  },
+                  {
+                      "id":  "core_frontier_edge_h",
+                      "region_id":  "core_perimeter",
+                      "label":  "Core Perimeter",
+                      "kind":  "edge_h",
+                      "path":  "Resources/art/map/region_frontiers/core_frontier_edge_h.svg"
+                  },
+                  {
+                      "id":  "core_frontier_edge_v",
+                      "region_id":  "core_perimeter",
+                      "label":  "Core Perimeter",
+                      "kind":  "edge_v",
+                      "path":  "Resources/art/map/region_frontiers/core_frontier_edge_v.svg"
+                  },
+                  {
+                      "id":  "core_frontier_corner_ne",
+                      "region_id":  "core_perimeter",
+                      "label":  "Core Perimeter",
+                      "kind":  "corner_ne",
+                      "path":  "Resources/art/map/region_frontiers/core_frontier_corner_ne.svg"
+                  },
+                  {
+                      "id":  "core_frontier_corner_nw",
+                      "region_id":  "core_perimeter",
+                      "label":  "Core Perimeter",
+                      "kind":  "corner_nw",
+                      "path":  "Resources/art/map/region_frontiers/core_frontier_corner_nw.svg"
+                  },
+                  {
+                      "id":  "core_frontier_corner_se",
+                      "region_id":  "core_perimeter",
+                      "label":  "Core Perimeter",
+                      "kind":  "corner_se",
+                      "path":  "Resources/art/map/region_frontiers/core_frontier_corner_se.svg"
+                  },
+                  {
+                      "id":  "core_frontier_corner_sw",
+                      "region_id":  "core_perimeter",
+                      "label":  "Core Perimeter",
+                      "kind":  "corner_sw",
+                      "path":  "Resources/art/map/region_frontiers/core_frontier_corner_sw.svg"
+                  },
+                  {
+                      "id":  "core_frontier_end_cap",
+                      "region_id":  "core_perimeter",
+                      "label":  "Core Perimeter",
+                      "kind":  "end_cap",
+                      "path":  "Resources/art/map/region_frontiers/core_frontier_end_cap.svg"
+                  },
+                  {
+                      "id":  "core_frontier_edge_diag_down",
+                      "region_id":  "core_perimeter",
+                      "label":  "Core Perimeter",
+                      "kind":  "edge_diag_down",
+                      "path":  "Resources/art/map/region_frontiers/core_frontier_edge_diag_down.svg"
+                  },
+                  {
+                      "id":  "core_frontier_edge_diag_up",
+                      "region_id":  "core_perimeter",
+                      "label":  "Core Perimeter",
+                      "kind":  "edge_diag_up",
+                      "path":  "Resources/art/map/region_frontiers/core_frontier_edge_diag_up.svg"
+                  }
+              ]
+}

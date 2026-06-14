@@ -1,0 +1,25 @@
+{
+  "tile_size": 64,
+  "columns": 18,
+  "output": "Resources/art/map/frontier_tiles/frontier_routes_atlas.svg",
+  "tiles": [
+    {"id": "gate_area_fill", "path": "Resources/art/map/frontier_tiles/gate_area_fill.svg", "tag": "gate"},
+    {"id": "gate_area_edge_n", "path": "Resources/art/map/frontier_tiles/gate_area_edge_n.svg", "tag": "gate"},
+    {"id": "gate_area_edge_s", "path": "Resources/art/map/frontier_tiles/gate_area_edge_s.svg", "tag": "gate"},
+    {"id": "gate_area_edge_w", "path": "Resources/art/map/frontier_tiles/gate_area_edge_w.svg", "tag": "gate"},
+    {"id": "gate_area_edge_e", "path": "Resources/art/map/frontier_tiles/gate_area_edge_e.svg", "tag": "gate"},
+    {"id": "gate_area_corner_nw", "path": "Resources/art/map/frontier_tiles/gate_area_corner_nw.svg", "tag": "gate"},
+    {"id": "gate_area_corner_ne", "path": "Resources/art/map/frontier_tiles/gate_area_corner_ne.svg", "tag": "gate"},
+    {"id": "gate_area_corner_sw", "path": "Resources/art/map/frontier_tiles/gate_area_corner_sw.svg", "tag": "gate"},
+    {"id": "gate_area_corner_se", "path": "Resources/art/map/frontier_tiles/gate_area_corner_se.svg", "tag": "gate"},
+    {"id": "gate_floor_h", "path": "Resources/art/map/frontier_tiles/gate_floor_h.svg", "tag": "gate"},
+    {"id": "gate_floor_v", "path": "Resources/art/map/frontier_tiles/gate_floor_v.svg", "tag": "gate"},
+    {"id": "gate_corner_ne", "path": "Resources/art/map/frontier_tiles/gate_corner_ne.svg", "tag": "gate"},
+    {"id": "gate_corner_nw", "path": "Resources/art/map/frontier_tiles/gate_corner_nw.svg", "tag": "gate"},
+    {"id": "gate_corner_se", "path": "Resources/art/map/frontier_tiles/gate_corner_se.svg", "tag": "gate"},
+    {"id": "gate_corner_sw", "path": "Resources/art/map/frontier_tiles/gate_corner_sw.svg", "tag": "gate"},
+    {"id": "gate_cross", "path": "Resources/art/map/frontier_tiles/gate_cross.svg", "tag": "gate"},
+    {"id": "bypass_floor_h", "path": "Resources/art/map/frontier_tiles/bypass_floor_h.svg", "tag": "bypass"},
+    {"id": "bypass_floor_v", "path": "Resources/art/map/frontier_tiles/bypass_floor_v.svg", "tag": "bypass"}
+  ]
+}

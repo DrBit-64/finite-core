@@ -1,0 +1,89 @@
+[gd_resource type="TileSet" format=3 uid="uid://c83noiqqebjm"]
+
+[ext_resource type="Texture2D" uid="uid://dcj4lvyb4rj5j" path="res://Resources/art/map/radar_frontier_tiles.svg" id="1_tiles"]
+[ext_resource type="Texture2D" uid="uid://buhr4opjt5cwn" path="res://Resources/art/map/frontier_tiles/frontier_routes_atlas.svg" id="2_routes_atlas"]
+[ext_resource type="Texture2D" uid="uid://dmgwp4y1vu2ke" path="res://Resources/art/map/region_frontiers/region_frontier_atlas.svg" id="3_region_frontier_atlas"]
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_frontier"]
+texture = ExtResource("1_tiles")
+texture_region_size = Vector2i(64, 64)
+0:0/next_alternative_id = 8
+0:0/0 = 0
+0:0/4 = 4
+0:0/5 = 5
+0:0/6 = 6
+0:0/7 = 7
+1:0/next_alternative_id = 3
+1:0/0 = 0
+2:0/next_alternative_id = 2
+2:0/0 = 0
+3:0/0 = 0
+4:0/0 = 0
+5:0/0 = 0
+6:0/0 = 0
+7:0/0 = 0
+8:0/0 = 0
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_frontier_routes_atlas"]
+texture = ExtResource("2_routes_atlas")
+texture_region_size = Vector2i(64, 64)
+0:0/0 = 0
+1:0/0 = 0
+2:0/0 = 0
+3:0/0 = 0
+4:0/0 = 0
+5:0/0 = 0
+6:0/0 = 0
+7:0/0 = 0
+8:0/0 = 0
+9:0/0 = 0
+10:0/0 = 0
+11:0/0 = 0
+12:0/0 = 0
+13:0/0 = 0
+14:0/0 = 0
+15:0/0 = 0
+16:0/0 = 0
+17:0/0 = 0
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_region_frontier_atlas"]
+texture = ExtResource("3_region_frontier_atlas")
+texture_region_size = Vector2i(64, 64)
+0:0/0 = 0
+1:0/0 = 0
+2:0/0 = 0
+3:0/0 = 0
+4:0/0 = 0
+5:0/0 = 0
+6:0/0 = 0
+7:0/0 = 0
+0:1/0 = 0
+1:1/0 = 0
+2:1/0 = 0
+3:1/0 = 0
+4:1/0 = 0
+5:1/0 = 0
+6:1/0 = 0
+7:1/0 = 0
+0:2/0 = 0
+1:2/0 = 0
+2:2/0 = 0
+3:2/0 = 0
+4:2/0 = 0
+5:2/0 = 0
+6:2/0 = 0
+7:2/0 = 0
+0:3/0 = 0
+1:3/0 = 0
+2:3/0 = 0
+3:3/0 = 0
+4:3/0 = 0
+5:3/0 = 0
+6:3/0 = 0
+7:3/0 = 0
+
+[resource]
+tile_size = Vector2i(64, 64)
+sources/0 = SubResource("TileSetAtlasSource_frontier")
+sources/19 = SubResource("TileSetAtlasSource_frontier_routes_atlas")
+sources/20 = SubResource("TileSetAtlasSource_region_frontier_atlas")
