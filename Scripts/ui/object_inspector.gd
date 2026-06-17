@@ -33,6 +33,8 @@ func inspect_node(node: Node) -> void:
 
 	if title_label:
 		title_label.text = node.get_display_name() if node.has_method("get_display_name") else node.name
+	if _try_render_cargo_robot(node):
+		return
 	if _try_render_building(node):
 		return
 	if body_label:
@@ -132,6 +134,36 @@ func _try_render_building(node: Node) -> bool:
 	_add_building_specific_sections(node)
 	return true
 
+func _try_render_cargo_robot(node: Node) -> bool:
+	if not node.has_method("is_cargo_robot") or not bool(node.call("is_cargo_robot")):
+		return false
+	_ensure_detail_root()
+	_clear_detail_root()
+	if body_label:
+		body_label.visible = false
+	_detail_root.visible = true
+
+	_detail_root.add_child(_make_robot_header(node))
+	_detail_root.add_child(_make_health_block(node))
+	_detail_root.add_child(_make_info_label("速度：%.1f    货舱：%s / %s" % [
+		float(node.get("speed")),
+		int(node.call("get_cargo_used_capacity")) if node.has_method("get_cargo_used_capacity") else 0,
+		int(node.get("cargo_capacity")),
+	]))
+	_detail_root.add_child(_make_section_label("货舱"))
+	var cargo: Dictionary = node.call("get_cargo_inventory") if node.has_method("get_cargo_inventory") else {}
+	if cargo.is_empty():
+		_detail_root.add_child(_make_info_label("空"))
+	else:
+		_detail_root.add_child(_make_resource_slot_grid(cargo, {}, false, 4))
+	_detail_root.add_child(_make_section_label("当前物流任务"))
+	if node.has_method("get_logistics_task_summary_lines"):
+		for line in node.call("get_logistics_task_summary_lines"):
+			_detail_root.add_child(_make_info_label(str(line)))
+	else:
+		_detail_root.add_child(_make_info_label("物流任务：无"))
+	return true
+
 func _ensure_detail_root() -> void:
 	if _detail_root != null:
 		return
@@ -169,6 +201,25 @@ func _make_building_header(node: Node, building_def: BuildingDef) -> Control:
 	texts.add_child(_make_info_label("状态：%s" % ("运行中" if bool(node.call("is_alive")) else "已摧毁")))
 	return row
 
+func _make_robot_header(node: Node) -> Control:
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_theme_constant_override("separation", 10)
+
+	var slot := ItemIconSlotScript.new()
+	slot.slot_size = Vector2(64, 64)
+	slot.setup(_load_texture(str(node.get("icon_path"))), "", Color(0.48, 0.88, 0.98, 0.92), node.get_display_name() if node.has_method("get_display_name") else node.name)
+	row.add_child(slot)
+
+	var texts := VBoxContainer.new()
+	texts.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(texts)
+
+	texts.add_child(_make_info_label(node.get_display_name() if node.has_method("get_display_name") else node.name, 16, Color(0.96, 0.98, 1.0, 1.0)))
+	texts.add_child(_make_info_label("类型：货运机器人"))
+	texts.add_child(_make_info_label("状态：%s" % str(node.get("logistics_status_text"))))
+	return row
+
 func _make_health_block(node: Node) -> Control:
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 3)
@@ -200,6 +251,8 @@ func _add_building_specific_sections(node: Node) -> void:
 		_add_processor_section(node as ProcessorBuilding)
 	elif node is RobotForgeBuilding:
 		_add_forge_section(node as RobotForgeBuilding)
+	elif node.has_method("setup_water_pump"):
+		_add_water_pump_section(node)
 	elif node is EnemyNest:
 		_add_enemy_nest_section(node as EnemyNest)
 
@@ -256,6 +309,13 @@ func _add_forge_section(forge: RobotForgeBuilding) -> void:
 	_detail_root.add_child(_make_info_label("存活：%s / %s" % [forge.get_alive_count(), forge.target_alive_count]))
 	_detail_root.add_child(_make_info_label("状态：%s" % forge.status_text))
 	_detail_root.add_child(_make_info_label("集结点：%s" % (forge._format_rally_point() if forge.has_rally_point else "未设置")))
+
+func _add_water_pump_section(pump: Node) -> void:
+	_detail_root.add_child(_make_section_label("抽水"))
+	_detail_root.add_child(_make_info_label("状态：%s" % str(pump.get("status_text"))))
+	_detail_root.add_child(_make_info_label("产出：%s / 分钟" % int(pump.get("output_per_minute"))))
+	_detail_root.add_child(_make_info_label("进度：%d%%" % int(float(pump.call("get_progress_ratio")) * 100.0)))
+	_add_cache_section("产物缓存", pump.get("output_cache"))
 
 func _add_enemy_nest_section(nest: EnemyNest) -> void:
 	_detail_root.add_child(_make_info_label("守军：%s / %s" % [nest.get_guard_count(), nest.max_guard_count]))

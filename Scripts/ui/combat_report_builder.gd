@@ -7,12 +7,17 @@ static func build_report(
 	event_log: Node,
 	blueprints: Array[UnitBlueprint],
 	resource_defs: Array[ResourceDef],
-	window_seconds: float = DEFAULT_WINDOW_SECONDS
+	window_seconds: float = DEFAULT_WINDOW_SECONDS,
+	logistics_diagnostics: Dictionary = {}
 ) -> Dictionary:
 	var report := {
 		"window_seconds": window_seconds,
 		"resources": _make_resource_rows(resource_defs),
 		"robots": {},
+		"logistics": {
+			"resources": _make_logistics_resource_rows(resource_defs),
+			"diagnostics": logistics_diagnostics.duplicate(true),
+		},
 	}
 	_seed_blueprint_rows(report["robots"], blueprints)
 	if event_log == null or not event_log.has_method("get_recent_events"):
@@ -89,6 +94,49 @@ static func _consume_event(report: Dictionary, event: Dictionary) -> void:
 			var row := _robot_row_from_payload(report["robots"], payload)
 			row["rule_triggered"] += 1
 			_consume_rule_trigger(row, payload)
+		"logistics_picked":
+			_update_logistics_resource(report["logistics"]["resources"], payload, true)
+		"logistics_delivered":
+			_update_logistics_resource(report["logistics"]["resources"], payload, false)
+
+static func _make_logistics_resource_rows(resource_defs: Array[ResourceDef]) -> Dictionary:
+	var rows := {}
+	for resource_def in resource_defs:
+		rows[String(resource_def.id)] = {
+			"resource_id": String(resource_def.id),
+			"display_name": resource_def.display_name,
+			"picked": 0,
+			"delivered": 0,
+			"net_in_transit": 0,
+			"tasks": {},
+		}
+	return rows
+
+static func _update_logistics_resource(rows: Dictionary, payload: Dictionary, is_pickup: bool) -> void:
+	var resource_id := str(payload.get("resource_id", "unknown"))
+	if not rows.has(resource_id):
+		rows[resource_id] = {
+			"resource_id": resource_id,
+			"display_name": resource_id,
+			"picked": 0,
+			"delivered": 0,
+			"net_in_transit": 0,
+			"tasks": {},
+		}
+	var amount := maxi(0, int(payload.get("amount", 0)))
+	if is_pickup:
+		rows[resource_id]["picked"] += amount
+	else:
+		rows[resource_id]["delivered"] += amount
+	rows[resource_id]["net_in_transit"] = int(rows[resource_id]["picked"]) - int(rows[resource_id]["delivered"])
+	var task_type := str(payload.get("task_type", "unknown"))
+	var tasks: Dictionary = rows[resource_id]["tasks"]
+	var task_row: Dictionary = tasks.get(task_type, {"picked": 0, "delivered": 0})
+	if is_pickup:
+		task_row["picked"] = int(task_row.get("picked", 0)) + amount
+	else:
+		task_row["delivered"] = int(task_row.get("delivered", 0)) + amount
+	tasks[task_type] = task_row
 
 static func _consume_rule_trigger(row: Dictionary, payload: Dictionary) -> void:
 	var template_id := str(payload.get("template_id", ""))
@@ -180,6 +228,12 @@ static func _finalize_report(report: Dictionary) -> Dictionary:
 		return str(a.get("display_name", "")) < str(b.get("display_name", ""))
 	)
 	report["resources"] = resource_rows
+
+	var logistics_rows: Array = report["logistics"]["resources"].values()
+	logistics_rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return str(a.get("display_name", "")) < str(b.get("display_name", ""))
+	)
+	report["logistics"]["resources"] = logistics_rows
 
 	var robot_rows: Array = report["robots"].values()
 	for row in robot_rows:

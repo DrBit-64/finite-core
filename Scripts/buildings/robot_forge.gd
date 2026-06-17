@@ -41,6 +41,10 @@ func register_robot(robot: Node) -> void:
 		robot.connect("robot_lost", Callable(self, "_on_robot_lost"))
 	forge_state_changed.emit()
 
+func is_tracking_robot(robot: Node) -> bool:
+	_prune_robot_list()
+	return robot != null and _tracked_robots.has(robot)
+
 func get_alive_count() -> int:
 	_prune_robot_list()
 	var count := 0

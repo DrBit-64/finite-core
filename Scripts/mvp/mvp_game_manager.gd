@@ -8,6 +8,8 @@ const MinerScene := preload("res://Scenes/buildings/miner.tscn")
 const ProcessorScene := preload("res://Scenes/buildings/processor.tscn")
 const RobotForgeScene := preload("res://Scenes/buildings/robot_forge.tscn")
 const ResearchTerminalScene := preload("res://Scenes/buildings/research_terminal.tscn")
+const WaterPumpScene := preload("res://Scenes/buildings/water_pump.tscn")
+const ForwardSupplyPointScene := preload("res://Scenes/buildings/forward_supply_point.tscn")
 const BuildingPlacementGhostScene := preload("res://Scenes/map/building_placement_ghost.tscn")
 const GridSelectionMarkerScene := preload("res://Scenes/map/grid_selection_marker.tscn")
 const GridHoverMarkerScene := preload("res://Scenes/map/grid_hover_marker.tscn")
@@ -26,10 +28,16 @@ const CampaignStateScript := preload("res://Scripts/campaign/campaign_state.gd")
 const TechnologyConfigLoaderScript := preload("res://Scripts/campaign/technology_config_loader.gd")
 const ENEMY_CONFIG_PATH := "res://Resources/data/enemies/mvp_enemies.json"
 const TECHNOLOGY_CONFIG_PATH := "res://Resources/data/technology/mvp_stage1_technologies.json"
+const STAGE14_SAVE_PATH := "user://finite_core_stage14_save.json"
 const KEY_ITEM_INITIAL_SENSOR_COIL := &"initial_sensor_coil"
 const FOG_REGION_SIZE_CELLS := 4
 const OPERATION_PANEL_REFRESH_INTERVAL := 0.1
 const UNIT_INSPECTOR_REFRESH_INTERVAL := 0.2
+const STAGE14_LOGISTICS_TICK_INTERVAL := 0.15
+const STAGE14_MIN_LOAD_RATIO := 0.7
+const STAGE14_MAX_PICKUP_WAIT_SECONDS := 6.0
+const STAGE14_RELAY_TARGET_STOCK := 48
+const STAGE14_BASE_TARGET_STOCK := 36
 const MINIMAP_SEMANTIC_TAGS := [
 	"water",
 	"pump_candidate",
@@ -50,6 +58,7 @@ const MINIMAP_SEMANTIC_TAGS := [
 @export var grid_map_path: NodePath = ^"%GridMap"
 @export var camera_path: NodePath = ^"MainCamera"
 @export_file("*.json") var map_config_path: String = "res://Resources/data/maps/mvp_stage3_map.json"
+@export var stage14_remote_logistics_enabled: bool = true
 @export_file("*.json") var starting_inventory_config_path: String = "res://Resources/data/balance/mvp_starting_inventory.json"
 @export_file("*.json") var runtime_profile_path: String = "res://Resources/data/debug/mvp_runtime_profile.json"
 @export var enable_right_mouse_camera_drag: bool = true
@@ -112,8 +121,17 @@ var map_semantic_cells_by_tag_cache: Dictionary = {}
 var map_minimap_static_snapshot: Dictionary = {}
 var map_static_cache_version: int = 0
 var _stage12_soft_failure_shown: bool = false
+var stage14_logistics_tick_seconds: float = 0.0
+var stage14_logistics_tasks_by_robot: Dictionary = {}
+var stage14_logistics_wait_seconds_by_key: Dictionary = {}
+var stage14_logistics_counters: Dictionary = {}
+var _navigation_grid: AStarGrid2D = null
+var _navigation_dirty: bool = true
+var _logistics_visual_layer: Node2D = null
+var _logistics_task_lines: Dictionary = {}
 
 func _ready() -> void:
+	add_to_group("stage_path_provider")
 	_bootstrap_mvp_scene()
 
 func _process(delta: float) -> void:
@@ -138,6 +156,11 @@ func _process(delta: float) -> void:
 		if unit_inspector_refresh_seconds >= UNIT_INSPECTOR_REFRESH_INTERVAL:
 			unit_inspector_refresh_seconds = 0.0
 			_refresh_selected_unit_inspector()
+	if stage14_remote_logistics_enabled:
+		stage14_logistics_tick_seconds += delta
+		if stage14_logistics_tick_seconds >= STAGE14_LOGISTICS_TICK_INTERVAL:
+			stage14_logistics_tick_seconds = 0.0
+			_tick_stage14_logistics(STAGE14_LOGISTICS_TICK_INTERVAL)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _handle_camera_drag_input(event):
@@ -223,7 +246,7 @@ func _zoom_camera_at_screen_position(factor: float, screen_position: Vector2) ->
 	main_camera.global_position = world_position_under_cursor - screen_offset / next_zoom
 	_clamp_camera_to_map_bounds()
 	if selected_operation_building:
-		_refresh_operation_panel()
+		_hide_operation_panel()
 
 func _pan_camera_by_screen_delta(screen_delta: Vector2) -> void:
 	if screen_delta == Vector2.ZERO or main_camera == null:
@@ -236,7 +259,7 @@ func _pan_camera_by_screen_delta(screen_delta: Vector2) -> void:
 	main_camera.global_position -= world_delta
 	_clamp_camera_to_map_bounds()
 	if selected_operation_building:
-		_refresh_operation_panel()
+		_hide_operation_panel()
 
 func _clamp_camera_to_map_bounds() -> void:
 	if not clamp_camera_to_map_bounds or main_camera == null or grid_map == null:
@@ -283,9 +306,18 @@ func _load_stage_one_data() -> void:
 	campaign_state.stage_advanced.connect(_on_campaign_stage_advanced)
 	resource_defs = MvpDataDefaults.create_resource_defs()
 	recipe_defs = MvpDataDefaults.create_recipe_defs()
-	basic_rifle_blueprint = MvpDataDefaults.create_basic_rifle_blueprint()
 	blueprint_library = BlueprintLibraryScript.new()
-	blueprint_library.add_blueprint(basic_rifle_blueprint)
+	var configured_blueprints := MvpDataDefaults.create_unit_blueprints()
+	for blueprint in configured_blueprints:
+		if blueprint == null:
+			continue
+		if blueprint.id == MvpDataDefaults.UNIT_BASIC_RIFLE_ROBOT:
+			basic_rifle_blueprint = blueprint
+		blueprint_library.add_blueprint(blueprint)
+	if basic_rifle_blueprint == null:
+		basic_rifle_blueprint = MvpDataDefaults.create_basic_rifle_blueprint()
+		if basic_rifle_blueprint:
+			blueprint_library.add_blueprint(basic_rifle_blueprint)
 	building_defs = MvpDataDefaults.create_mvp_building_defs()
 	technology_defs = TechnologyConfigLoaderScript.load_technology_defs(TECHNOLOGY_CONFIG_PATH)
 	enemy_config = EnemyConfigLoaderScript.load_enemy_config(ENEMY_CONFIG_PATH)
@@ -313,6 +345,8 @@ func _configure_hud() -> void:
 		hud.connect("build_mode_requested", Callable(self, "_on_build_mode_requested"))
 	if hud.has_signal("processor_recipe_selected"):
 		hud.connect("processor_recipe_selected", Callable(self, "_on_processor_recipe_selected"))
+	if hud.has_signal("building_demolish_requested"):
+		hud.connect("building_demolish_requested", Callable(self, "_on_building_demolish_requested"))
 	if hud.has_signal("forge_rally_point_requested"):
 		hud.connect("forge_rally_point_requested", Callable(self, "_on_forge_rally_point_requested"))
 	if hud.has_signal("blueprint_library_requested"):
@@ -327,6 +361,10 @@ func _configure_hud() -> void:
 		hud.connect("new_game_requested", Callable(self, "_on_new_game_requested"))
 	if hud.has_signal("restart_requested"):
 		hud.connect("restart_requested", Callable(self, "_on_restart_requested"))
+	if hud.has_signal("save_game_requested"):
+		hud.connect("save_game_requested", Callable(self, "_on_save_game_requested"))
+	if hud.has_signal("load_game_requested"):
+		hud.connect("load_game_requested", Callable(self, "_on_load_game_requested"))
 	_refresh_build_options()
 	_refresh_resource_hud()
 	_refresh_campaign_hud()
@@ -344,8 +382,10 @@ func _setup_stage_two_world() -> void:
 	var map_config := MapConfigLoaderScript.load_map_config(map_config_path)
 	_configure_grid_map_from_config(map_config)
 	grid_occupancy.configure(grid_map.get("map_size_cells"))
+	_navigation_dirty = true
 	_create_selection_marker()
 	_create_hover_marker()
+	_ensure_logistics_visual_layer()
 	_load_fixed_map(map_config)
 	_apply_camera_start_from_config(map_config)
 
@@ -546,18 +586,627 @@ func get_campaign_save_snapshot() -> Dictionary:
 				"id": String(blueprint.id),
 				"display_name": blueprint.display_name,
 				"version": blueprint.version,
+				"icon_path": blueprint.icon_path,
+				"chassis_id": String(blueprint.chassis_id),
+				"chassis_display_name": blueprint.chassis_display_name,
+				"chassis_icon_path": blueprint.chassis_icon_path,
+				"module_ids": _string_name_array(blueprint.module_ids),
+				"module_display_names": blueprint.module_display_names,
+				"module_icon_paths": blueprint.module_icon_paths,
+				"production_recipe_id": String(blueprint.production_recipe_id),
+				"production_cost": blueprint.production_cost,
+				"production_time_seconds": blueprint.production_time_seconds,
 				"tactical_templates": blueprint.tactical_templates,
 				"embedded_rules": blueprint.embedded_rules,
 				"state_flag_defaults": blueprint.state_flag_defaults,
+				"default_brain_enabled": blueprint.default_brain_enabled,
 			})
 	return {
 		"version": 1,
 		"campaign": campaign_state.to_save_snapshot() if campaign_state else {},
 		"inventory": inventory.get_all() if inventory else {},
 		"blueprints": blueprint_snapshots,
+		"buildings": _make_building_save_snapshots(),
+		"enemy_buildings": _make_enemy_building_save_snapshots(),
+		"units": _make_unit_save_snapshots(),
 		"map_regions": map_region_states.duplicate(true),
 		"runtime_profile_path": runtime_profile_path,
+		"stage15_blueprint_schema_reserve": {
+			"chassis_id": true,
+			"module_ids": true,
+			"module_parameters": {},
+			"template_parameters": {},
+		},
 	}
+
+func _on_save_game_requested() -> void:
+	var snapshot := get_campaign_save_snapshot()
+	var file := FileAccess.open(STAGE14_SAVE_PATH, FileAccess.WRITE)
+	if file == null:
+		push_debug_event("存档失败：无法写入 %s" % STAGE14_SAVE_PATH)
+		return
+	file.store_string(JSON.stringify(snapshot, "\t"))
+	push_debug_event("游戏已保存：%s" % ProjectSettings.globalize_path(STAGE14_SAVE_PATH))
+	if hud and hud.has_method("show_bottom_prompt"):
+		hud.call("show_bottom_prompt", "游戏已保存。", 1.8, &"success")
+
+func _on_load_game_requested() -> void:
+	if not FileAccess.file_exists(STAGE14_SAVE_PATH):
+		push_debug_event("读档失败：没有找到 %s" % STAGE14_SAVE_PATH)
+		if hud and hud.has_method("show_bottom_prompt"):
+			hud.call("show_bottom_prompt", "没有可读取的存档。", 2.0, &"warning")
+		return
+	var file := FileAccess.open(STAGE14_SAVE_PATH, FileAccess.READ)
+	if file == null:
+		push_debug_event("读档失败：无法打开 %s" % STAGE14_SAVE_PATH)
+		return
+	var parsed = JSON.parse_string(file.get_as_text())
+	if typeof(parsed) != TYPE_DICTIONARY:
+		push_debug_event("读档失败：存档不是合法对象")
+		return
+	_apply_campaign_save_snapshot(parsed)
+	push_debug_event("游戏已读取：%s" % ProjectSettings.globalize_path(STAGE14_SAVE_PATH))
+	if hud and hud.has_method("show_bottom_prompt"):
+		hud.call("show_bottom_prompt", "游戏已读取。", 1.8, &"success")
+
+func _make_building_save_snapshots() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var building_layer := _get_layer("BuildingLayer")
+	if building_layer == null:
+		return result
+	for child in building_layer.get_children():
+		if child == null or not is_instance_valid(child):
+			continue
+		var building_def: BuildingDef = child.get("building_def")
+		if building_def == null:
+			continue
+		var entry := {
+			"building_id": String(building_def.id),
+			"name": child.name,
+			"grid_origin": _vector2i_to_array(child.get("grid_origin")),
+			"grid_size": _vector2i_to_array(child.get("grid_size")),
+			"hp": int(child.get("hp")),
+		}
+		if child is ProcessorBuilding:
+			var recipe: RecipeDef = child.get("selected_recipe")
+			entry["selected_recipe_id"] = String(recipe.id) if recipe else ""
+			entry["input_cache"] = _string_key_dictionary(child.get("input_cache"))
+			entry["output_cache"] = _string_key_dictionary(child.get("output_cache"))
+			entry["progress_seconds"] = float(child.get("progress_seconds"))
+		elif child is MinerBuilding or child is WaterPumpBuilding:
+			entry["output_cache"] = _string_key_dictionary(child.get("output_cache"))
+			entry["progress_seconds"] = float(child.get("progress_seconds"))
+			entry["requires_logistics_delivery"] = bool(child.get("requires_logistics_delivery"))
+		elif child is ForwardSupplyPointBuilding and child.has_method("get_all_resources"):
+			entry["inventory"] = _string_key_dictionary(child.call("get_all_resources"))
+		elif child is RobotForgeBuilding:
+			var blueprint: UnitBlueprint = child.get("blueprint")
+			entry["blueprint_id"] = String(blueprint.id) if blueprint else ""
+			entry["target_alive_count"] = int(child.get("target_alive_count"))
+			entry["progress_seconds"] = float(child.get("progress_seconds"))
+			entry["has_rally_point"] = bool(child.get("has_rally_point"))
+			entry["rally_point_cell"] = _vector2i_to_array(child.get("rally_point_cell"))
+			var rally_pos: Vector2 = child.get("rally_point_position")
+			entry["rally_point_position"] = [rally_pos.x, rally_pos.y]
+		result.append(entry)
+	return result
+
+func _make_enemy_building_save_snapshots() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for nest_id in enemy_nests_by_id.keys():
+		var nest: Node = enemy_nests_by_id[nest_id]
+		if nest == null or not is_instance_valid(nest):
+			continue
+		result.append({
+			"kind": "enemy_nest",
+			"name": nest.name,
+			"nest_id": String(nest.get("nest_id")),
+			"nest_type": String(nest.get("nest_type")),
+			"grid_origin": _vector2i_to_array(nest.get("grid_origin")),
+			"grid_size": _vector2i_to_array(nest.get("grid_size")),
+			"hp": int(nest.get("hp")),
+			"max_hp": int(nest.get("max_hp")),
+			"destroyed": nest.has_method("is_alive") and nest.call("is_alive") != true,
+			"time_alive_seconds": float(nest.get("time_alive_seconds")),
+			"replenish_seconds_remaining": float(nest.get("replenish_seconds_remaining")),
+		})
+	return result
+
+func _make_unit_save_snapshots() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for layer_name in ["UnitLayer", "EnemyLayer"]:
+		var layer := _get_layer(layer_name)
+		if layer == null:
+			continue
+		for child in layer.get_children():
+			if child == null or not is_instance_valid(child) or not (child is RobotUnit):
+				continue
+			if child is CanvasItem and not (child as CanvasItem).visible:
+				continue
+			if child.has_method("is_alive") and child.call("is_alive") != true:
+				continue
+			result.append(_make_robot_save_snapshot(child as RobotUnit, layer_name))
+	return result
+
+func _make_robot_save_snapshot(robot: RobotUnit, layer_name: String) -> Dictionary:
+	var position := robot.global_position
+	var guard_home: Vector2 = robot.get("guard_home_position")
+	var entry := {
+		"kind": _get_robot_save_kind(robot),
+		"name": robot.name,
+		"layer": layer_name,
+		"team": String(robot.get("team")),
+		"display_name": str(robot.get("display_name")),
+		"position": [position.x, position.y],
+		"hp": int(robot.get("hp")),
+		"max_hp": int(robot.get("max_hp")),
+		"brain_mode": str(robot.get("brain_mode")),
+		"icon_path": str(robot.get("icon_path")),
+		"speed": float(robot.get("speed")),
+		"lifespan_seconds": float(robot.get("lifespan_seconds")),
+		"lifespan_time_left": _get_robot_lifespan_time_left(robot),
+		"blueprint_id": String(robot.get("blueprint_id")),
+		"blueprint_version": int(robot.get("blueprint_version")),
+		"blueprint_snapshot_id": String(robot.get("blueprint_snapshot_id")),
+		"chassis_id": String(robot.get("chassis_id")),
+		"active_upgrade_ids": _string_name_array(robot.get("active_upgrade_ids")),
+		"rally_point_position": [robot.get("rally_point_position").x, robot.get("rally_point_position").y],
+		"has_rally_point": robot.get("has_rally_point") == true,
+		"producer_forge_name": _get_robot_producer_forge_name(robot),
+		"cargo_capacity": int(robot.get("cargo_capacity")),
+		"cargo_inventory": _string_key_dictionary(robot.call("get_cargo_inventory") if robot.has_method("get_cargo_inventory") else {}),
+		"patrol_points": _vector2_array_to_arrays(robot.get("patrol_points")),
+		"patrol_loop": robot.get("patrol_loop") == true,
+		"source_nest_id": _get_robot_source_nest_id(robot),
+		"guard_home_position": [guard_home.x, guard_home.y],
+	}
+	return entry
+
+func _get_robot_producer_forge_name(robot: RobotUnit) -> String:
+	var stored_name := str(robot.get("producer_forge_name"))
+	if not stored_name.is_empty():
+		return stored_name
+	var building_layer := _get_layer("BuildingLayer")
+	if building_layer == null:
+		return ""
+	for child in building_layer.get_children():
+		if child is RobotForgeBuilding and child.has_method("is_tracking_robot") and child.call("is_tracking_robot", robot) == true:
+			return child.name
+	return ""
+
+func _get_robot_save_kind(robot: RobotUnit) -> String:
+	var pool_name := str(robot.get("pool_name"))
+	if pool_name == "scavenger_hound" or str(robot.get("brain_mode")) == "melee_hound":
+		return "scavenger_hound"
+	if pool_name == "debug_enemy_unit" or str(robot.get("brain_mode")) == "path_patrol":
+		return "debug_enemy"
+	return "player_robot"
+
+func _get_robot_lifespan_time_left(robot: RobotUnit) -> float:
+	var lifespan_component = robot.get("lifespan_component")
+	if lifespan_component != null and lifespan_component.has_method("get_time_left"):
+		return float(lifespan_component.call("get_time_left"))
+	return 0.0
+
+func _get_robot_source_nest_id(robot: RobotUnit) -> String:
+	var nest = robot.get("source_nest")
+	if nest != null and is_instance_valid(nest):
+		return String(nest.get("nest_id"))
+	return ""
+
+func _vector2_array_to_arrays(values: Array) -> Array:
+	var result: Array = []
+	for value in values:
+		if value is Vector2:
+			result.append([value.x, value.y])
+	return result
+
+func _vector2_list_from_arrays(values: Variant) -> Array[Vector2]:
+	var result: Array[Vector2] = []
+	if typeof(values) != TYPE_ARRAY:
+		return result
+	for value in values:
+		result.append(_vector2_from_array(value))
+	return result
+
+func _apply_campaign_save_snapshot(snapshot: Dictionary) -> void:
+	_hide_operation_panel()
+	_clear_world_unit_selection()
+	_apply_campaign_state_snapshot(snapshot.get("campaign", {}))
+	_restore_blueprint_library(snapshot.get("blueprints", []))
+	_clear_dynamic_units_for_load()
+	_clear_dynamic_buildings_for_load()
+	var building_entries: Array = snapshot.get("buildings", [])
+	for entry_value in building_entries:
+		if typeof(entry_value) != TYPE_DICTIONARY:
+			continue
+		_restore_building_from_snapshot(entry_value)
+	_restore_enemy_building_states(snapshot.get("enemy_buildings", []))
+	var unit_entries: Array = snapshot.get("units", [])
+	for entry_value in unit_entries:
+		if typeof(entry_value) != TYPE_DICTIONARY:
+			continue
+		_restore_unit_from_snapshot(entry_value)
+	var inventory = _get_main_base_inventory()
+	if inventory and inventory.has_method("set_all"):
+		inventory.call("set_all", _string_name_key_dictionary(snapshot.get("inventory", {})), "读档恢复主库存")
+	map_region_states = snapshot.get("map_regions", {}).duplicate(true)
+	_apply_region_fog_to_grid()
+	_mark_navigation_dirty()
+	_refresh_build_options()
+	_refresh_resource_hud()
+	_refresh_campaign_hud()
+	_refresh_blueprint_library_ui()
+
+func _clear_dynamic_units_for_load() -> void:
+	for layer_name in ["UnitLayer", "EnemyLayer"]:
+		var layer := _get_layer(layer_name)
+		if layer == null:
+			continue
+		for child in layer.get_children():
+			if child == null or not is_instance_valid(child):
+				continue
+			if not (child is RobotUnit):
+				continue
+			if child is CanvasItem and not (child as CanvasItem).visible:
+				continue
+			layer.remove_child(child)
+			child.queue_free()
+	stage14_logistics_tasks_by_robot.clear()
+	stage14_logistics_wait_seconds_by_key.clear()
+	_clear_logistics_visuals()
+
+func _clear_dynamic_buildings_for_load() -> void:
+	var building_layer := _get_layer("BuildingLayer")
+	if building_layer:
+		for child in building_layer.get_children():
+			building_layer.remove_child(child)
+			child.queue_free()
+	main_base = null
+	selected_operation_building = null
+	for resource_node in resource_nodes_by_id.values():
+		if resource_node != null and is_instance_valid(resource_node):
+			resource_node.set("bound_miner", null)
+			if resource_node is CanvasItem:
+				(resource_node as CanvasItem).modulate = Color.WHITE
+	grid_occupancy.configure(grid_map.get("map_size_cells") if grid_map else Vector2i.ZERO)
+	for nest in enemy_nests_by_id.values():
+		if nest == null or not is_instance_valid(nest):
+			continue
+		if nest.has_method("is_alive") and not bool(nest.call("is_alive")):
+			continue
+		grid_occupancy.register_rect(nest.get("grid_origin"), nest.get("grid_size"), nest)
+	_clear_logistics_visuals()
+	stage14_logistics_tasks_by_robot.clear()
+	stage14_logistics_wait_seconds_by_key.clear()
+	_mark_navigation_dirty()
+
+func _restore_unit_from_snapshot(entry: Dictionary) -> void:
+	var kind := str(entry.get("kind", "player_robot"))
+	var layer_name := str(entry.get("layer", "EnemyLayer" if kind != "player_robot" else "UnitLayer"))
+	var layer := _get_layer(layer_name)
+	if layer == null:
+		layer = self
+	var robot: RobotUnit = null
+	match kind:
+		"scavenger_hound":
+			robot = _restore_scavenger_hound_from_snapshot(entry, layer)
+		"debug_enemy":
+			robot = _restore_debug_enemy_from_snapshot(entry, layer)
+		_:
+			robot = _restore_player_robot_from_snapshot(entry, layer)
+	if robot == null:
+		return
+	_apply_robot_common_save_state(robot, entry)
+
+func _restore_player_robot_from_snapshot(entry: Dictionary, layer: Node) -> RobotUnit:
+	var blueprint_id := StringName(str(entry.get("blueprint_id", "")))
+	var producer_forge := _find_forge_by_name(str(entry.get("producer_forge_name", "")))
+	var blueprint: UnitBlueprint = producer_forge.get("blueprint") if producer_forge != null else null
+	if blueprint == null:
+		blueprint = blueprint_library.get_blueprint(blueprint_id) if blueprint_library else null
+	if blueprint == null and basic_rifle_blueprint != null:
+		blueprint = basic_rifle_blueprint
+	if blueprint == null:
+		return null
+	var robot := RobotScene.instantiate() as RobotUnit
+	layer.add_child(robot)
+	robot.name = str(entry.get("name", IdProvider.next_id(&"robot")))
+	robot.set("team", "Team_A")
+	if robot.has_method("setup_from_blueprint"):
+		robot.call(
+			"setup_from_blueprint",
+			blueprint,
+			_vector2_from_array(entry.get("rally_point_position", [0.0, 0.0])),
+			entry.get("has_rally_point", false) == true
+		)
+	if robot.has_method("apply_campaign_upgrades"):
+		robot.call("apply_campaign_upgrades", _string_name_list_from_variant(entry.get("active_upgrade_ids", [])))
+	if robot.has_signal("robot_lost") and not robot.is_connected("robot_lost", Callable(self, "_on_robot_lost_for_blueprint_cleanup")):
+		robot.connect("robot_lost", Callable(self, "_on_robot_lost_for_blueprint_cleanup"))
+	var forge := producer_forge if producer_forge != null else _find_robot_restore_forge(entry, blueprint)
+	if forge != null and forge.has_method("register_robot"):
+		forge.call("register_robot", robot)
+		robot.set("producer_forge_name", forge.name)
+	return robot
+
+func _restore_scavenger_hound_from_snapshot(entry: Dictionary, layer: Node) -> RobotUnit:
+	var nest := _find_enemy_nest_by_id(StringName(str(entry.get("source_nest_id", ""))))
+	var guard_type := StringName("scavenger_hound")
+	if nest != null and is_instance_valid(nest):
+		guard_type = StringName(str(nest.get("guard_unit_type")))
+	var guard_config := EnemyConfigLoaderScript.get_type(enemy_config, "unit_types", guard_type)
+	if guard_config.is_empty():
+		guard_config = EnemyConfigLoaderScript.get_type(enemy_config, "unit_types", &"scavenger_hound")
+	var robot := ScavengerHoundScene.instantiate() as RobotUnit
+	layer.add_child(robot)
+	robot.name = str(entry.get("name", IdProvider.next_id(&"scavenger_hound")))
+	robot.global_position = _vector2_from_array(entry.get("position", [0.0, 0.0]))
+	robot.call("setup_scavenger_hound", guard_config, nest)
+	if robot.has_signal("robot_lost") and not robot.is_connected("robot_lost", Callable(self, "_on_enemy_hound_lost")):
+		robot.connect("robot_lost", Callable(self, "_on_enemy_hound_lost"))
+	if nest != null and is_instance_valid(nest) and nest.has_method("register_guard"):
+		nest.call("register_guard", robot)
+	return robot
+
+func _restore_debug_enemy_from_snapshot(entry: Dictionary, layer: Node) -> RobotUnit:
+	var path_points := _vector2_list_from_arrays(entry.get("patrol_points", []))
+	if path_points.is_empty():
+		path_points.append(_vector2_from_array(entry.get("position", [0.0, 0.0])))
+	var robot := DebugEnemyScene.instantiate() as RobotUnit
+	layer.add_child(robot)
+	robot.name = str(entry.get("name", IdProvider.next_id(&"debug_enemy")))
+	robot.global_position = _vector2_from_array(entry.get("position", [0.0, 0.0]))
+	robot.call("setup_debug_enemy", str(entry.get("display_name", "调试靶机")), path_points, entry.get("patrol_loop", true) == true)
+	return robot
+
+func _apply_robot_common_save_state(robot: RobotUnit, entry: Dictionary) -> void:
+	robot.global_position = _vector2_from_array(entry.get("position", [robot.global_position.x, robot.global_position.y]))
+	robot.set("hp", clampi(int(entry.get("hp", robot.get("hp"))), 1, int(robot.get("max_hp"))))
+	var saved_forge_name := str(entry.get("producer_forge_name", ""))
+	if not saved_forge_name.is_empty():
+		robot.set("producer_forge_name", saved_forge_name)
+	if entry.has("cargo_inventory"):
+		robot.set("cargo_inventory", _string_name_key_dictionary(entry.get("cargo_inventory", {})))
+	if entry.has("cargo_capacity"):
+		robot.set("cargo_capacity", int(entry.get("cargo_capacity", robot.get("cargo_capacity"))))
+	if str(entry.get("kind", "")) == "scavenger_hound" and entry.has("guard_home_position"):
+		robot.set("guard_home_position", _vector2_from_array(entry.get("guard_home_position", [robot.global_position.x, robot.global_position.y])))
+	var health_component = robot.get("health_component")
+	if health_component != null:
+		health_component.set("hp", int(robot.get("hp")))
+		health_component.set("max_hp", int(robot.get("max_hp")))
+		health_component.set("_dead", false)
+	var lifespan_component = robot.get("lifespan_component")
+	var time_left := float(entry.get("lifespan_time_left", 0.0))
+	if lifespan_component != null and time_left > 0.0 and lifespan_component.has_method("restore_time_left"):
+		lifespan_component.call("restore_time_left", time_left)
+	if robot.has_method("clear_logistics_task"):
+		robot.call("clear_logistics_task")
+
+func _find_robot_restore_forge(entry: Dictionary, blueprint: UnitBlueprint) -> Node:
+	var preferred_name := str(entry.get("producer_forge_name", ""))
+	var building_layer := _get_layer("BuildingLayer")
+	if building_layer == null:
+		return null
+	if not preferred_name.is_empty():
+		var preferred := _find_forge_by_name(preferred_name)
+		if preferred != null:
+			return preferred
+	for child in building_layer.get_children():
+		if not (child is RobotForgeBuilding):
+			continue
+		var forge_blueprint: UnitBlueprint = child.get("blueprint")
+		if forge_blueprint != null and blueprint != null and forge_blueprint.get_snapshot_key() == blueprint.get_snapshot_key():
+			return child
+	return null
+
+func _find_forge_by_name(forge_name: String) -> Node:
+	if forge_name.is_empty():
+		return null
+	var building_layer := _get_layer("BuildingLayer")
+	if building_layer == null:
+		return null
+	for child in building_layer.get_children():
+		if child is RobotForgeBuilding and child.name == forge_name:
+			return child
+	return null
+
+func _find_enemy_nest_by_id(nest_id: StringName) -> Node:
+	if String(nest_id).is_empty():
+		return null
+	return enemy_nests_by_id.get(nest_id, null)
+
+func _restore_building_from_snapshot(entry: Dictionary) -> void:
+	var building_def := _find_building_def(StringName(str(entry.get("building_id", ""))))
+	if building_def == null:
+		return
+	var origin := _vector2i_from_array(entry.get("grid_origin", [0, 0]))
+	var is_main_base := _is_main_base_def(building_def)
+	var building := _spawn_building(building_def, origin, is_main_base)
+	if building == null:
+		return
+	var saved_name := str(entry.get("name", ""))
+	if not saved_name.is_empty():
+		building.name = saved_name
+	if is_main_base:
+		_setup_main_base_after_placement(building)
+	_configure_building_runtime(building, building_def, origin)
+	if entry.has("hp"):
+		building.set("hp", int(entry.get("hp", building.get("hp"))))
+	_apply_building_specific_save_state(building, building_def, entry)
+
+func _apply_building_specific_save_state(building: Node, building_def: BuildingDef, entry: Dictionary) -> void:
+	if building is ProcessorBuilding:
+		var recipe_id := StringName(str(entry.get("selected_recipe_id", "")))
+		if not String(recipe_id).is_empty() and building.has_method("set_recipe"):
+			building.call("set_recipe", recipe_id)
+		building.set("input_cache", _string_name_key_dictionary(entry.get("input_cache", {})))
+		building.set("output_cache", _string_name_key_dictionary(entry.get("output_cache", {})))
+		building.set("progress_seconds", float(entry.get("progress_seconds", 0.0)))
+	elif building is MinerBuilding or building is WaterPumpBuilding:
+		building.set("output_cache", _string_name_key_dictionary(entry.get("output_cache", {})))
+		building.set("progress_seconds", float(entry.get("progress_seconds", 0.0)))
+		if entry.has("requires_logistics_delivery"):
+			building.set("requires_logistics_delivery", bool(entry.get("requires_logistics_delivery", false)))
+	elif building is ForwardSupplyPointBuilding and building.get("inventory") != null:
+		var supply_inventory = building.get("inventory")
+		if supply_inventory != null and supply_inventory.has_method("set_all"):
+			supply_inventory.call("set_all", _string_name_key_dictionary(entry.get("inventory", {})), "读档恢复补给点")
+	elif building is RobotForgeBuilding:
+		var blueprint := blueprint_library.get_blueprint(StringName(str(entry.get("blueprint_id", "")))) if blueprint_library else null
+		if blueprint and building.has_method("set_blueprint_snapshot"):
+			building.call("set_blueprint_snapshot", _create_blueprint_snapshot(blueprint))
+		building.set("target_alive_count", int(entry.get("target_alive_count", building.get("target_alive_count"))))
+		building.set("progress_seconds", float(entry.get("progress_seconds", 0.0)))
+		if bool(entry.get("has_rally_point", false)) and building.has_method("set_rally_point"):
+			var cell := _vector2i_from_array(entry.get("rally_point_cell", [0, 0]))
+			var pos := _vector2_from_array(entry.get("rally_point_position", [0.0, 0.0]))
+			building.call("set_rally_point", cell, pos)
+
+func _restore_enemy_building_states(entries: Variant) -> void:
+	if typeof(entries) != TYPE_ARRAY:
+		return
+	for entry_value in entries:
+		if typeof(entry_value) != TYPE_DICTIONARY:
+			continue
+		var entry: Dictionary = entry_value
+		if str(entry.get("kind", "")) != "enemy_nest":
+			continue
+		var nest := _find_enemy_nest_by_id(StringName(str(entry.get("nest_id", ""))))
+		if nest == null or not is_instance_valid(nest):
+			continue
+		var saved_name := str(entry.get("name", ""))
+		if not saved_name.is_empty():
+			nest.name = saved_name
+		var destroyed: bool = entry.get("destroyed", false) == true
+		if nest.has_method("restore_health_state"):
+			nest.call("restore_health_state", int(entry.get("hp", nest.get("hp"))), destroyed)
+		nest.set("time_alive_seconds", float(entry.get("time_alive_seconds", nest.get("time_alive_seconds"))))
+		nest.set("replenish_seconds_remaining", float(entry.get("replenish_seconds_remaining", nest.get("replenish_seconds_remaining"))))
+		var origin: Vector2i = nest.get("grid_origin")
+		var size: Vector2i = nest.get("grid_size")
+		grid_occupancy.clear_rect(origin, size)
+		if not destroyed:
+			grid_occupancy.register_rect(origin, size, nest)
+	_mark_navigation_dirty()
+
+func _apply_campaign_state_snapshot(data: Dictionary) -> void:
+	if campaign_state == null:
+		return
+	campaign_state.current_stage = int(data.get("current_stage", campaign_state.current_stage))
+	campaign_state.defeated_nests = _string_name_list_from_variant(data.get("defeated_nests", []))
+	campaign_state.key_items = _string_name_list_from_variant(data.get("key_items", []))
+	campaign_state.unlocked_technologies = _string_name_list_from_variant(data.get("unlocked_technologies", []))
+	campaign_state.unlocked_resources = _string_name_list_from_variant(data.get("unlocked_resources", []))
+	campaign_state.unlocked_buildings = _string_name_list_from_variant(data.get("unlocked_buildings", []))
+	campaign_state.unlocked_chassis = _string_name_list_from_variant(data.get("unlocked_chassis", []))
+	campaign_state.unlocked_weapons = _string_name_list_from_variant(data.get("unlocked_weapons", []))
+	campaign_state.unlocked_modules = _string_name_list_from_variant(data.get("unlocked_modules", []))
+	campaign_state.unlocked_templates = _string_name_list_from_variant(data.get("unlocked_templates", []))
+	campaign_state.unlocked_conditions = _string_name_list_from_variant(data.get("unlocked_conditions", []))
+	campaign_state.unlocked_actions = _string_name_list_from_variant(data.get("unlocked_actions", []))
+	campaign_state.unlocked_upgrades = _string_name_list_from_variant(data.get("unlocked_upgrades", []))
+
+func _restore_blueprint_library(entries: Array) -> void:
+	blueprint_library = BlueprintLibraryScript.new()
+	basic_rifle_blueprint = null
+	for entry_value in entries:
+		if typeof(entry_value) != TYPE_DICTIONARY:
+			continue
+		var blueprint := _blueprint_from_save_entry(entry_value)
+		if blueprint == null:
+			continue
+		if blueprint.id == MvpDataDefaults.UNIT_BASIC_RIFLE_ROBOT:
+			basic_rifle_blueprint = blueprint
+		blueprint_library.add_blueprint(blueprint)
+	if basic_rifle_blueprint == null:
+		basic_rifle_blueprint = MvpDataDefaults.create_basic_rifle_blueprint()
+		blueprint_library.add_blueprint(basic_rifle_blueprint)
+
+func _blueprint_from_save_entry(entry: Dictionary) -> UnitBlueprint:
+	var blueprint := UnitBlueprint.new()
+	blueprint.id = StringName(str(entry.get("id", "")))
+	if String(blueprint.id).is_empty():
+		return null
+	blueprint.display_name = str(entry.get("display_name", String(blueprint.id)))
+	blueprint.version = int(entry.get("version", 1))
+	blueprint.icon_path = str(entry.get("icon_path", ""))
+	blueprint.chassis_id = StringName(str(entry.get("chassis_id", "light_chassis")))
+	blueprint.chassis_display_name = str(entry.get("chassis_display_name", "轻型底盘"))
+	blueprint.chassis_icon_path = str(entry.get("chassis_icon_path", ""))
+	blueprint.module_ids = _string_name_list_from_variant(entry.get("module_ids", []))
+	blueprint.module_display_names = _string_list_from_variant(entry.get("module_display_names", []))
+	blueprint.module_icon_paths = _string_list_from_variant(entry.get("module_icon_paths", []))
+	blueprint.production_recipe_id = StringName(str(entry.get("production_recipe_id", "")))
+	blueprint.production_cost = _string_name_key_dictionary(entry.get("production_cost", {}))
+	blueprint.production_time_seconds = float(entry.get("production_time_seconds", 12.0))
+	blueprint.tactical_templates = _dictionary_array_from_variant(entry.get("tactical_templates", []))
+	blueprint.embedded_rules = _dictionary_array_from_variant(entry.get("embedded_rules", []))
+	blueprint.state_flag_defaults = entry.get("state_flag_defaults", {}).duplicate(true)
+	blueprint.default_brain_enabled = bool(entry.get("default_brain_enabled", true))
+	blueprint.stats = _find_blueprint_stats_fallback(blueprint.id)
+	return blueprint
+
+func _find_blueprint_stats_fallback(blueprint_id: StringName) -> UnitStats:
+	for blueprint in MvpDataDefaults.create_unit_blueprints():
+		if blueprint != null and blueprint.id == blueprint_id and blueprint.stats:
+			return blueprint.stats.duplicate(true)
+	return UnitStats.new()
+
+func _vector2i_to_array(value: Vector2i) -> Array:
+	return [value.x, value.y]
+
+func _vector2i_from_array(value: Variant) -> Vector2i:
+	if typeof(value) != TYPE_ARRAY or value.size() < 2:
+		return Vector2i.ZERO
+	return Vector2i(int(value[0]), int(value[1]))
+
+func _vector2_from_array(value: Variant) -> Vector2:
+	if typeof(value) != TYPE_ARRAY or value.size() < 2:
+		return Vector2.ZERO
+	return Vector2(float(value[0]), float(value[1]))
+
+func _string_key_dictionary(data: Variant) -> Dictionary:
+	var result := {}
+	if typeof(data) != TYPE_DICTIONARY:
+		return result
+	for key in data.keys():
+		result[str(key)] = data[key]
+	return result
+
+func _string_name_key_dictionary(data: Variant) -> Dictionary:
+	var result := {}
+	if typeof(data) != TYPE_DICTIONARY:
+		return result
+	for key in data.keys():
+		result[StringName(str(key))] = data[key]
+	return result
+
+func _string_name_list_from_variant(values: Variant) -> Array[StringName]:
+	var result: Array[StringName] = []
+	if typeof(values) != TYPE_ARRAY:
+		return result
+	for value in values:
+		result.append(StringName(str(value)))
+	return result
+
+func _dictionary_array_from_variant(values: Variant) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if typeof(values) != TYPE_ARRAY:
+		return result
+	for value in values:
+		if typeof(value) == TYPE_DICTIONARY:
+			result.append((value as Dictionary).duplicate(true))
+	return result
+
+func _string_list_from_variant(values: Variant) -> Array[String]:
+	var result: Array[String] = []
+	if typeof(values) != TYPE_ARRAY:
+		return result
+	for value in values:
+		result.append(str(value))
+	return result
 
 func get_region_info_for_cell(cell: Vector2i) -> Dictionary:
 	if grid_map and grid_map.has_method("get_area_info_for_cell"):
@@ -569,6 +1218,188 @@ func get_region_info_for_cell(cell: Vector2i) -> Dictionary:
 func get_region_state_for_cell(cell: Vector2i) -> String:
 	var region := _region_for_cell(cell, FOG_REGION_SIZE_CELLS)
 	return str(map_region_states.get(_region_key(region), "unknown"))
+
+func get_navigation_waypoint(origin_world: Vector2, target_world: Vector2) -> Vector2:
+	var id_path := _get_navigation_id_path_for_world(origin_world, target_world)
+	if id_path.size() <= 1:
+		return origin_world
+	return _get_navigation_lookahead_point(origin_world, id_path)
+
+func get_navigation_waypoint_to_node(origin_world: Vector2, target_node: Node) -> Vector2:
+	var id_path := _get_navigation_id_path_for_node(origin_world, target_node)
+	if id_path.size() <= 1:
+		return origin_world
+	return _get_navigation_lookahead_point(origin_world, id_path)
+
+func get_navigation_path_points(origin_world: Vector2, target_world: Vector2) -> PackedVector2Array:
+	var points := PackedVector2Array()
+	points.append(origin_world)
+	var id_path := _get_navigation_id_path_for_world(origin_world, target_world)
+	if id_path.size() <= 1:
+		return points
+	for index in range(1, id_path.size()):
+		points.append(grid_map.call("grid_to_world", id_path[index]))
+	return points
+
+func get_navigation_path_points_to_node(origin_world: Vector2, target_node: Node) -> PackedVector2Array:
+	var points := PackedVector2Array()
+	points.append(origin_world)
+	var id_path := _get_navigation_id_path_for_node(origin_world, target_node)
+	if id_path.size() <= 1:
+		return points
+	for index in range(1, id_path.size()):
+		points.append(grid_map.call("grid_to_world", id_path[index]))
+	return points
+
+func _get_navigation_id_path_for_world(origin_world: Vector2, target_world: Vector2) -> Array[Vector2i]:
+	if grid_map == null:
+		return []
+	_ensure_navigation_grid()
+	if _navigation_grid == null:
+		return []
+	var start_cell: Vector2i = grid_map.call("world_to_grid", origin_world)
+	var target_cell: Vector2i = grid_map.call("world_to_grid", target_world)
+	if grid_map.call("is_cell_in_bounds", start_cell) != true or grid_map.call("is_cell_in_bounds", target_cell) != true:
+		return []
+	var start_was_solid := _navigation_grid.is_point_solid(start_cell)
+	_navigation_grid.set_point_solid(start_cell, false)
+	var target_candidates: Array[Vector2i] = []
+	if _navigation_grid.is_point_solid(target_cell):
+		target_candidates = _get_navigation_adjacent_candidates(start_cell, target_cell)
+	else:
+		target_candidates.append(target_cell)
+	var id_path := _find_navigation_id_path(start_cell, target_candidates, target_cell)
+	_navigation_grid.set_point_solid(start_cell, start_was_solid)
+	return id_path
+
+func _get_navigation_id_path_for_node(origin_world: Vector2, target_node: Node) -> Array[Vector2i]:
+	if grid_map == null or target_node == null or not is_instance_valid(target_node):
+		return []
+	_ensure_navigation_grid()
+	if _navigation_grid == null:
+		return []
+	var start_cell: Vector2i = grid_map.call("world_to_grid", origin_world)
+	if grid_map.call("is_cell_in_bounds", start_cell) != true:
+		return []
+	var target_cell: Vector2i = grid_map.call("world_to_grid", _get_logistics_node_position(target_node))
+	var target_candidates := _get_navigation_node_interaction_candidates(start_cell, target_node)
+	if target_candidates.is_empty() and grid_map.call("is_cell_in_bounds", target_cell) == true and not _navigation_grid.is_point_solid(target_cell):
+		target_candidates.append(target_cell)
+	var start_was_solid := _navigation_grid.is_point_solid(start_cell)
+	_navigation_grid.set_point_solid(start_cell, false)
+	var id_path := _find_navigation_id_path(start_cell, target_candidates, target_cell)
+	_navigation_grid.set_point_solid(start_cell, start_was_solid)
+	return id_path
+
+func _find_navigation_id_path(start_cell: Vector2i, candidates: Array[Vector2i], target_cell: Vector2i) -> Array[Vector2i]:
+	var best_path: Array[Vector2i] = []
+	var best_score := INF
+	for candidate in candidates:
+		if _navigation_grid.is_point_solid(candidate):
+			continue
+		var candidate_path: Array[Vector2i] = _navigation_grid.get_id_path(start_cell, candidate)
+		if candidate_path.is_empty():
+			continue
+		var score := float(candidate_path.size()) + Vector2(candidate).distance_to(Vector2(target_cell)) * 0.01
+		if score < best_score:
+			best_score = score
+			best_path = candidate_path
+	return best_path
+
+func _get_navigation_node_interaction_candidates(start_cell: Vector2i, target_node: Node) -> Array[Vector2i]:
+	var origin_value = target_node.get("grid_origin")
+	var size_value = target_node.get("grid_size")
+	if typeof(origin_value) != TYPE_VECTOR2I or typeof(size_value) != TYPE_VECTOR2I:
+		var target_cell: Vector2i = grid_map.call("world_to_grid", _get_logistics_node_position(target_node))
+		return _get_navigation_adjacent_candidates(start_cell, target_cell)
+	var origin: Vector2i = origin_value
+	var size: Vector2i = size_value
+	var result: Array[Vector2i] = []
+	var seen := {}
+	for x in range(origin.x - 1, origin.x + size.x + 1):
+		for y in range(origin.y - 1, origin.y + size.y + 1):
+			if x >= origin.x and x < origin.x + size.x and y >= origin.y and y < origin.y + size.y:
+				continue
+			var cell := Vector2i(x, y)
+			if grid_map.call("is_cell_in_bounds", cell) != true:
+				continue
+			var key := "%d,%d" % [cell.x, cell.y]
+			if seen.has(key):
+				continue
+			seen[key] = true
+			result.append(cell)
+	result.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		var dist_a := Vector2(a).distance_to(Vector2(start_cell))
+		var dist_b := Vector2(b).distance_to(Vector2(start_cell))
+		return dist_a < dist_b
+	)
+	return result
+
+func _get_navigation_adjacent_candidates(start_cell: Vector2i, target_cell: Vector2i) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	var seen := {}
+	for radius in range(0, 2):
+		for x in range(target_cell.x - radius, target_cell.x + radius + 1):
+			for y in range(target_cell.y - radius, target_cell.y + radius + 1):
+				if radius > 0 and x > target_cell.x - radius and x < target_cell.x + radius and y > target_cell.y - radius and y < target_cell.y + radius:
+					continue
+				var cell := Vector2i(x, y)
+				if grid_map.call("is_cell_in_bounds", cell) != true:
+					continue
+				var key := "%d,%d" % [cell.x, cell.y]
+				if seen.has(key):
+					continue
+				seen[key] = true
+				result.append(cell)
+	result.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		var dist_a := Vector2(a).distance_to(Vector2(target_cell))
+		var dist_b := Vector2(b).distance_to(Vector2(target_cell))
+		if is_equal_approx(dist_a, dist_b):
+			return Vector2(a).distance_to(Vector2(start_cell)) < Vector2(b).distance_to(Vector2(start_cell))
+		return dist_a < dist_b
+	)
+	return result
+
+func _get_navigation_lookahead_point(origin_world: Vector2, id_path: Array[Vector2i]) -> Vector2:
+	var cell_size := float(_get_grid_cell_size())
+	var lookahead_distance := cell_size * 0.68
+	var fallback: Vector2 = grid_map.call("grid_to_world", id_path[id_path.size() - 1])
+	for index in range(1, id_path.size()):
+		var point: Vector2 = grid_map.call("grid_to_world", id_path[index])
+		fallback = point
+		if origin_world.distance_to(point) >= lookahead_distance:
+			return point
+	return fallback
+
+func _ensure_navigation_grid() -> void:
+	if grid_map == null:
+		return
+	if _navigation_grid != null and not _navigation_dirty:
+		return
+	var map_size: Vector2i = grid_map.get("map_size_cells")
+	_navigation_grid = AStarGrid2D.new()
+	_navigation_grid.region = Rect2i(Vector2i.ZERO, map_size)
+	_navigation_grid.cell_size = Vector2.ONE
+	_navigation_grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_AT_LEAST_ONE_WALKABLE
+	_navigation_grid.update()
+	for y in range(map_size.y):
+		for x in range(map_size.x):
+			var cell := Vector2i(x, y)
+			if _is_navigation_cell_blocked(cell):
+				_navigation_grid.set_point_solid(cell, true)
+	_navigation_dirty = false
+
+func _is_navigation_cell_blocked(cell: Vector2i) -> bool:
+	if grid_map == null:
+		return true
+	if grid_map.call("is_cell_in_bounds", cell) != true:
+		return true
+	if grid_map.has_method("is_cell_blocked_by_semantic_tile") and grid_map.call("is_cell_blocked_by_semantic_tile", cell) == true:
+		return true
+	return grid_occupancy.get_at(cell) != null
+
+func _mark_navigation_dirty() -> void:
+	_navigation_dirty = true
 
 func _on_build_mode_requested(building_id: StringName) -> void:
 	var building_def := _find_building_def(building_id)
@@ -672,7 +1503,7 @@ func _select_map_cell_under_mouse() -> void:
 		_show_selection_for_world_unit(world_unit)
 		if hud and hud.has_method("inspect_node"):
 			hud.call("inspect_node", world_unit)
-		_hide_operation_panel()
+		_show_operation_panel_for_node(world_unit)
 		return
 
 	var cell := _get_mouse_grid_cell()
@@ -711,6 +1542,7 @@ func _spawn_building(building_def: BuildingDef, origin: Vector2i, is_main_base: 
 		building.call("setup", building_def, origin, _get_grid_cell_size())
 	grid_occupancy.clear_rect(origin, building_def.grid_size)
 	grid_occupancy.register_rect(origin, building_def.grid_size, building)
+	_mark_navigation_dirty()
 	if building.has_signal("building_destroyed"):
 		building.connect("building_destroyed", Callable(self, "_on_building_destroyed"))
 	return building
@@ -728,6 +1560,8 @@ func _get_place_block_reason(building_def: BuildingDef, origin: Vector2i) -> Str
 	if not grid_occupancy.can_place(origin, building_def.grid_size):
 		return "格子已被占用"
 	var resource_node := _get_resource_node_at(origin)
+	if _is_water_pump_def(building_def) and not _is_water_pump_candidate_cell(origin):
+		return "水泵必须放在水池边缘的泵位候选格"
 	if _is_main_base_def(building_def):
 		if main_base != null:
 			return "主基地已经存在"
@@ -737,14 +1571,16 @@ func _get_place_block_reason(building_def: BuildingDef, origin: Vector2i) -> Str
 	if _is_miner_def(building_def):
 		if resource_node == null:
 			return "采矿机必须覆盖矿点"
+		if _is_water_resource_node(resource_node):
+			return "水源需要放置水泵"
 		if bool(resource_node.call("is_bound")):
 			return "矿点已绑定采矿机"
-	elif resource_node != null:
+	elif resource_node != null and not (_is_water_pump_def(building_def) and _is_water_resource_node(resource_node)):
 		return "资源点上只能放置采矿机"
 	var inventory = _get_main_base_inventory()
 	if inventory == null:
 		return "请先放置主基地"
-	if not _is_in_main_base_service_radius(origin, building_def.grid_size):
+	if not _is_remote_stage14_building_def(building_def) and not _can_place_with_stage14_remote_logistics(building_def, resource_node) and not _is_in_main_base_service_radius(origin, building_def.grid_size):
 		return "超出主基地服务半径"
 	var missing = inventory.get_missing(building_def.build_cost)
 	if not missing.is_empty():
@@ -757,6 +1593,29 @@ func _is_in_main_base_service_radius(origin: Vector2i, size: Vector2i) -> bool:
 	var building_center := Vector2(origin) + Vector2(size) * 0.5
 	var base_center := Vector2(main_base.get("grid_origin")) + Vector2(main_base.get("grid_size")) * 0.5
 	return building_center.distance_to(base_center) <= float(main_base.get("service_radius_cells"))
+
+func _is_water_pump_candidate_cell(cell: Vector2i) -> bool:
+	for water_value in map_water_bodies:
+		if typeof(water_value) != TYPE_DICTIONARY:
+			continue
+		var water: Dictionary = water_value
+		for cell_value in water.get("pump_candidate_cells", []):
+			var pump_cell := MapConfigLoaderScript.get_vector2i({"cell": cell_value}, "cell", Vector2i(-999999, -999999))
+			if pump_cell == cell:
+				return true
+	return false
+
+func _is_water_resource_node(resource_node: Node) -> bool:
+	return resource_node != null and StringName(resource_node.get("resource_id")) == MvpDataDefaults.RES_WATER
+
+func _can_place_with_stage14_remote_logistics(building_def: BuildingDef, resource_node: Node) -> bool:
+	if not stage14_remote_logistics_enabled:
+		return false
+	if not _is_miner_def(building_def):
+		return false
+	if resource_node == null or _is_water_resource_node(resource_node):
+		return false
+	return true
 
 func _on_inventory_changed(resource_id: StringName, amount: int, delta: int, reason: String) -> void:
 	_refresh_resource_hud()
@@ -1033,7 +1892,10 @@ func _is_water_body_discovered(water: Dictionary) -> bool:
 	for rect_value in water.get("grid_rects", []):
 		if typeof(rect_value) != TYPE_ARRAY or rect_value.size() < 4:
 			continue
-		var sample := Vector2i(int(rect_value[0]) + int(rect_value[2]) / 2, int(rect_value[1]) + int(rect_value[3]) / 2)
+		var sample := Vector2i(
+			int(rect_value[0]) + floori(float(int(rect_value[2])) * 0.5),
+			int(rect_value[1]) + floori(float(int(rect_value[3])) * 0.5)
+		)
 		if _is_cell_discovered(sample):
 			return true
 	return false
@@ -1043,7 +1905,7 @@ func _get_minimap_water_flow_target_cell() -> Array:
 		return [-1, -1]
 	var origin: Vector2i = main_base.get("grid_origin")
 	var size: Vector2i = main_base.get("grid_size")
-	var center := origin + Vector2i(size.x / 2, size.y / 2)
+	var center := origin + Vector2i(floori(float(size.x) * 0.5), floori(float(size.y) * 0.5))
 	return [center.x, center.y]
 
 func _get_minimap_camera_cell() -> Array:
@@ -1213,12 +2075,14 @@ func _format_compass_direction(offset: Vector2) -> String:
 func _show_selection_for_cell(cell: Vector2i) -> void:
 	_clear_world_unit_selection()
 	selected_inspected_node = null
+	_clear_logistics_visuals()
 	if selection_marker and selection_marker.has_method("show_selection"):
 		selection_marker.call("show_selection", cell, Vector2i.ONE, _get_grid_cell_size())
 
 func _show_selection_for_node(node: Node) -> void:
 	_clear_world_unit_selection()
 	selected_inspected_node = node
+	_refresh_selected_logistics_visual()
 	if selection_marker == null or not selection_marker.has_method("show_selection"):
 		return
 	var origin: Vector2i = node.get("grid_origin")
@@ -1230,6 +2094,7 @@ func _show_selection_for_world_unit(unit: Node) -> void:
 	selected_world_unit = unit
 	selected_inspected_node = unit
 	unit_inspector_refresh_seconds = 0.0
+	_refresh_selected_logistics_visual()
 	if selection_marker and selection_marker.has_method("clear_selection"):
 		selection_marker.call("clear_selection")
 	if selected_world_unit.has_method("set_selected"):
@@ -1242,6 +2107,7 @@ func _clear_world_unit_selection() -> void:
 		selected_inspected_node = null
 	selected_world_unit = null
 	unit_inspector_refresh_seconds = 0.0
+	_clear_logistics_visuals()
 
 func _refresh_selected_unit_inspector() -> void:
 	if selected_inspected_node == null or not is_instance_valid(selected_inspected_node):
@@ -1299,7 +2165,7 @@ func _find_building_def(building_id: StringName) -> BuildingDef:
 func _get_placeable_buildings() -> Array[BuildingDef]:
 	var result: Array[BuildingDef] = []
 	for building_def in building_defs:
-		if campaign_state and not campaign_state.is_building_unlocked(building_def.id):
+		if not _is_building_visible_in_build_bar(building_def):
 			continue
 		if main_base == null:
 			if _is_main_base_def(building_def):
@@ -1307,6 +2173,17 @@ func _get_placeable_buildings() -> Array[BuildingDef]:
 		elif not _is_main_base_def(building_def):
 			result.append(building_def)
 	return result
+
+func _is_building_visible_in_build_bar(building_def: BuildingDef) -> bool:
+	if building_def == null or not building_def.build_bar_visible:
+		return false
+	if campaign_state == null:
+		return building_def.unlock_stage <= 0 and not building_def.requires_campaign_unlock
+	if campaign_state.is_building_unlocked(building_def.id):
+		return true
+	if building_def.requires_campaign_unlock:
+		return false
+	return campaign_state.current_stage >= building_def.unlock_stage
 
 func _setup_main_base_after_placement(base_node: Node) -> void:
 	main_base = base_node
@@ -1346,6 +2223,21 @@ func _is_robot_forge_def(building_def: BuildingDef) -> bool:
 func _is_research_terminal_def(building_def: BuildingDef) -> bool:
 	return building_def != null and building_def.id == MvpDataDefaults.BUILDING_RESEARCH_TERMINAL
 
+func _is_water_pump_def(building_def: BuildingDef) -> bool:
+	return building_def != null and building_def.id == MvpDataDefaults.BUILDING_WATER_PUMP
+
+func _is_forward_supply_point_def(building_def: BuildingDef) -> bool:
+	return building_def != null and building_def.id == MvpDataDefaults.BUILDING_FORWARD_SUPPLY_POINT
+
+func _is_remote_stage14_building_def(building_def: BuildingDef) -> bool:
+	return _is_water_pump_def(building_def) or _is_forward_supply_point_def(building_def)
+
+func _is_cargo_robot_node(node: Node) -> bool:
+	return node != null and node.has_method("is_cargo_robot") and bool(node.call("is_cargo_robot"))
+
+func _is_producer_operation_node(node: Node) -> bool:
+	return node != null and node.has_method("get_operation_recipe") and node.get("output_cache") != null
+
 func _get_building_scene(building_def: BuildingDef, is_main_base: bool) -> PackedScene:
 	if is_main_base:
 		return MainBaseScene
@@ -1357,6 +2249,10 @@ func _get_building_scene(building_def: BuildingDef, is_main_base: bool) -> Packe
 		return RobotForgeScene
 	if _is_research_terminal_def(building_def):
 		return ResearchTerminalScene
+	if _is_water_pump_def(building_def):
+		return WaterPumpScene
+	if _is_forward_supply_point_def(building_def):
+		return ForwardSupplyPointScene
 	return BaseBuildingScene
 
 func _configure_grid_map_from_config(map_config: Dictionary) -> void:
@@ -1445,6 +2341,7 @@ func _spawn_enemy_nest(data: Dictionary) -> void:
 	nest.call("setup_nest", nest_id, nest_type, nest_config, origin, _get_grid_cell_size())
 	grid_occupancy.clear_rect(origin, grid_size)
 	grid_occupancy.register_rect(origin, grid_size, nest)
+	_mark_navigation_dirty()
 	nest.connect("guard_spawn_requested", Callable(self, "_on_enemy_nest_guard_spawn_requested"))
 	nest.connect("nest_destroyed", Callable(self, "_on_enemy_nest_destroyed"))
 	if nest.has_signal("building_destroyed"):
@@ -1785,7 +2682,8 @@ func _get_resource_node_at(cell: Vector2i) -> Node:
 func _configure_building_runtime(building: Node, building_def: BuildingDef, origin: Vector2i) -> void:
 	var inventory = _get_main_base_inventory()
 	if _is_miner_def(building_def) and building.has_method("setup_miner"):
-		building.call("setup_miner", _get_resource_node_at(origin), inventory)
+		var use_entity_logistics := stage14_remote_logistics_enabled and not _is_in_main_base_service_radius(origin, building_def.grid_size)
+		building.call("setup_miner", _get_resource_node_at(origin), inventory, use_entity_logistics)
 		if building.has_signal("miner_state_changed"):
 			building.connect("miner_state_changed", Callable(self, "_on_miner_state_changed").bind(building))
 	elif _is_processor_def(building_def) and building.has_method("setup_processor"):
@@ -1806,6 +2704,11 @@ func _configure_building_runtime(building: Node, building_def: BuildingDef, orig
 			building.connect("research_completed", Callable(self, "_on_research_completed"))
 		if not research_terminals.has(building):
 			research_terminals.append(building)
+	elif _is_water_pump_def(building_def) and building.has_method("setup_water_pump"):
+		var use_entity_logistics := stage14_remote_logistics_enabled and not _is_in_main_base_service_radius(origin, building_def.grid_size)
+		building.call("setup_water_pump", inventory, use_entity_logistics)
+		if building.has_signal("water_pump_state_changed"):
+			building.connect("water_pump_state_changed", Callable(self, "_on_water_pump_state_changed").bind(building))
 
 func _get_resource_recipes() -> Array[RecipeDef]:
 	var result: Array[RecipeDef] = []
@@ -1819,8 +2722,17 @@ func _show_operation_panel_for_node(node: Node) -> void:
 	if node == null:
 		_hide_operation_panel()
 		return
+	if _is_cargo_robot_node(node):
+		selected_operation_building = node
+		operation_panel_refresh_seconds = 0.0
+		_refresh_operation_panel()
+		return
 	var building_def: BuildingDef = node.get("building_def")
-	if _is_miner_def(building_def):
+	if _is_main_base_def(building_def):
+		selected_operation_building = node
+		operation_panel_refresh_seconds = 0.0
+		_refresh_operation_panel()
+	elif _is_producer_operation_node(node):
 		selected_operation_building = node
 		operation_panel_refresh_seconds = 0.0
 		_refresh_operation_panel()
@@ -1836,14 +2748,37 @@ func _show_operation_panel_for_node(node: Node) -> void:
 		selected_operation_building = node
 		operation_panel_refresh_seconds = 0.0
 		_refresh_operation_panel()
+	elif _is_forward_supply_point_def(building_def):
+		selected_operation_building = node
+		operation_panel_refresh_seconds = 0.0
+		_refresh_operation_panel()
+	elif node is BaseBuilding and String(node.get("team")) == "Team_A":
+		selected_operation_building = node
+		operation_panel_refresh_seconds = 0.0
+		_refresh_operation_panel()
 	else:
 		_hide_operation_panel()
 
 func _refresh_operation_panel() -> void:
 	if selected_operation_building == null or hud == null:
 		return
+	if _is_cargo_robot_node(selected_operation_building) and hud.has_method("show_cargo_robot_panel"):
+		hud.call(
+			"show_cargo_robot_panel",
+			selected_operation_building,
+			resource_defs,
+			_world_to_screen(selected_operation_building.global_position)
+		)
+		return
 	var building_def: BuildingDef = selected_operation_building.get("building_def")
-	if _is_processor_def(building_def) and hud.has_method("show_processor_panel"):
+	if _is_main_base_def(building_def) and hud.has_method("show_inventory_storage_panel"):
+		hud.call(
+			"show_inventory_storage_panel",
+			selected_operation_building,
+			resource_defs,
+			_world_to_screen(selected_operation_building.global_position)
+		)
+	elif _is_processor_def(building_def) and hud.has_method("show_processor_panel"):
 		hud.call(
 			"show_processor_panel",
 			selected_operation_building,
@@ -1851,9 +2786,9 @@ func _refresh_operation_panel() -> void:
 			resource_defs,
 			_world_to_screen(selected_operation_building.global_position)
 		)
-	elif _is_miner_def(building_def) and hud.has_method("show_miner_panel"):
+	elif _is_producer_operation_node(selected_operation_building) and hud.has_method("show_producer_panel"):
 		hud.call(
-			"show_miner_panel",
+			"show_producer_panel",
 			selected_operation_building,
 			resource_defs,
 			_world_to_screen(selected_operation_building.global_position)
@@ -1876,6 +2811,19 @@ func _refresh_operation_panel() -> void:
 			resource_defs,
 			_world_to_screen(selected_operation_building.global_position)
 		)
+	elif _is_forward_supply_point_def(building_def) and hud.has_method("show_supply_point_panel"):
+		hud.call(
+			"show_supply_point_panel",
+			selected_operation_building,
+			resource_defs,
+			_world_to_screen(selected_operation_building.global_position)
+		)
+	elif selected_operation_building is BaseBuilding and String(selected_operation_building.get("team")) == "Team_A" and hud.has_method("show_basic_building_panel"):
+		hud.call(
+			"show_basic_building_panel",
+			selected_operation_building,
+			_world_to_screen(selected_operation_building.global_position)
+		)
 
 func _hide_operation_panel() -> void:
 	selected_operation_building = null
@@ -1888,6 +2836,61 @@ func _on_processor_recipe_selected(processor: Node, recipe_id: StringName) -> vo
 		processor.call("set_recipe", recipe_id)
 		push_debug_event("加工厂配方切换：%s" % String(recipe_id))
 	call_deferred("_refresh_operation_panel")
+
+func _on_building_demolish_requested(building: Node) -> void:
+	_demolish_building(building)
+
+func _demolish_building(building: Node) -> void:
+	if building == null or not is_instance_valid(building):
+		return
+	if not (building is BaseBuilding):
+		return
+	var building_def: BuildingDef = building.get("building_def")
+	var origin: Vector2i = building.get("grid_origin")
+	var size: Vector2i = building.get("grid_size")
+	grid_occupancy.clear_rect(origin, size)
+	_unbind_resource_for_demolished_building(building)
+	_clear_logistics_tasks_for_node(building)
+	if building == main_base:
+		main_base = null
+	if selected_operation_building == building:
+		_hide_operation_panel()
+	if selected_inspected_node == building:
+		selected_inspected_node = null
+		if hud and hud.has_method("inspect_cell"):
+			hud.call("inspect_cell", origin, get_region_info_for_cell(origin), get_region_state_for_cell(origin))
+	if selection_marker and selection_marker.has_method("clear_selection"):
+		selection_marker.call("clear_selection")
+	var rally_marker = building.get("rally_marker")
+	if rally_marker != null and is_instance_valid(rally_marker):
+		rally_marker.queue_free()
+	push_debug_event("拆除建筑：%s" % (building_def.display_name if building_def else building.name))
+	building.queue_free()
+	_mark_navigation_dirty()
+	_refresh_build_options()
+	_refresh_resource_hud()
+	_refresh_campaign_hud()
+
+func _clear_logistics_tasks_for_node(node: Node) -> void:
+	for robot in stage14_logistics_tasks_by_robot.keys():
+		var task: Dictionary = stage14_logistics_tasks_by_robot[robot]
+		if task.get("source") == node or task.get("target") == node:
+			_clear_stage14_robot_task(robot)
+
+func _unbind_resource_for_demolished_building(building: Node) -> void:
+	if building is MinerBuilding:
+		var bound_resource = building.get("bound_resource_node")
+		if bound_resource != null and is_instance_valid(bound_resource):
+			bound_resource.set("bound_miner", null)
+			if bound_resource is CanvasItem:
+				(bound_resource as CanvasItem).modulate = Color.WHITE
+		return
+	var origin: Vector2i = building.get("grid_origin")
+	var resource_node := _get_resource_node_at(origin)
+	if resource_node != null and is_instance_valid(resource_node):
+		resource_node.set("bound_miner", null)
+		if resource_node is CanvasItem:
+			(resource_node as CanvasItem).modulate = Color.WHITE
 
 func _on_miner_state_changed(miner: Node) -> void:
 	if miner == selected_operation_building:
@@ -1905,6 +2908,11 @@ func _on_research_terminal_state_changed(terminal: Node) -> void:
 	if terminal == selected_operation_building:
 		call_deferred("_refresh_operation_panel")
 	_refresh_campaign_hud()
+
+func _on_water_pump_state_changed(pump: Node) -> void:
+	if pump == selected_inspected_node and hud and hud.has_method("inspect_node"):
+		call_deferred("_refresh_selected_unit_inspector")
+	_refresh_resource_hud()
 
 func _on_research_completed(technology: Variant) -> void:
 	push_debug_event("研究完成：%s" % technology.display_name)
@@ -1926,6 +2934,7 @@ func _on_forge_robot_production_completed(forge: Node, blueprint: UnitBlueprint)
 		return
 	robot.name = IdProvider.next_id(&"robot")
 	robot.set("team", "Team_A")
+	robot.set("producer_forge_name", forge.name)
 	robot.global_position = forge.call("get_spawn_position") if forge.has_method("get_spawn_position") else forge.global_position
 	if robot.has_method("setup_from_blueprint"):
 		robot.call(
@@ -1961,6 +2970,782 @@ func _record_robot_produced(forge: Node, robot: Node, blueprint: UnitBlueprint) 
 	push_debug_event("锻造完成：%s -> %s" % [blueprint.display_name, robot.name])
 	if hud and hud.has_method("show_bottom_prompt") and bool(forge.get("has_rally_point")):
 		hud.call("show_bottom_prompt", "机器人已出厂，将前往锻造厂集结点。", 1.8, &"info")
+
+func _tick_stage14_logistics(delta: float) -> void:
+	if main_base == null:
+		return
+	_prune_stage14_logistics_tasks()
+	_update_stage14_logistics_waits(delta)
+	for robot in get_tree().get_nodes_in_group("cargo"):
+		if not _is_available_stage14_cargo_robot(robot):
+			continue
+		if stage14_logistics_tasks_by_robot.has(robot):
+			_advance_stage14_logistics_task(robot, stage14_logistics_tasks_by_robot[robot])
+		else:
+			_try_assign_stage14_logistics_task(robot)
+	_refresh_stage14_logistics_diagnostics()
+
+func _is_available_stage14_cargo_robot(robot: Node) -> bool:
+	if robot == null or not is_instance_valid(robot):
+		return false
+	if not _is_cargo_robot_node(robot):
+		return false
+	if String(robot.get("team")) != "Team_A":
+		return false
+	if robot.has_method("is_alive") and not bool(robot.call("is_alive")):
+		return false
+	return true
+
+func _prune_stage14_logistics_tasks() -> void:
+	for robot in stage14_logistics_tasks_by_robot.keys():
+		if not _is_available_stage14_cargo_robot(robot):
+			stage14_logistics_tasks_by_robot.erase(robot)
+			_clear_logistics_task_visual(robot)
+
+func _try_assign_stage14_logistics_task(robot: Node) -> void:
+	if _try_assign_stage14_existing_cargo_delivery(robot):
+		return
+	var task := _build_stage14_best_logistics_task(robot)
+	if task.is_empty():
+		return
+	stage14_logistics_tasks_by_robot[robot] = task
+	_sync_stage14_robot_task(robot, task)
+	_update_logistics_task_visual(robot, task)
+
+func _advance_stage14_logistics_task(robot: Node, task: Dictionary) -> void:
+	var stage := str(task.get("stage", ""))
+	var source := task.get("source") as Node
+	var target := task.get("target") as Node
+	_update_logistics_task_visual(robot, task)
+	if stage == "to_pickup":
+		if source == null or not is_instance_valid(source):
+			_clear_stage14_robot_task(robot)
+			return
+		if _is_logistics_robot_near(robot, source):
+			if _pickup_stage14_logistics_cargo(robot, task):
+				task["stage"] = "to_dropoff"
+				task["status"] = _get_stage14_dropoff_status(task)
+				stage14_logistics_tasks_by_robot[robot] = task
+				_sync_stage14_robot_task(robot, task)
+				_update_logistics_task_visual(robot, task)
+			else:
+				_clear_stage14_robot_task(robot)
+			return
+		_move_logistics_robot_towards(robot, _get_logistics_node_position(source), "前往取货", source)
+	elif stage == "to_dropoff":
+		if target == null or not is_instance_valid(target):
+			_clear_stage14_robot_task(robot)
+			return
+		if _is_logistics_robot_near(robot, target):
+			_deliver_stage14_logistics_cargo(robot, task)
+			_clear_stage14_robot_task(robot)
+			return
+		_move_logistics_robot_towards(robot, _get_logistics_node_position(target), _get_stage14_dropoff_status(task), target)
+	else:
+		_clear_stage14_robot_task(robot)
+
+func _pickup_stage14_logistics_cargo(robot: Node, task: Dictionary) -> bool:
+	var source := task.get("source") as Node
+	if source == null or not is_instance_valid(source):
+		return false
+	var resource_id := StringName(str(task.get("resource_id", "")))
+	if String(resource_id).is_empty():
+		return false
+	var free_capacity := int(robot.call("get_cargo_free_capacity")) if robot.has_method("get_cargo_free_capacity") else 0
+	var requested := int(task.get("amount", free_capacity))
+	var amount := _take_stage14_resource_from_node(source, resource_id, mini(requested, free_capacity), "%s 物流取货" % robot.name)
+	if amount <= 0:
+		return false
+	robot.call("add_cargo", resource_id, amount)
+	task["amount"] = amount
+	stage14_logistics_wait_seconds_by_key.erase(_make_stage14_wait_key(source, resource_id))
+	_record_stage14_logistics_event(&"logistics_picked", robot, task, amount, source, task.get("target") as Node)
+	return true
+
+func _deliver_stage14_logistics_cargo(robot: Node, task: Dictionary) -> void:
+	var target := task.get("target") as Node
+	if target == null or not is_instance_valid(target):
+		return
+	var resource_id := StringName(str(task.get("resource_id", "")))
+	if String(resource_id).is_empty():
+		return
+	var cargo: Dictionary = robot.call("get_cargo_inventory") if robot.has_method("get_cargo_inventory") else {}
+	var amount := int(cargo.get(resource_id, 0))
+	if amount <= 0:
+		return
+	var accepted := _add_stage14_resource_to_node(target, resource_id, amount, "%s 物流送达" % robot.name)
+	if accepted > 0:
+		robot.call("remove_cargo", resource_id, accepted)
+		_record_stage14_logistics_event(&"logistics_delivered", robot, task, accepted, task.get("source") as Node, target)
+	var leftover := int(robot.call("get_cargo_used_capacity")) if robot.has_method("get_cargo_used_capacity") else 0
+	if leftover > 0 and target != main_base:
+		_deliver_remaining_stage14_cargo_to_main_base(robot)
+	_refresh_resource_hud()
+
+func _build_stage14_best_logistics_task(robot: Node) -> Dictionary:
+	var candidates: Array = []
+	candidates.append_array(_build_stage14_urgent_supply_candidates(robot))
+	candidates.append_array(_build_stage14_source_to_relay_candidates(robot))
+	candidates.append_array(_build_stage14_relay_to_base_candidates(robot))
+	candidates.append_array(_build_stage14_direct_to_base_candidates(robot))
+	var best_task := {}
+	var best_score := -INF
+	for candidate_value in candidates:
+		if typeof(candidate_value) != TYPE_DICTIONARY:
+			continue
+		var candidate: Dictionary = candidate_value
+		var score := float(candidate.get("score", 0.0))
+		if score > best_score:
+			best_score = score
+			best_task = candidate
+	if best_task.is_empty():
+		return {}
+	best_task.erase("score")
+	return best_task
+
+func _build_stage14_urgent_supply_candidates(robot: Node) -> Array:
+	var candidates: Array = []
+	var free_capacity := _get_stage14_robot_free_capacity(robot)
+	if free_capacity <= 0:
+		return candidates
+	for demand_value in _get_stage14_shortage_demands():
+		var demand: Dictionary = demand_value
+		var target := demand.get("target") as Node
+		if target == null or not is_instance_valid(target):
+			continue
+		var resource_id := StringName(str(demand.get("resource_id", "")))
+		var missing := int(demand.get("amount", 0)) - _get_stage14_reserved_delivery(target, resource_id)
+		if missing <= 0:
+			continue
+		var source := _find_stage14_best_source_for_resource(resource_id, target)
+		if source == null:
+			continue
+		var available := _get_stage14_available_for_assignment(source, resource_id)
+		var amount := mini(free_capacity, mini(missing, available))
+		if amount <= 0:
+			continue
+		candidates.append(_make_stage14_task(
+			"urgent_supply",
+			source,
+			target,
+			resource_id,
+			amount,
+			"紧急补货",
+			100000.0 + float(demand.get("urgency", 0.0)) + float(amount)
+		))
+	return candidates
+
+func _build_stage14_source_to_relay_candidates(robot: Node) -> Array:
+	var candidates: Array = []
+	var free_capacity := _get_stage14_robot_free_capacity(robot)
+	if free_capacity <= 0:
+		return candidates
+	for source in _get_stage14_logistics_sources():
+		for resource_id in _get_stage14_pickup_resource_ids(source):
+			var resource_name := StringName(str(resource_id))
+			var available := _get_stage14_available_for_assignment(source, resource_name)
+			if available <= 0:
+				continue
+			var relay := _find_stage14_best_supply_point_for_source(source, resource_name)
+			if relay == null:
+				continue
+			var relay_free := int(relay.call("get_free_capacity")) if relay.has_method("get_free_capacity") else free_capacity
+			var amount := mini(available, mini(free_capacity, relay_free))
+			if amount <= 0 or not _can_dispatch_stage14_load(source, resource_name, amount, free_capacity, false):
+				continue
+			var distance_cost := _get_stage14_route_cost(robot, source, relay)
+			candidates.append(_make_stage14_task(
+				"source_to_relay",
+				source,
+				relay,
+				resource_name,
+				amount,
+				"运往前线补给点",
+				3000.0 + float(amount) * 12.0 - distance_cost
+			))
+	return candidates
+
+func _build_stage14_relay_to_base_candidates(robot: Node) -> Array:
+	var candidates: Array = []
+	var free_capacity := _get_stage14_robot_free_capacity(robot)
+	if free_capacity <= 0:
+		return candidates
+	for relay in _get_stage14_supply_points():
+		for resource_id in _get_stage14_pickup_resource_ids(relay):
+			var resource_name := StringName(str(resource_id))
+			var available := _get_stage14_available_for_assignment(relay, resource_name)
+			if available <= 0:
+				continue
+			var amount := mini(available, free_capacity)
+			if amount <= 0 or not _can_dispatch_stage14_load(relay, resource_name, amount, free_capacity, false):
+				continue
+			var base_shortage_bonus := maxi(0, STAGE14_BASE_TARGET_STOCK - _get_main_base_resource_amount(resource_name))
+			var distance_cost := _get_stage14_route_cost(robot, relay, main_base)
+			candidates.append(_make_stage14_task(
+				"relay_to_base",
+				relay,
+				main_base,
+				resource_name,
+				amount,
+				"补给点回运主基地",
+				2000.0 + float(amount) * 10.0 + float(base_shortage_bonus) * 8.0 - distance_cost
+			))
+	return candidates
+
+func _build_stage14_direct_to_base_candidates(robot: Node) -> Array:
+	var candidates: Array = []
+	var free_capacity := _get_stage14_robot_free_capacity(robot)
+	if free_capacity <= 0:
+		return candidates
+	for source in _get_stage14_logistics_sources():
+		if _find_stage14_best_supply_point_for_source(source, &"") != null:
+			continue
+		for resource_id in _get_stage14_pickup_resource_ids(source):
+			var resource_name := StringName(str(resource_id))
+			var available := _get_stage14_available_for_assignment(source, resource_name)
+			var amount := mini(available, free_capacity)
+			if amount <= 0 or not _can_dispatch_stage14_load(source, resource_name, amount, free_capacity, false):
+				continue
+			var distance_cost := _get_stage14_route_cost(robot, source, main_base)
+			candidates.append(_make_stage14_task(
+				"direct_to_base",
+				source,
+				main_base,
+				resource_name,
+				amount,
+				"远程直送主基地",
+				1000.0 + float(amount) * 8.0 - distance_cost
+			))
+	return candidates
+
+func _get_stage14_shortage_demands() -> Array:
+	var demands: Array = []
+	var inventory = _get_main_base_inventory()
+	for node in get_tree().get_nodes_in_group("team_a"):
+		if node is ProcessorBuilding:
+			demands.append_array(_get_stage14_processor_demands(node, inventory))
+		elif node is RobotForgeBuilding:
+			demands.append_array(_get_stage14_forge_demands(node))
+	return demands
+
+func _get_stage14_processor_demands(processor: Node, inventory: Variant) -> Array:
+	var demands: Array = []
+	var recipe: RecipeDef = processor.get("selected_recipe")
+	if recipe == null or float(processor.get("progress_seconds")) > 0.0:
+		return demands
+	var input_cache: Dictionary = processor.get("input_cache")
+	for resource_id in recipe.inputs.keys():
+		var required := int(recipe.inputs[resource_id])
+		var cached := int(input_cache.get(resource_id, 0))
+		var main_available := int(inventory.get_amount(resource_id)) if inventory != null else 0
+		var missing := required - cached - main_available
+		if missing <= 0:
+			continue
+		demands.append({
+			"target": processor,
+			"resource_id": StringName(resource_id),
+			"amount": missing,
+			"urgency": 600.0 + float(missing) * 40.0,
+		})
+	return demands
+
+func _get_stage14_forge_demands(forge: Node) -> Array:
+	var demands: Array = []
+	if float(forge.get("progress_seconds")) > 0.0 or not forge.has_method("get_missing_resources"):
+		return demands
+	var missing: Dictionary = forge.call("get_missing_resources")
+	for resource_id in missing.keys():
+		var amount := int(missing[resource_id])
+		if amount <= 0:
+			continue
+		demands.append({
+			"target": main_base,
+			"resource_id": StringName(resource_id),
+			"amount": amount,
+			"urgency": 500.0 + float(amount) * 35.0,
+		})
+	return demands
+
+func _get_stage14_logistics_sources() -> Array:
+	var sources: Array = []
+	for node in get_tree().get_nodes_in_group("team_a"):
+		if node == null or not is_instance_valid(node):
+			continue
+		if not (node is MinerBuilding or node is WaterPumpBuilding):
+			continue
+		var requires_delivery = node.get("requires_logistics_delivery")
+		if typeof(requires_delivery) != TYPE_BOOL or not requires_delivery:
+			continue
+		var output_cache: Dictionary = node.get("output_cache")
+		if output_cache.is_empty():
+			continue
+		sources.append(node)
+	return sources
+
+func _get_stage14_supply_points() -> Array:
+	var supply_points: Array = []
+	for node in get_tree().get_nodes_in_group("frontline_supply"):
+		if node != null and is_instance_valid(node) and node.has_method("get_free_capacity"):
+			supply_points.append(node)
+	for node in get_tree().get_nodes_in_group("team_a"):
+		if node == null or not is_instance_valid(node) or supply_points.has(node):
+			continue
+		var building_def_value = node.get("building_def")
+		if building_def_value is BuildingDef and (building_def_value as BuildingDef).id == MvpDataDefaults.BUILDING_FORWARD_SUPPLY_POINT:
+			supply_points.append(node)
+	return supply_points
+
+func _find_stage14_best_supply_point_for_source(source: Node, resource_id: StringName) -> Node:
+	var best: Node = null
+	var best_score := -INF
+	for relay in _get_stage14_supply_points():
+		if relay == source:
+			continue
+		var free_capacity := int(relay.call("get_free_capacity")) if relay.has_method("get_free_capacity") else 0
+		if free_capacity <= 0:
+			continue
+		var current_stock := int(relay.call("get_amount", resource_id)) if relay.has_method("get_amount") and not String(resource_id).is_empty() else 0
+		if not String(resource_id).is_empty() and current_stock >= STAGE14_RELAY_TARGET_STOCK and _get_stage14_available_for_assignment(source, resource_id) < _get_stage14_min_load_amount(_get_stage14_largest_cargo_capacity()):
+			continue
+		var score := 10000.0 - _get_logistics_node_position(source).distance_to(_get_logistics_node_position(relay)) + float(free_capacity) * 0.25
+		if score > best_score:
+			best_score = score
+			best = relay
+	return best
+
+func _find_stage14_best_source_for_resource(resource_id: StringName, target: Node) -> Node:
+	var best: Node = null
+	var best_score := -INF
+	for source in _get_stage14_supply_points():
+		var available := _get_stage14_available_for_assignment(source, resource_id)
+		if available <= 0:
+			continue
+		var score := 5000.0 + float(available) * 3.0 - _get_logistics_node_position(source).distance_to(_get_logistics_node_position(target))
+		if score > best_score:
+			best_score = score
+			best = source
+	for source in _get_stage14_logistics_sources():
+		var available := _get_stage14_available_for_assignment(source, resource_id)
+		if available <= 0:
+			continue
+		var score := 3000.0 + float(available) * 2.0 - _get_logistics_node_position(source).distance_to(_get_logistics_node_position(target))
+		if score > best_score:
+			best_score = score
+			best = source
+	return best
+
+func _try_assign_stage14_existing_cargo_delivery(robot: Node) -> bool:
+	var cargo: Dictionary = robot.call("get_cargo_inventory") if robot.has_method("get_cargo_inventory") else {}
+	if cargo.is_empty():
+		return false
+	for resource_id in cargo.keys():
+		var amount := int(cargo[resource_id])
+		if amount <= 0:
+			continue
+		var task := _make_stage14_task("recover_cargo", robot, main_base, StringName(resource_id), amount, "回收残余货物", 0.0)
+		task["stage"] = "to_dropoff"
+		stage14_logistics_tasks_by_robot[robot] = task
+		_sync_stage14_robot_task(robot, task)
+		return true
+	return false
+
+func _make_stage14_task(task_type: String, source: Node, target: Node, resource_id: StringName, amount: int, status: String, score: float) -> Dictionary:
+	return {
+		"stage": "to_pickup",
+		"type": task_type,
+		"source": source,
+		"target": target,
+		"resource_id": resource_id,
+		"amount": amount,
+		"status": status,
+		"score": score,
+	}
+
+func _get_stage14_pickup_resource_ids(node: Node) -> Array:
+	if node == null or not is_instance_valid(node):
+		return []
+	if node.has_method("get_all_resources"):
+		return node.call("get_all_resources").keys()
+	var output_cache: Dictionary = node.get("output_cache")
+	return output_cache.keys()
+
+func _get_stage14_available_for_assignment(node: Node, resource_id: StringName) -> int:
+	return maxi(0, _get_stage14_node_amount(node, resource_id) - _get_stage14_reserved_pickup(node, resource_id))
+
+func _get_stage14_node_amount(node: Node, resource_id: StringName) -> int:
+	if node == null or not is_instance_valid(node):
+		return 0
+	if node.has_method("get_amount"):
+		return int(node.call("get_amount", resource_id))
+	var output_cache: Dictionary = node.get("output_cache")
+	return int(output_cache.get(resource_id, 0))
+
+func _take_stage14_resource_from_node(node: Node, resource_id: StringName, amount: int, reason: String) -> int:
+	if node == null or not is_instance_valid(node) or amount <= 0:
+		return 0
+	if node.has_method("remove_resource"):
+		return int(node.call("remove_resource", resource_id, amount, reason))
+	var output_cache: Dictionary = node.get("output_cache")
+	var available := int(output_cache.get(resource_id, 0))
+	var removed := mini(available, amount)
+	if removed <= 0:
+		return 0
+	var next_amount := available - removed
+	if next_amount > 0:
+		output_cache[resource_id] = next_amount
+	else:
+		output_cache.erase(resource_id)
+	node.set("output_cache", output_cache)
+	return removed
+
+func _add_stage14_resource_to_node(node: Node, resource_id: StringName, amount: int, reason: String) -> int:
+	if node == null or not is_instance_valid(node) or amount <= 0:
+		return 0
+	if node == main_base:
+		var inventory = _get_main_base_inventory()
+		if inventory == null:
+			return 0
+		inventory.add_resource(resource_id, amount, reason)
+		return amount
+	if node.has_method("add_resource"):
+		return int(node.call("add_resource", resource_id, amount, reason))
+	var input_cache_value = node.get("input_cache")
+	if typeof(input_cache_value) == TYPE_DICTIONARY:
+		var input_cache: Dictionary = input_cache_value
+		input_cache[resource_id] = int(input_cache.get(resource_id, 0)) + amount
+		node.set("input_cache", input_cache)
+		if node.has_signal("processor_state_changed"):
+			node.emit_signal("processor_state_changed")
+		return amount
+	return 0
+
+func _deliver_remaining_stage14_cargo_to_main_base(robot: Node) -> void:
+	var inventory = _get_main_base_inventory()
+	if inventory == null:
+		return
+	var cargo: Dictionary = robot.call("get_cargo_inventory") if robot.has_method("get_cargo_inventory") else {}
+	for resource_id in cargo.keys():
+		var amount := int(cargo[resource_id])
+		if amount <= 0:
+			continue
+		inventory.add_resource(StringName(resource_id), amount, "%s 物流余货入库" % robot.name)
+		robot.call("remove_cargo", StringName(resource_id), amount)
+		_record_stage14_logistics_event(&"logistics_delivered", robot, {
+			"type": "leftover_to_base",
+			"resource_id": StringName(resource_id),
+			"amount": amount,
+		}, amount, robot, main_base)
+
+func _get_stage14_reserved_pickup(source: Node, resource_id: StringName) -> int:
+	var total := 0
+	for task_value in stage14_logistics_tasks_by_robot.values():
+		var task: Dictionary = task_value
+		if task.get("source") != source or StringName(str(task.get("resource_id", ""))) != resource_id:
+			continue
+		if str(task.get("stage", "")) == "to_pickup":
+			total += int(task.get("amount", 0))
+	return total
+
+func _get_stage14_reserved_delivery(target: Node, resource_id: StringName) -> int:
+	var total := 0
+	for task_value in stage14_logistics_tasks_by_robot.values():
+		var task: Dictionary = task_value
+		if task.get("target") != target or StringName(str(task.get("resource_id", ""))) != resource_id:
+			continue
+		total += int(task.get("amount", 0))
+	return total
+
+func _can_dispatch_stage14_load(source: Node, resource_id: StringName, amount: int, robot_capacity: int, urgent: bool) -> bool:
+	if urgent:
+		return amount > 0
+	if amount >= _get_stage14_min_load_amount(robot_capacity):
+		return true
+	return float(stage14_logistics_wait_seconds_by_key.get(_make_stage14_wait_key(source, resource_id), 0.0)) >= STAGE14_MAX_PICKUP_WAIT_SECONDS
+
+func _get_stage14_min_load_amount(robot_capacity: int) -> int:
+	return maxi(1, ceili(float(maxi(1, robot_capacity)) * STAGE14_MIN_LOAD_RATIO))
+
+func _get_stage14_robot_free_capacity(robot: Node) -> int:
+	return int(robot.call("get_cargo_free_capacity")) if robot != null and robot.has_method("get_cargo_free_capacity") else 0
+
+func _get_stage14_largest_cargo_capacity() -> int:
+	var capacity := 1
+	for robot in get_tree().get_nodes_in_group("cargo"):
+		if robot != null and robot.has_method("get_cargo_free_capacity"):
+			capacity = maxi(capacity, int(robot.get("cargo_capacity")))
+	return capacity
+
+func _update_stage14_logistics_waits(delta: float) -> void:
+	var active_keys := {}
+	for source in _get_stage14_logistics_sources():
+		for resource_id in _get_stage14_pickup_resource_ids(source):
+			var resource_name := StringName(str(resource_id))
+			if _get_stage14_available_for_assignment(source, resource_name) <= 0:
+				continue
+			var key := _make_stage14_wait_key(source, resource_name)
+			active_keys[key] = true
+			stage14_logistics_wait_seconds_by_key[key] = float(stage14_logistics_wait_seconds_by_key.get(key, 0.0)) + delta
+	for relay in _get_stage14_supply_points():
+		for resource_id in _get_stage14_pickup_resource_ids(relay):
+			var resource_name := StringName(str(resource_id))
+			if _get_stage14_available_for_assignment(relay, resource_name) <= 0:
+				continue
+			var key := _make_stage14_wait_key(relay, resource_name)
+			active_keys[key] = true
+			stage14_logistics_wait_seconds_by_key[key] = float(stage14_logistics_wait_seconds_by_key.get(key, 0.0)) + delta
+	for key in stage14_logistics_wait_seconds_by_key.keys():
+		if not active_keys.has(key):
+			stage14_logistics_wait_seconds_by_key.erase(key)
+
+func _make_stage14_wait_key(source: Node, resource_id: StringName) -> String:
+	if source == null:
+		return "none:%s" % String(resource_id)
+	return "%s:%s" % [source.get_instance_id(), String(resource_id)]
+
+func _get_stage14_route_cost(robot: Node, source: Node, target: Node) -> float:
+	if not (robot is Node2D):
+		return 0.0
+	return (robot as Node2D).global_position.distance_to(_get_logistics_node_position(source)) * 0.015 + _get_logistics_node_position(source).distance_to(_get_logistics_node_position(target)) * 0.01
+
+func _get_main_base_resource_amount(resource_id: StringName) -> int:
+	var inventory = _get_main_base_inventory()
+	if inventory == null:
+		return 0
+	return int(inventory.get_amount(resource_id))
+
+func _get_stage14_dropoff_status(task: Dictionary) -> String:
+	match str(task.get("type", "")):
+		"urgent_supply":
+			return "紧急补货"
+		"source_to_relay":
+			return "投递前线补给点"
+		"relay_to_base", "direct_to_base", "recover_cargo":
+			return "送回主基地"
+	return "投递物资"
+
+func _move_logistics_robot_towards(robot: Node, world_position: Vector2, action_text: String, target_node: Node = null) -> void:
+	var moving := true
+	if robot.has_method("move_towards"):
+		moving = robot.call("move_towards", world_position, target_node) == true
+	robot.set("current_action", action_text if moving else "路径阻塞")
+
+func _is_logistics_robot_near(robot: Node, target: Node) -> bool:
+	if not (robot is Node2D) or not (target is Node2D):
+		return false
+	if _is_node_adjacent_to_grid_footprint(robot as Node2D, target):
+		return true
+	return (robot as Node2D).global_position.distance_to(_get_logistics_node_position(target)) <= 34.0
+
+func _is_node_adjacent_to_grid_footprint(node: Node2D, target: Node) -> bool:
+	if grid_map == null or target == null or not is_instance_valid(target):
+		return false
+	var origin_value = target.get("grid_origin")
+	var size_value = target.get("grid_size")
+	if typeof(origin_value) != TYPE_VECTOR2I or typeof(size_value) != TYPE_VECTOR2I:
+		return false
+	var origin: Vector2i = origin_value
+	var size: Vector2i = size_value
+	if size.x <= 0 or size.y <= 0:
+		return false
+	var node_cell: Vector2i = grid_map.call("world_to_grid", node.global_position)
+	return node_cell.x >= origin.x - 1 \
+		and node_cell.y >= origin.y - 1 \
+		and node_cell.x <= origin.x + size.x \
+		and node_cell.y <= origin.y + size.y
+
+func _get_logistics_node_position(node: Node) -> Vector2:
+	if node.has_method("get_target_position"):
+		return node.call("get_target_position")
+	if node is Node2D:
+		return (node as Node2D).global_position
+	return Vector2.ZERO
+
+func _sync_stage14_robot_task(robot: Node, task: Dictionary) -> void:
+	if robot == null or not robot.has_method("setup_logistics_task"):
+		return
+	var public_task := {
+		"type": str(task.get("type", "delivery")),
+		"status": str(task.get("status", "")),
+		"resource_id": String(task.get("resource_id", "")),
+		"amount": int(task.get("amount", 0)),
+		"pickup": _node_display_name(task.get("source") as Node),
+		"dropoff": _node_display_name(task.get("target") as Node),
+	}
+	robot.call("setup_logistics_task", public_task)
+	_update_logistics_task_visual(robot, task)
+
+func _clear_stage14_robot_task(robot: Node) -> void:
+	stage14_logistics_tasks_by_robot.erase(robot)
+	_clear_logistics_task_visual(robot)
+	if robot and robot.has_method("clear_logistics_task"):
+		robot.call("clear_logistics_task")
+	if robot and robot.has_method("stop_and_idle"):
+		robot.call("stop_and_idle")
+
+func _ensure_logistics_visual_layer() -> void:
+	if _logistics_visual_layer != null and is_instance_valid(_logistics_visual_layer):
+		return
+	_logistics_visual_layer = Node2D.new()
+	_logistics_visual_layer.name = "LogisticsVisualLayer"
+	_logistics_visual_layer.z_index = 36
+	var parent := _get_layer("RallyLayer")
+	if parent == null:
+		parent = self
+	parent.add_child(_logistics_visual_layer)
+
+func _update_logistics_task_visual(robot: Node, task: Dictionary) -> void:
+	if robot == null or not is_instance_valid(robot) or not (robot is Node2D):
+		return
+	if robot != selected_inspected_node:
+		_clear_logistics_task_visual(robot)
+		return
+	var source := task.get("source") as Node
+	var target := task.get("target") as Node
+	if target == null or not is_instance_valid(target):
+		_clear_logistics_task_visual(robot)
+		return
+	_ensure_logistics_visual_layer()
+	var key := int(robot.get_instance_id())
+	var line := _logistics_task_lines.get(key) as Line2D
+	if line == null or not is_instance_valid(line):
+		line = Line2D.new()
+		line.name = "LogisticsRoute_%s" % key
+		line.width = 3.0
+		line.antialiased = true
+		line.joint_mode = Line2D.LINE_JOINT_ROUND
+		line.begin_cap_mode = Line2D.LINE_CAP_ROUND
+		line.end_cap_mode = Line2D.LINE_CAP_ROUND
+		_logistics_visual_layer.add_child(line)
+		_logistics_task_lines[key] = line
+	line.default_color = _get_logistics_task_color(str(task.get("type", "")))
+	var current_segment_node := target
+	var current_segment_target := _get_logistics_node_position(target)
+	if str(task.get("stage", "")) == "to_pickup" and source != null and is_instance_valid(source):
+		current_segment_node = source
+		current_segment_target = _get_logistics_node_position(source)
+	var points := get_navigation_path_points_to_node((robot as Node2D).global_position, current_segment_node) if current_segment_node != null and is_instance_valid(current_segment_node) else get_navigation_path_points((robot as Node2D).global_position, current_segment_target)
+	if points.size() <= 1:
+		points.append((robot as Node2D).global_position)
+		line.default_color = Color(1.0, 0.34, 0.24, 0.85)
+	line.points = points
+
+func _clear_logistics_task_visual(robot: Node) -> void:
+	if robot == null:
+		return
+	var key := int(robot.get_instance_id())
+	var line := _logistics_task_lines.get(key) as Line2D
+	if line != null and is_instance_valid(line):
+		line.queue_free()
+	_logistics_task_lines.erase(key)
+
+func _clear_logistics_visuals() -> void:
+	for line_value in _logistics_task_lines.values():
+		var line := line_value as Line2D
+		if line != null and is_instance_valid(line):
+			line.queue_free()
+	_logistics_task_lines.clear()
+
+func _refresh_selected_logistics_visual() -> void:
+	_clear_logistics_visuals()
+	if selected_inspected_node == null or not _is_cargo_robot_node(selected_inspected_node):
+		return
+	if not stage14_logistics_tasks_by_robot.has(selected_inspected_node):
+		return
+	var task: Dictionary = stage14_logistics_tasks_by_robot[selected_inspected_node]
+	_update_logistics_task_visual(selected_inspected_node, task)
+
+func _get_logistics_task_color(task_type: String) -> Color:
+	match task_type:
+		"urgent_supply":
+			return Color(1.0, 0.72, 0.25, 0.86)
+		"source_to_relay":
+			return Color(0.30, 0.92, 1.0, 0.72)
+		"relay_to_base":
+			return Color(0.46, 0.82, 0.40, 0.76)
+		"direct_to_base":
+			return Color(0.68, 0.74, 1.0, 0.72)
+		"recover_cargo", "leftover_to_base":
+			return Color(0.92, 0.92, 0.72, 0.70)
+	return Color(0.78, 0.88, 1.0, 0.68)
+
+func _record_stage14_logistics_event(event_type: StringName, robot: Node, task: Dictionary, amount: int, source: Node, target: Node) -> void:
+	if amount <= 0:
+		return
+	var resource_id := StringName(str(task.get("resource_id", "")))
+	if String(resource_id).is_empty():
+		return
+	_bump_stage14_logistics_counter(str(event_type), resource_id, amount)
+	var event_log := get_node_or_null("/root/CombatEventLog")
+	if event_log and event_log.has_method("record"):
+		event_log.call("record", event_type, {
+			"robot": robot.name if robot else "",
+			"task_type": str(task.get("type", "")),
+			"resource_id": String(resource_id),
+			"amount": amount,
+			"source": _node_display_name(source),
+			"target": _node_display_name(target),
+		})
+
+func _bump_stage14_logistics_counter(kind: String, resource_id: StringName, amount: int) -> void:
+	var resource_key := String(resource_id)
+	var row: Dictionary = stage14_logistics_counters.get(resource_key, {})
+	row[kind] = int(row.get(kind, 0)) + amount
+	stage14_logistics_counters[resource_key] = row
+
+func _refresh_stage14_logistics_diagnostics() -> void:
+	if hud == null or not hud.has_method("set_logistics_diagnostics"):
+		return
+	hud.call("set_logistics_diagnostics", _build_stage14_logistics_diagnostics())
+
+func _build_stage14_logistics_diagnostics() -> Dictionary:
+	var active_tasks: Array[Dictionary] = []
+	for task_value in stage14_logistics_tasks_by_robot.values():
+		var task: Dictionary = task_value
+		active_tasks.append({
+			"type": str(task.get("type", "")),
+			"stage": str(task.get("stage", "")),
+			"resource_id": String(task.get("resource_id", "")),
+			"amount": int(task.get("amount", 0)),
+			"pickup": _node_display_name(task.get("source") as Node),
+			"dropoff": _node_display_name(task.get("target") as Node),
+			"status": str(task.get("status", "")),
+		})
+	var shortages: Array[Dictionary] = []
+	for demand_value in _get_stage14_shortage_demands():
+		var demand: Dictionary = demand_value
+		var target := demand.get("target") as Node
+		shortages.append({
+			"target": _node_display_name(target),
+			"resource_id": String(demand.get("resource_id", "")),
+			"amount": int(demand.get("amount", 0)),
+			"urgency": float(demand.get("urgency", 0.0)),
+		})
+	var waiting_sources: Array[Dictionary] = []
+	for source in _get_stage14_logistics_sources():
+		for resource_id in _get_stage14_pickup_resource_ids(source):
+			var resource_name := StringName(str(resource_id))
+			var available := _get_stage14_available_for_assignment(source, resource_name)
+			if available <= 0:
+				continue
+			waiting_sources.append({
+				"source": _node_display_name(source),
+				"resource_id": String(resource_name),
+				"available": available,
+				"wait_seconds": float(stage14_logistics_wait_seconds_by_key.get(_make_stage14_wait_key(source, resource_name), 0.0)),
+			})
+	return {
+		"active_tasks": active_tasks,
+		"shortages": shortages,
+		"waiting_sources": waiting_sources,
+		"counters": stage14_logistics_counters.duplicate(true),
+	}
+
+func _node_display_name(node: Node) -> String:
+	if node == null or not is_instance_valid(node):
+		return "-"
+	if node.has_method("get_display_name"):
+		return str(node.call("get_display_name"))
+	return str(node.name)
 
 func _on_blueprint_library_requested() -> void:
 	_refresh_blueprint_library_ui()
@@ -2063,6 +3848,11 @@ func _get_blueprint_template_summaries(blueprint: UnitBlueprint) -> Array[Dictio
 	return result
 
 func _on_building_destroyed(building: Node, reason: StringName) -> void:
+	if building != null and is_instance_valid(building):
+		var origin: Vector2i = building.get("grid_origin")
+		var size: Vector2i = building.get("grid_size")
+		grid_occupancy.clear_rect(origin, size)
+		_mark_navigation_dirty()
 	var event_log := get_node_or_null("/root/CombatEventLog")
 	if event_log and event_log.has_method("record"):
 		event_log.call("record", &"building_destroyed", {

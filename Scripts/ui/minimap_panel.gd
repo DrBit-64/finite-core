@@ -383,8 +383,8 @@ func _get_content_rect(map_size: Vector2) -> Rect2:
 		Vector2(INNER_PADDING, title_height + INNER_PADDING * 0.45),
 		size - Vector2(INNER_PADDING * 2.0, title_height + INNER_PADDING * 1.45)
 	)
-	var scale := minf(available.size.x / map_size.x, available.size.y / map_size.y)
-	var content_size := map_size * scale
+	var map_scale := minf(available.size.x / map_size.x, available.size.y / map_size.y)
+	var content_size := map_size * map_scale
 	return Rect2(available.position + (available.size - content_size) * 0.5, content_size)
 
 func _map_point(cell_position: Vector2, content_rect: Rect2, map_size: Vector2) -> Vector2:

@@ -32,6 +32,38 @@
         "damage": 8,
         "fire_cooldown_seconds": 0.8
       }
+    },
+    {
+      "id": "battlefield_hauler",
+      "display_name": "战地货运机器人",
+      "version": 1,
+      "icon_path": "res://Resources/art/blueprints/battlefield_hauler.svg",
+      "chassis_id": "standard_cargo_chassis",
+      "chassis_display_name": "标准货运底盘",
+      "chassis_icon_path": "res://Resources/art/chassis/standard_cargo_chassis.svg",
+      "module_ids": [
+        "expanded_cargo_pack"
+      ],
+      "module_display_names": [
+        "扩展背包模块"
+      ],
+      "module_icon_paths": [
+        "res://Resources/art/modules/expanded_cargo_pack.svg"
+      ],
+      "production_recipe_id": "forge_battlefield_hauler",
+      "default_brain_enabled": false,
+      "tactical_templates": [],
+      "state_flag_defaults": {},
+      "embedded_rules": [],
+      "stats": {
+        "max_hp": 85,
+        "speed": 78.0,
+        "lifespan_seconds": 0.0,
+        "target_lock_seconds": 0.0,
+        "fire_range": 0.0,
+        "damage": 0,
+        "fire_cooldown_seconds": 1.0
+      }
     }
   ]
 }

@@ -2,6 +2,7 @@ extends PanelContainer
 class_name BuildingOperationPanel
 
 signal processor_recipe_selected(processor: Node, recipe_id: StringName)
+signal building_demolish_requested(building: Node)
 signal forge_rally_point_requested(forge: Node)
 signal forge_blueprint_picker_requested(forge: Node, blueprints: Array[UnitBlueprint])
 signal technology_panel_requested
@@ -9,6 +10,7 @@ signal technology_panel_requested
 const ItemSlotGridScript := preload("res://Scripts/ui/components/item_slot_grid.gd")
 const RecipeSummaryCardScript := preload("res://Scripts/ui/components/recipe_summary_card.gd")
 const BlueprintPartSlotScript := preload("res://Scripts/ui/components/blueprint_part_slot.gd")
+const ACTION_DEMOLISH_ICON_PATH := "res://Resources/art/ui/action_demolish.svg"
 const BLUEPRINT_MENU_ICON_PATH := "res://Resources/art/ui/blueprint_menu.svg"
 const STATE_RALLY_ICON_PATH := "res://Resources/art/ui/state_rally.svg"
 
@@ -17,6 +19,9 @@ var _mode: StringName = &""
 var _processor: Node = null
 var _miner: Node = null
 var _forge: Node = null
+var _cargo_robot: Node = null
+var _storage_node: Node = null
+var _generic_building: Node = null
 var _recipes: Array[RecipeDef] = []
 var _blueprints: Array[UnitBlueprint] = []
 
@@ -34,6 +39,11 @@ var _rally_label: Label = null
 var _blueprint_parts_row: HBoxContainer = null
 var _cost_list: VBoxContainer = null
 var _forge_blueprint_button: Button = null
+var _cargo_capacity_label: Label = null
+var _cargo_inventory_list: VBoxContainer = null
+var _cargo_task_list: VBoxContainer = null
+var _storage_capacity_label: Label = null
+var _storage_inventory_list: VBoxContainer = null
 var _guidance_forge_blueprint_picker: bool = false
 
 func _init() -> void:
@@ -65,6 +75,9 @@ func show_processor_panel(processor: Node, recipes: Array[RecipeDef], resource_d
 		_processor = processor
 		_miner = null
 		_forge = null
+		_cargo_robot = null
+		_storage_node = null
+		_generic_building = null
 		_recipes = recipes.duplicate()
 		_blueprints.clear()
 		_rebuild_processor_panel(processor, recipes)
@@ -72,16 +85,22 @@ func show_processor_panel(processor: Node, recipes: Array[RecipeDef], resource_d
 	_position_panel(screen_position)
 
 func show_miner_panel(miner: Node, resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
+	show_producer_panel(miner, resource_defs, screen_position)
+
+func show_producer_panel(producer: Node, resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
 	visible = true
-	if _mode != &"miner" or _miner != miner:
-		_mode = &"miner"
-		_miner = miner
+	if _mode != &"producer" or _miner != producer:
+		_mode = &"producer"
+		_miner = producer
 		_processor = null
 		_forge = null
+		_cargo_robot = null
+		_storage_node = null
+		_generic_building = null
 		_recipes.clear()
 		_blueprints.clear()
-		_rebuild_miner_panel(miner)
-	_update_miner_panel(miner, resource_defs)
+		_rebuild_miner_panel(producer)
+	_update_miner_panel(producer, resource_defs)
 	_position_panel(screen_position)
 
 func show_forge_panel(forge: Node, blueprint: UnitBlueprint, blueprints: Array[UnitBlueprint], resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
@@ -91,6 +110,9 @@ func show_forge_panel(forge: Node, blueprint: UnitBlueprint, blueprints: Array[U
 		_forge = forge
 		_processor = null
 		_miner = null
+		_cargo_robot = null
+		_storage_node = null
+		_generic_building = null
 		_recipes.clear()
 		_blueprints = blueprints.duplicate()
 		_rebuild_forge_panel(forge)
@@ -104,10 +126,66 @@ func show_research_terminal_panel(terminal: Node, technology_defs: Array, resour
 		_processor = terminal
 		_miner = null
 		_forge = null
+		_cargo_robot = null
+		_storage_node = null
+		_generic_building = null
 		_recipes.clear()
 		_blueprints.clear()
 		_rebuild_research_terminal_panel(terminal)
 	_update_research_terminal_panel(terminal, technology_defs, resource_defs)
+	_position_panel(screen_position)
+
+func show_cargo_robot_panel(robot: Node, resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
+	var should_position := not visible or _mode != &"cargo_robot" or _cargo_robot != robot
+	visible = true
+	if should_position:
+		_mode = &"cargo_robot"
+		_processor = null
+		_miner = null
+		_forge = null
+		_cargo_robot = robot
+		_storage_node = null
+		_generic_building = null
+		_recipes.clear()
+		_blueprints.clear()
+		_rebuild_cargo_robot_panel(robot)
+	_update_cargo_robot_panel(robot, resource_defs)
+	if should_position:
+		_position_panel(screen_position)
+
+func show_inventory_storage_panel(storage_node: Node, resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
+	visible = true
+	if _mode != &"inventory_storage" or _storage_node != storage_node:
+		_mode = &"inventory_storage"
+		_processor = null
+		_miner = null
+		_forge = null
+		_cargo_robot = null
+		_storage_node = storage_node
+		_generic_building = null
+		_recipes.clear()
+		_blueprints.clear()
+		_rebuild_inventory_storage_panel(storage_node)
+	_update_inventory_storage_panel(storage_node, resource_defs)
+	_position_panel(screen_position)
+
+func show_supply_point_panel(supply_point: Node, resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
+	show_inventory_storage_panel(supply_point, resource_defs, screen_position)
+
+func show_basic_building_panel(building: Node, screen_position: Vector2) -> void:
+	visible = true
+	if _mode != &"basic_building" or _generic_building != building:
+		_mode = &"basic_building"
+		_processor = null
+		_miner = null
+		_forge = null
+		_cargo_robot = null
+		_storage_node = null
+		_generic_building = building
+		_recipes.clear()
+		_blueprints.clear()
+		_rebuild_basic_building_panel(building)
+	_update_basic_building_panel(building)
 	_position_panel(screen_position)
 
 func hide_panel() -> void:
@@ -116,6 +194,9 @@ func hide_panel() -> void:
 	_processor = null
 	_miner = null
 	_forge = null
+	_cargo_robot = null
+	_storage_node = null
+	_generic_building = null
 	_blueprints.clear()
 
 func set_guidance_highlights(highlights: Dictionary) -> void:
@@ -125,7 +206,7 @@ func set_guidance_highlights(highlights: Dictionary) -> void:
 func _rebuild_processor_panel(processor: Node, recipes: Array[RecipeDef]) -> void:
 	_clear_content()
 
-	_list.add_child(_make_label(processor.call("get_display_name"), Color(0.96, 0.98, 1.0, 1.0), 15))
+	_list.add_child(_make_panel_header(processor))
 	_list.add_child(_make_label("配方", Color(0.72, 0.78, 0.84, 1.0), 12))
 
 	var recipe_row := HBoxContainer.new()
@@ -178,12 +259,12 @@ func _update_processor_panel(processor: Node, resource_defs: Array[ResourceDef])
 	_refresh_recipe_button_states(selected_recipe)
 	size = get_combined_minimum_size()
 
-func _rebuild_miner_panel(miner: Node) -> void:
+func _rebuild_miner_panel(producer: Node) -> void:
 	_clear_content()
 
-	_list.add_child(_make_label(miner.call("get_display_name"), Color(0.96, 0.98, 1.0, 1.0), 15))
+	_list.add_child(_make_panel_header(producer))
 	_list.add_child(_make_label("配方", Color(0.72, 0.78, 0.84, 1.0), 12))
-	_current_label = _make_label("当前：开采", Color(0.9, 0.92, 0.95, 1.0), 13)
+	_current_label = _make_label("当前：产出", Color(0.9, 0.92, 0.95, 1.0), 13)
 	_list.add_child(_current_label)
 
 	_recipe_card = RecipeSummaryCardScript.new()
@@ -202,25 +283,25 @@ func _rebuild_miner_panel(miner: Node) -> void:
 	_list.add_child(_output_cache_list)
 	size = get_combined_minimum_size()
 
-func _update_miner_panel(miner: Node, resource_defs: Array[ResourceDef]) -> void:
-	var mining_recipe: RecipeDef = miner.call("get_mining_recipe") if miner.has_method("get_mining_recipe") else null
+func _update_miner_panel(producer: Node, resource_defs: Array[ResourceDef]) -> void:
+	var mining_recipe: RecipeDef = _get_producer_operation_recipe(producer)
 	if _current_label:
-		_current_label.text = "当前：开采"
+		_current_label.text = "当前：%s" % (mining_recipe.display_name if mining_recipe else "产出")
 	if _recipe_card:
-		_recipe_card.call("setup", mining_recipe, resource_defs, miner.get("input_cache"), miner.get("output_cache"))
+		_recipe_card.call("setup", mining_recipe, resource_defs, _get_node_dictionary(producer, "input_cache"), _get_node_dictionary(producer, "output_cache"))
 	if _status_label:
-		_status_label.text = "状态：%s" % str(miner.get("status_text"))
+		_status_label.text = "状态：%s" % str(producer.get("status_text"))
 	if _progress_label:
-		_progress_label.text = _format_miner_progress_text(miner, mining_recipe)
+		_progress_label.text = _format_miner_progress_text(producer, mining_recipe)
 	if _progress_bar:
-		_progress_bar.value = float(miner.call("get_progress_ratio")) if miner.has_method("get_progress_ratio") else 0.0
-	_rebuild_resource_stack_list(_output_cache_list, miner.get("output_cache"), resource_defs)
+		_progress_bar.value = float(producer.call("get_progress_ratio")) if producer.has_method("get_progress_ratio") else 0.0
+	_rebuild_resource_stack_list(_output_cache_list, _get_node_dictionary(producer, "output_cache"), resource_defs)
 	size = get_combined_minimum_size()
 
 func _rebuild_forge_panel(forge: Node) -> void:
 	_clear_content()
 
-	_list.add_child(_make_label(forge.call("get_display_name"), Color(0.96, 0.98, 1.0, 1.0), 15))
+	_list.add_child(_make_panel_header(forge))
 	_blueprint_label = _make_label("", Color(0.84, 0.90, 1.0, 1.0), 13)
 	_list.add_child(_blueprint_label)
 	_blueprint_parts_row = HBoxContainer.new()
@@ -287,7 +368,7 @@ func _update_forge_panel(forge: Node, blueprint: UnitBlueprint, resource_defs: A
 
 func _rebuild_research_terminal_panel(terminal: Node) -> void:
 	_clear_content()
-	_list.add_child(_make_label(terminal.call("get_display_name"), Color(0.96, 0.98, 1.0, 1.0), 15))
+	_list.add_child(_make_panel_header(terminal))
 	_status_label = _make_label("", Color(0.90, 0.94, 0.98, 1.0), 13)
 	_list.add_child(_status_label)
 	_progress_label = _make_label("", Color(0.78, 0.88, 1.0, 1.0), 13)
@@ -317,6 +398,93 @@ func _update_research_terminal_panel(terminal: Node, _technology_defs: Array, _r
 	if _progress_bar:
 		_progress_bar.value = float(terminal.call("get_progress_ratio")) if terminal.has_method("get_progress_ratio") else 0.0
 	size = get_combined_minimum_size()
+
+func _rebuild_cargo_robot_panel(robot: Node) -> void:
+	_clear_content()
+	_list.add_child(_make_label(robot.call("get_display_name") if robot.has_method("get_display_name") else robot.name, Color(0.96, 0.98, 1.0, 1.0), 15))
+	_status_label = _make_label("", Color(0.90, 0.94, 0.98, 1.0), 13)
+	_list.add_child(_status_label)
+	_cargo_capacity_label = _make_label("", Color(0.78, 0.88, 1.0, 1.0), 13)
+	_list.add_child(_cargo_capacity_label)
+	_list.add_child(_make_label("货舱", Color(0.72, 0.80, 0.88, 1.0), 12))
+	_cargo_inventory_list = VBoxContainer.new()
+	_cargo_inventory_list.add_theme_constant_override("separation", 4)
+	_list.add_child(_cargo_inventory_list)
+	_list.add_child(_make_label("当前物流任务", Color(0.72, 0.80, 0.88, 1.0), 12))
+	_cargo_task_list = VBoxContainer.new()
+	_cargo_task_list.add_theme_constant_override("separation", 3)
+	_list.add_child(_cargo_task_list)
+	size = get_combined_minimum_size()
+
+func _update_cargo_robot_panel(robot: Node, resource_defs: Array[ResourceDef]) -> void:
+	if _status_label:
+		_status_label.text = "状态：%s" % str(robot.get("logistics_status_text"))
+	if _cargo_capacity_label:
+		_cargo_capacity_label.text = "货舱：%s / %s" % [
+			int(robot.call("get_cargo_used_capacity")) if robot.has_method("get_cargo_used_capacity") else 0,
+			int(robot.get("cargo_capacity")),
+		]
+	var cargo: Dictionary = robot.call("get_cargo_inventory") if robot.has_method("get_cargo_inventory") else {}
+	_rebuild_resource_stack_list(_cargo_inventory_list, cargo, resource_defs)
+	_rebuild_cargo_task_lines(robot)
+	size = get_combined_minimum_size()
+
+func _rebuild_inventory_storage_panel(storage_node: Node) -> void:
+	_clear_content()
+	_list.add_child(_make_panel_header(storage_node))
+	_status_label = _make_label("", Color(0.90, 0.94, 0.98, 1.0), 13)
+	_list.add_child(_status_label)
+	_storage_capacity_label = _make_label("", Color(0.78, 0.88, 1.0, 1.0), 13)
+	_list.add_child(_storage_capacity_label)
+	_list.add_child(_make_label("库存", Color(0.72, 0.80, 0.88, 1.0), 12))
+	_storage_inventory_list = VBoxContainer.new()
+	_storage_inventory_list.add_theme_constant_override("separation", 4)
+	_list.add_child(_storage_inventory_list)
+	size = get_combined_minimum_size()
+
+func _update_inventory_storage_panel(storage_node: Node, resource_defs: Array[ResourceDef]) -> void:
+	if _status_label:
+		var status := str(storage_node.get("status_text")) if storage_node.get("status_text") != null else "运行中"
+		_status_label.text = "状态：%s" % status
+	if _storage_capacity_label:
+		var used := _get_storage_used_capacity(storage_node)
+		var capacity_text := _get_storage_capacity_text(storage_node, used)
+		_storage_capacity_label.text = "容量：%s / %s" % [used, capacity_text]
+	var resources := _get_storage_resources(storage_node)
+	_rebuild_resource_stack_list(_storage_inventory_list, resources, resource_defs)
+	size = get_combined_minimum_size()
+
+func _rebuild_basic_building_panel(building: Node) -> void:
+	_clear_content()
+	_list.add_child(_make_panel_header(building))
+	_status_label = _make_label("", Color(0.90, 0.94, 0.98, 1.0), 13)
+	_list.add_child(_status_label)
+	_alive_label = _make_label("", Color(0.90, 0.94, 0.98, 1.0), 13)
+	_list.add_child(_alive_label)
+	size = get_combined_minimum_size()
+
+func _update_basic_building_panel(building: Node) -> void:
+	if _status_label:
+		var alive := bool(building.call("is_alive")) if building.has_method("is_alive") else true
+		_status_label.text = "状态：%s" % ("运行中" if alive else "已摧毁")
+	if _alive_label:
+		_alive_label.text = "生命：%s / %s" % [int(building.get("hp")), int(building.get("max_hp"))]
+	size = get_combined_minimum_size()
+
+func _make_panel_header(building: Node) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	var title := _make_label(building.call("get_display_name") if building.has_method("get_display_name") else building.name, Color(0.96, 0.98, 1.0, 1.0), 15)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(title)
+	var demolish_button := Button.new()
+	demolish_button.icon = _load_ui_icon(ACTION_DEMOLISH_ICON_PATH)
+	demolish_button.expand_icon = true
+	demolish_button.tooltip_text = "拆除建筑"
+	demolish_button.custom_minimum_size = Vector2(30, 28)
+	demolish_button.pressed.connect(_on_demolish_button_pressed.bind(building), CONNECT_DEFERRED)
+	row.add_child(demolish_button)
+	return row
 
 func _make_progress_bar(width: float) -> ProgressBar:
 	var progress_bar := ProgressBar.new()
@@ -370,6 +538,65 @@ func _rebuild_resource_stack_list(list: VBoxContainer, resources: Dictionary, re
 	grid.slot_size = Vector2(34, 34)
 	grid.setup_from_resources(resources, resource_defs, {}, false, 4)
 
+func _get_producer_operation_recipe(producer: Node) -> RecipeDef:
+	if producer == null:
+		return null
+	if producer.has_method("get_operation_recipe"):
+		return producer.call("get_operation_recipe")
+	if producer.has_method("get_mining_recipe"):
+		return producer.call("get_mining_recipe")
+	return null
+
+func _get_node_dictionary(node: Node, property_name: String) -> Dictionary:
+	if node == null:
+		return {}
+	var value: Variant = node.get(property_name)
+	if typeof(value) == TYPE_DICTIONARY:
+		return value
+	return {}
+
+func _get_storage_resources(storage_node: Node) -> Dictionary:
+	if storage_node == null:
+		return {}
+	if storage_node.has_method("get_all_resources"):
+		return storage_node.call("get_all_resources")
+	var inventory = storage_node.get("inventory")
+	if inventory != null and inventory.has_method("get_all"):
+		return inventory.call("get_all")
+	return {}
+
+func _get_storage_used_capacity(storage_node: Node) -> int:
+	if storage_node == null:
+		return 0
+	if storage_node.has_method("get_used_capacity"):
+		return int(storage_node.call("get_used_capacity"))
+	var total := 0
+	for amount in _get_storage_resources(storage_node).values():
+		total += maxi(0, int(amount))
+	return total
+
+func _get_storage_capacity_text(storage_node: Node, used: int) -> String:
+	if storage_node == null:
+		return str(used)
+	var capacity = storage_node.get("storage_capacity")
+	if capacity != null:
+		return str(int(capacity))
+	return "无限"
+
+func _rebuild_cargo_task_lines(robot: Node) -> void:
+	if _cargo_task_list == null:
+		return
+	for child in _cargo_task_list.get_children():
+		_cargo_task_list.remove_child(child)
+		child.queue_free()
+	var lines: Array[String] = []
+	if robot.has_method("get_logistics_task_summary_lines"):
+		lines = robot.call("get_logistics_task_summary_lines")
+	if lines.is_empty():
+		lines.append("物流任务：无")
+	for line in lines:
+		_cargo_task_list.add_child(_make_label(str(line), Color(0.86, 0.90, 0.94, 1.0), 12))
+
 func _rebuild_blueprint_part_slots(row: HBoxContainer, blueprint: UnitBlueprint) -> void:
 	if row == null:
 		return
@@ -409,6 +636,11 @@ func _clear_content() -> void:
 	_blueprint_parts_row = null
 	_cost_list = null
 	_forge_blueprint_button = null
+	_cargo_capacity_label = null
+	_cargo_inventory_list = null
+	_cargo_task_list = null
+	_storage_capacity_label = null
+	_storage_inventory_list = null
 
 func _position_panel(screen_position: Vector2) -> void:
 	var popup_offset := Vector2(24, -16)
@@ -489,6 +721,9 @@ func _load_ui_icon(path: String) -> Texture2D:
 
 func _on_processor_recipe_button_pressed(processor: Node, recipe_id: StringName) -> void:
 	processor_recipe_selected.emit(processor, recipe_id)
+
+func _on_demolish_button_pressed(building: Node) -> void:
+	building_demolish_requested.emit(building)
 
 func _on_forge_rally_button_pressed(forge: Node) -> void:
 	forge_rally_point_requested.emit(forge)

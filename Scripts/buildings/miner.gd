@@ -12,13 +12,15 @@ var input_cache: Dictionary = {}
 var output_cache: Dictionary = {}
 var status_text: String = "等待主基地"
 var progress_seconds: float = 0.0
+var requires_logistics_delivery: bool = false
 
 var _production_accumulator: float = 0.0
 var _mining_recipe: RecipeDef = null
 
-func setup_miner(resource_node: Node, inventory: Variant) -> void:
+func setup_miner(resource_node: Node, inventory: Variant, use_entity_logistics: bool = false) -> void:
 	bound_resource_node = resource_node
 	target_inventory = inventory
+	requires_logistics_delivery = use_entity_logistics
 	if bound_resource_node:
 		output_resource_id = bound_resource_node.get("resource_id")
 		if bound_resource_node.has_method("bind_miner"):
@@ -58,6 +60,9 @@ func get_mining_recipe() -> RecipeDef:
 		_rebuild_mining_recipe()
 	return _mining_recipe
 
+func get_operation_recipe() -> RecipeDef:
+	return get_mining_recipe()
+
 func get_progress_ratio() -> float:
 	return clampf(_production_accumulator, 0.0, 1.0)
 
@@ -72,6 +77,8 @@ func get_inspector_lines() -> Array[String]:
 
 func _flush_output_cache_to_inventory() -> void:
 	if target_inventory == null or output_cache.is_empty():
+		return
+	if requires_logistics_delivery:
 		return
 	for resource_id in output_cache.keys():
 		var amount := int(output_cache[resource_id])

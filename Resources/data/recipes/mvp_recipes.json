@@ -96,6 +96,36 @@
       }
     },
     {
+      "id": "build_water_pump",
+      "display_name": "建造水泵",
+      "type": "building",
+      "target_id": "water_pump",
+      "duration_seconds": 8.0,
+      "inputs": {
+        "construction_mass": 26,
+        "iron_plate": 6,
+        "copper_wire": 6
+      },
+      "outputs": {
+        "water_pump": 1
+      }
+    },
+    {
+      "id": "build_forward_supply_point",
+      "display_name": "建造前线补给点",
+      "type": "building",
+      "target_id": "forward_supply_point",
+      "duration_seconds": 12.0,
+      "inputs": {
+        "construction_mass": 55,
+        "iron_plate": 16,
+        "copper_wire": 12
+      },
+      "outputs": {
+        "forward_supply_point": 1
+      }
+    },
+    {
       "id": "forge_basic_rifle_robot",
       "display_name": "生产基础步枪机器人",
       "type": "unit",
@@ -108,6 +138,21 @@
       },
       "outputs": {
         "basic_rifle_robot": 1
+      }
+    },
+    {
+      "id": "forge_battlefield_hauler",
+      "display_name": "生产战地货运机器人",
+      "type": "unit",
+      "target_id": "battlefield_hauler",
+      "duration_seconds": 14.0,
+      "inputs": {
+        "iron_plate": 7,
+        "copper_wire": 5,
+        "construction_mass": 8
+      },
+      "outputs": {
+        "battlefield_hauler": 1
       }
     }
   ]

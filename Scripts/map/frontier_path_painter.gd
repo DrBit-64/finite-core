@@ -333,20 +333,20 @@ func _add_unique_cell(cells: Array[Vector2i], cell: Vector2i) -> void:
 	cells.append(cell)
 
 func _choose_tile_x(cell: Vector2i, cells: Array[Vector2i], _control_cells: Array[Vector2i]) -> int:
-	var set := {}
+	var cell_lookup := {}
 	for mask_cell in cells:
-		set[mask_cell] = true
-	var north := cell + Vector2i.UP in set
-	var south := cell + Vector2i.DOWN in set
-	var west := cell + Vector2i.LEFT in set
-	var east := cell + Vector2i.RIGHT in set
+		cell_lookup[mask_cell] = true
+	var north := cell + Vector2i.UP in cell_lookup
+	var south := cell + Vector2i.DOWN in cell_lookup
+	var west := cell + Vector2i.LEFT in cell_lookup
+	var east := cell + Vector2i.RIGHT in cell_lookup
 	var neighbor_count := int(north) + int(south) + int(west) + int(east)
 	if neighbor_count <= 1:
 		return TILE_END_CAP
-	var north_east := cell + Vector2i(1, -1) in set
-	var north_west := cell + Vector2i(-1, -1) in set
-	var south_east := cell + Vector2i(1, 1) in set
-	var south_west := cell + Vector2i(-1, 1) in set
+	var north_east := cell + Vector2i(1, -1) in cell_lookup
+	var north_west := cell + Vector2i(-1, -1) in cell_lookup
+	var south_east := cell + Vector2i(1, 1) in cell_lookup
+	var south_west := cell + Vector2i(-1, 1) in cell_lookup
 	var open_north := not north
 	var open_south := not south
 	var open_west := not west

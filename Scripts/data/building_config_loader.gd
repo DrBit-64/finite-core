@@ -27,6 +27,9 @@ static func _make_building(data: Dictionary, recipe_defs: Array[RecipeDef]) -> B
 	def.icon_path = str(data.get("icon_path", ""))
 	def.grid_size = _vector2i(data.get("grid_size", [1, 1]), Vector2i.ONE)
 	def.max_hp = maxi(1, int(data.get("max_hp", def.max_hp)))
+	def.build_bar_visible = bool(data.get("build_bar_visible", def.build_bar_visible))
+	def.unlock_stage = maxi(0, int(data.get("unlock_stage", def.unlock_stage)))
+	def.requires_campaign_unlock = bool(data.get("requires_campaign_unlock", def.requires_campaign_unlock))
 
 	var recipe := _find_recipe_by_target(recipe_defs, building_id)
 	if recipe:

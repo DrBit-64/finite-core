@@ -12,6 +12,7 @@ script = ExtResource("1_x1m0f")
 map_size_cells = Vector2i(128, 128)
 
 [node name="TerrainLayer" type="Node2D" parent="." unique_id=1253403453]
+z_index = -20
 
 [node name="BaseRegionLayer" type="TileMapLayer" parent="TerrainLayer" unique_id=50851925]
 z_index = 1

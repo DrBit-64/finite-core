@@ -319,7 +319,7 @@ func _select_source(source_id: StringName) -> void:
 		source.tactical_templates.size(),
 		source.embedded_rules.size(),
 	]
-	_draft_templates = source.tactical_templates.duplicate(true)
+	_draft_templates = _dictionary_array_from_variant(source.tactical_templates)
 	if _draft_templates.is_empty():
 		_draft_templates = [TacticalTemplateCompilerScript.make_default_attack_instance()]
 	_selected_template_index = 0 if not _draft_templates.is_empty() else -1
@@ -327,6 +327,15 @@ func _select_source(source_id: StringName) -> void:
 	_rebuild_template_list()
 	_rebuild_param_list()
 	_rebuild_rule_preview()
+
+func _dictionary_array_from_variant(values: Variant) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if typeof(values) != TYPE_ARRAY:
+		return result
+	for value in values:
+		if typeof(value) == TYPE_DICTIONARY:
+			result.append((value as Dictionary).duplicate(true))
+	return result
 
 func _on_add_template_pressed() -> void:
 	if _template_option == null or _template_option.item_count <= 0:

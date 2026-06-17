@@ -32,5 +32,13 @@ func get_time_left() -> float:
 		return 0.0
 	return _timer.time_left
 
+func restore_time_left(time_left_seconds: float) -> void:
+	stop()
+	var time_left := maxf(0.0, time_left_seconds)
+	if time_left <= 0.0 or _timer == null:
+		return
+	_timer.wait_time = time_left
+	_timer.start()
+
 func _on_timeout() -> void:
 	expired.emit()

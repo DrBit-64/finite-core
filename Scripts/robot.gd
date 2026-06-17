@@ -20,7 +20,7 @@ const ACTION_ICON_DEFAULT_BRAIN := preload("res://Resources/art/ui/state_default
 @export var bullet_damage: int = 8
 @export var fire_cooldown_seconds: float = 0.8
 @export var weapon_enabled: bool = true
-@export_enum("default_combat", "path_patrol", "melee_hound", "idle") var brain_mode: String = "default_combat"
+@export_enum("default_combat", "path_patrol", "melee_hound", "logistics", "idle") var brain_mode: String = "default_combat"
 @export var default_brain_enabled: bool = true
 @export var preferred_range_ratio: float = 0.85
 @export var range_dead_zone: float = 12.0
@@ -44,6 +44,11 @@ var weapon_audio_id: StringName = &"rifle_module"
 var active_upgrade_ids: Array[StringName] = []
 var rally_point_position: Vector2 = Vector2.ZERO
 var has_rally_point: bool = false
+var producer_forge_name: String = ""
+var cargo_capacity: int = 0
+var cargo_inventory: Dictionary = {}
+var logistics_status_text: String = "无物流能力"
+var current_logistics_task: Dictionary = {}
 
 var current_target: Node2D = null
 var current_action: String = "闲置"
@@ -120,6 +125,8 @@ func _physics_process(delta: float) -> void:
 						movement_component.stop(&"idle")
 		"melee_hound":
 			_tick_melee_hound()
+		"logistics":
+			pass
 		_:
 			current_action = "闲置"
 			if movement_component:
@@ -150,6 +157,24 @@ func setup_from_blueprint(blueprint: UnitBlueprint, next_rally_point: Vector2 = 
 		fire_range = blueprint.stats.fire_range
 		bullet_damage = blueprint.stats.damage
 		fire_cooldown_seconds = blueprint.stats.fire_cooldown_seconds
+	cargo_capacity = _get_blueprint_cargo_capacity(blueprint)
+	if cargo_capacity > 0:
+		tags = ["cargo", "logistics"]
+		brain_mode = "logistics"
+		weapon_enabled = false
+		logistics_status_text = "待命"
+		current_logistics_task = {
+			"task_id": "",
+			"type": "idle",
+			"status": "等待物流任务",
+		}
+	else:
+		tags = []
+		cargo_inventory.clear()
+		logistics_status_text = "无物流能力"
+		current_logistics_task.clear()
+		brain_mode = "default_combat"
+		weapon_enabled = true
 	default_brain_enabled = blueprint.default_brain_enabled
 	if state_flags:
 		state_flags.setup(blueprint.state_flag_defaults)
@@ -201,9 +226,9 @@ func setup_scavenger_hound(config: Dictionary, nest: Node = null) -> void:
 	melee_cooldown_seconds = float(config.get("melee_cooldown_seconds", 1.0))
 	guard_aggro_radius = maxf(0.0, float(config.get("guard_aggro_radius", 320.0)))
 	hound_follow_up_radius = maxf(0.0, float(config.get("hound_follow_up_radius", 180.0)))
-	source_nest = nest
-	guard_home_position = global_position
 	reset_state()
+	source_nest = nest if nest != null and is_instance_valid(nest) else null
+	guard_home_position = global_position
 
 func set_patrol_path(path_points: Array[Vector2], loop_path: bool = true) -> void:
 	patrol_points = path_points.duplicate()
@@ -233,6 +258,7 @@ func reset_state() -> void:
 	_locked_target = null
 	_target_lock_until_msec = 0
 	_hound_has_engaged = false
+	source_nest = null
 	_last_damage_source_payload.clear()
 	_damage_flash_until_msec = 0
 	_sync_runtime_groups()
@@ -293,6 +319,10 @@ func get_inspector_lines() -> Array[String]:
 				lines.append("  %s" % flag_line)
 	if not active_upgrade_ids.is_empty():
 		lines.append("Tech upgrades: %s" % ", ".join(_string_name_list(active_upgrade_ids)))
+	if is_cargo_robot():
+		lines.append("物流状态：%s" % logistics_status_text)
+		lines.append("货舱：%s / %s" % [get_cargo_used_capacity(), cargo_capacity])
+		lines.append_array(get_logistics_task_summary_lines())
 	lines.append("Stats: HP %s / Speed %.1f" % [max_hp, speed])
 	if has_rally_point:
 		lines.append("集结点：%.0f, %.0f" % [rally_point_position.x, rally_point_position.y])
@@ -381,11 +411,22 @@ func move_towards_nearest_enemy() -> void:
 		return
 	move_towards(get_target_position(enemy))
 
-func move_towards(target_pos: Vector2) -> void:
+func move_towards(target_pos: Vector2, target_node: Node = null) -> bool:
 	if movement_component == null:
-		return
-	movement_component.move_towards(global_position, target_pos)
+		return false
+	var next_target := target_pos
+	var path_provider := get_tree().get_first_node_in_group("stage_path_provider") if get_tree() else null
+	if target_node != null and path_provider != null and path_provider.has_method("get_navigation_waypoint_to_node"):
+		next_target = path_provider.call("get_navigation_waypoint_to_node", global_position, target_node)
+	elif path_provider != null and path_provider.has_method("get_navigation_waypoint"):
+		next_target = path_provider.call("get_navigation_waypoint", global_position, target_pos)
+	if global_position.distance_to(next_target) <= 1.0 and global_position.distance_to(target_pos) > 18.0:
+		movement_component.stop(&"blocked")
+		current_action = "路径阻塞"
+		return false
+	movement_component.move_towards(global_position, next_target)
 	current_action = "接近目标"
+	return true
 
 func flee_from(target_pos: Vector2) -> void:
 	if movement_component == null:
@@ -448,6 +489,72 @@ func uses_physics_ai_tick() -> bool:
 
 func get_blueprint_snapshot_key() -> String:
 	return String(blueprint_snapshot_id)
+
+func is_cargo_robot() -> bool:
+	return cargo_capacity > 0 or tags.has("cargo") or tags.has("logistics")
+
+func setup_logistics_task(task: Dictionary) -> void:
+	current_logistics_task = task.duplicate(true)
+	logistics_status_text = str(current_logistics_task.get("status", "执行物流任务"))
+	if logistics_status_text.is_empty():
+		logistics_status_text = "执行物流任务"
+
+func clear_logistics_task() -> void:
+	current_logistics_task.clear()
+	logistics_status_text = "待命" if is_cargo_robot() else "无物流能力"
+
+func get_cargo_inventory() -> Dictionary:
+	return cargo_inventory.duplicate(true)
+
+func get_cargo_used_capacity() -> int:
+	var total := 0
+	for resource_id in cargo_inventory.keys():
+		total += maxi(0, int(cargo_inventory[resource_id]))
+	return total
+
+func get_cargo_free_capacity() -> int:
+	return maxi(0, cargo_capacity - get_cargo_used_capacity())
+
+func add_cargo(resource_id: StringName, amount: int) -> int:
+	if amount <= 0 or cargo_capacity <= 0:
+		return 0
+	var accepted := mini(amount, get_cargo_free_capacity())
+	if accepted <= 0:
+		return 0
+	cargo_inventory[resource_id] = int(cargo_inventory.get(resource_id, 0)) + accepted
+	return accepted
+
+func remove_cargo(resource_id: StringName, amount: int) -> int:
+	if amount <= 0:
+		return 0
+	var current := int(cargo_inventory.get(resource_id, 0))
+	var removed := mini(amount, current)
+	if removed <= 0:
+		return 0
+	var next_amount := current - removed
+	if next_amount <= 0:
+		cargo_inventory.erase(resource_id)
+	else:
+		cargo_inventory[resource_id] = next_amount
+	return removed
+
+func get_logistics_task_summary_lines() -> Array[String]:
+	var lines: Array[String] = []
+	if not is_cargo_robot():
+		return lines
+	if current_logistics_task.is_empty():
+		lines.append("物流任务：无")
+		return lines
+	lines.append("物流任务：%s" % _format_logistics_task_type(str(current_logistics_task.get("type", "idle"))))
+	lines.append("任务状态：%s" % str(current_logistics_task.get("status", logistics_status_text)))
+	var cargo_item := str(current_logistics_task.get("resource_id", ""))
+	if not cargo_item.is_empty():
+		lines.append("目标物资：%s x%s" % [cargo_item, int(current_logistics_task.get("amount", 0))])
+	var pickup := str(current_logistics_task.get("pickup", ""))
+	var dropoff := str(current_logistics_task.get("dropoff", ""))
+	if not pickup.is_empty() or not dropoff.is_empty():
+		lines.append("路线：%s -> %s" % [pickup if not pickup.is_empty() else "-", dropoff if not dropoff.is_empty() else "-"])
+	return lines
 
 func fire_main_weapon() -> void:
 	var enemy := get_current_enemy()
@@ -572,7 +679,12 @@ func _get_hound_target() -> Node2D:
 	if _hound_has_engaged and enemy_sensor.has_method("get_follow_up_targets"):
 		enemies = enemy_sensor.get_follow_up_targets(self, team, hound_follow_up_radius)
 	if enemies.is_empty() and enemy_sensor.has_method("get_initial_targets"):
-		enemies = enemy_sensor.get_initial_targets(self, team, source_nest, guard_aggro_radius)
+		var valid_source_nest: Node = null
+		if source_nest != null and is_instance_valid(source_nest):
+			valid_source_nest = source_nest
+		else:
+			source_nest = null
+		enemies = enemy_sensor.get_initial_targets(self, team, valid_source_nest, guard_aggro_radius)
 	if enemies.is_empty():
 		_hound_has_engaged = false
 		return null
@@ -620,7 +732,7 @@ func _update_unit_visuals() -> void:
 			var texture_size := texture.get_size()
 			if texture_size.x > 0.0 and texture_size.y > 0.0:
 				unit_sprite.scale = Vector2(visual_size.x / texture_size.x, visual_size.y / texture_size.y)
-		unit_sprite.rotation = _facing_angle
+		unit_sprite.rotation = 0.0 if _uses_fixed_icon_orientation() else _facing_angle
 		unit_sprite.modulate = Color(1.0, 0.48, 0.38, 1.0) if Time.get_ticks_msec() < _damage_flash_until_msec else Color.WHITE
 	if muzzle:
 		muzzle.position = Vector2.RIGHT.rotated(_facing_angle) * muzzle_distance
@@ -646,6 +758,9 @@ func _update_facing(delta: float) -> void:
 		return
 	if movement_component and movement_component.desired_velocity.length() > 0.001:
 		_turn_angle_towards(movement_component.desired_velocity.angle(), delta)
+
+func _uses_fixed_icon_orientation() -> bool:
+	return brain_mode == "logistics" or tags.has("cargo") or tags.has("logistics")
 
 func _turn_towards(world_position: Vector2, delta: float) -> void:
 	var direction := world_position - global_position
@@ -786,6 +901,8 @@ func _format_brain_mode() -> String:
 			return "路径移动脑干"
 		"melee_hound":
 			return "拾荒猎犬近战脑干"
+		"logistics":
+			return "物流调度脑干"
 		_:
 			return "闲置"
 
@@ -895,3 +1012,44 @@ func _get_action_icon_texture(bubble_text: String) -> Texture2D:
 	if bubble_text.contains("默认脑干") or brain_mode == "default_combat":
 		return ACTION_ICON_DEFAULT_BRAIN
 	return null
+
+func _get_blueprint_cargo_capacity(blueprint: UnitBlueprint) -> int:
+	if blueprint == null:
+		return 0
+	var capacity := 0
+	var chassis_text := String(blueprint.chassis_id)
+	if chassis_text.contains("cargo") or chassis_text.contains("hauler"):
+		capacity += 8
+	for module_id in blueprint.module_ids:
+		var module_text := String(module_id)
+		if module_text == "basic_cargo_pack":
+			capacity += 8
+		elif module_text == "expanded_cargo_pack":
+			capacity += 16
+		elif module_text.contains("cargo"):
+			capacity += 8
+	return capacity
+
+func _format_logistics_task_type(task_type: String) -> String:
+	match task_type:
+		"idle":
+			return "待命"
+		"delivery":
+			return "配送"
+		"pickup":
+			return "取货"
+		"urgent_supply":
+			return "紧急补货"
+		"source_to_relay":
+			return "运往前线补给点"
+		"relay_to_base":
+			return "补给点回运"
+		"direct_to_base":
+			return "远程直送主基地"
+		"recover_cargo":
+			return "回收残余货物"
+		"dropoff":
+			return "投递"
+		"return":
+			return "返航"
+	return task_type if not task_type.is_empty() else "未指定"

@@ -14,6 +14,9 @@ const RES_IRON_PLATE := &"iron_plate"
 const RES_COPPER_WIRE := &"copper_wire"
 const RES_CONSTRUCTION_MASS := &"construction_mass"
 const RES_INITIAL_SENSOR_COIL := &"initial_sensor_coil"
+const RES_CRYSTAL_ORE := &"crystal_ore"
+const RES_COAL := &"coal"
+const RES_WATER := &"water"
 
 const UNIT_BASIC_RIFLE_ROBOT := &"basic_rifle_robot"
 
@@ -22,6 +25,8 @@ const BUILDING_MINER := &"miner"
 const BUILDING_PROCESSOR := &"processor"
 const BUILDING_ROBOT_FORGE := &"robot_forge"
 const BUILDING_RESEARCH_TERMINAL := &"research_terminal"
+const BUILDING_WATER_PUMP := &"water_pump"
+const BUILDING_FORWARD_SUPPLY_POINT := &"forward_supply_point"
 
 static func create_resource_defs() -> Array[ResourceDef]:
 	return [
@@ -31,6 +36,9 @@ static func create_resource_defs() -> Array[ResourceDef]:
 		_make_resource(RES_COPPER_WIRE, "铜线", "res://Resources/art/resources/copper_wire.svg", "基础电气材料。"),
 		_make_resource(RES_CONSTRUCTION_MASS, "建设质料", "res://Resources/art/resources/construction_mass.svg", "建筑通用基础开销。"),
 		_make_resource(RES_INITIAL_SENSOR_COIL, "初级感应线圈", "res://Resources/art/resources/initial_sensor_coil.svg", "第一处敌巢抽象回收的阶段 1 关键道具。"),
+		_make_resource(RES_CRYSTAL_ORE, "晶体矿", "res://Resources/art/resources/crystal_ore.svg", "第二资源圈的高频结构矿物。"),
+		_make_resource(RES_COAL, "原煤", "res://Resources/art/resources/coal.svg", "中期能源链的基础燃料。"),
+		_make_resource(RES_WATER, "水", "res://Resources/art/resources/water.svg", "水泵从水池抽取的流体资源。"),
 	]
 
 static func create_recipe_defs() -> Array[RecipeDef]:
@@ -44,6 +52,13 @@ static func create_basic_rifle_blueprint() -> UnitBlueprint:
 		recipe_defs,
 		_create_basic_rifle_blueprint_fallback(recipe_defs)
 	)
+
+static func create_unit_blueprints() -> Array[UnitBlueprint]:
+	var recipe_defs := create_recipe_defs()
+	var configured := UnitBlueprintConfigLoaderScript.load_unit_blueprints(UNIT_BLUEPRINT_CONFIG_PATH, recipe_defs)
+	if configured.is_empty():
+		configured.append(_create_basic_rifle_blueprint_fallback(recipe_defs))
+	return configured
 
 static func _create_basic_rifle_blueprint_fallback(recipe_defs: Array[RecipeDef]) -> UnitBlueprint:
 	var recipe := _find_recipe_by_target(recipe_defs, &"unit", UNIT_BASIC_RIFLE_ROBOT)
@@ -80,6 +95,8 @@ static func _create_building_fallbacks(recipe_defs: Array[RecipeDef]) -> Array[B
 		_make_building(BUILDING_PROCESSOR, "基础加工厂", Vector2i(1, 1), recipe_defs, "res://Resources/art/buildings/processor.svg", 600),
 		_make_building(BUILDING_ROBOT_FORGE, "机器人锻造厂", Vector2i(1, 1), recipe_defs, "res://Resources/art/buildings/robot_forge.svg", 700),
 		_make_building(BUILDING_RESEARCH_TERMINAL, "研究终端", Vector2i(1, 1), recipe_defs, "res://Resources/art/buildings/research_terminal.svg", 520),
+		_make_building(BUILDING_WATER_PUMP, "水泵", Vector2i(1, 1), recipe_defs, "res://Resources/art/buildings/water_pump.svg", 460),
+		_make_building(BUILDING_FORWARD_SUPPLY_POINT, "前线补给点", Vector2i(2, 2), recipe_defs, "res://Resources/art/buildings/forward_supply_point.svg", 900),
 	]
 
 static func _make_resource(resource_id: StringName, display_name: String, icon_path: String, description: String) -> ResourceDef:

@@ -44,3 +44,13 @@ func get_missing(cost: Dictionary) -> Dictionary:
 
 func get_all() -> Dictionary:
 	return _amounts.duplicate(true)
+
+func set_all(amounts: Dictionary, reason: String = "set_inventory") -> void:
+	_amounts.clear()
+	for resource_id in amounts.keys():
+		var amount := int(amounts[resource_id])
+		if amount <= 0:
+			continue
+		var key := StringName(str(resource_id))
+		_amounts[key] = amount
+		inventory_changed.emit(key, amount, amount, reason)

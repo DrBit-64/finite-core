@@ -8,6 +8,7 @@ const REFRESH_INTERVAL_SECONDS := 0.5
 var _event_log: Node = null
 var _resource_defs: Array[ResourceDef] = []
 var _blueprints: Array[UnitBlueprint] = []
+var _logistics_diagnostics: Dictionary = {}
 var _active_category: StringName = &"resources"
 var _refresh_seconds: float = 0.0
 
@@ -15,6 +16,7 @@ var _page_title: Label
 var _content_list: VBoxContainer
 var _resource_button: Button
 var _robot_button: Button
+var _logistics_button: Button
 
 func _ready() -> void:
 	anchor_left = 0.04
@@ -33,10 +35,11 @@ func _process(delta: float) -> void:
 		_refresh_seconds = 0.0
 		_refresh()
 
-func configure(event_log: Node, resource_defs: Array[ResourceDef], blueprints: Array[UnitBlueprint]) -> void:
+func configure(event_log: Node, resource_defs: Array[ResourceDef], blueprints: Array[UnitBlueprint], logistics_diagnostics: Dictionary = {}) -> void:
 	_event_log = event_log
 	_resource_defs = resource_defs.duplicate()
 	_blueprints = blueprints.duplicate()
+	_logistics_diagnostics = logistics_diagnostics.duplicate(true)
 	if is_inside_tree():
 		_refresh()
 
@@ -96,6 +99,8 @@ func _build_layout() -> void:
 	category_list.add_child(_resource_button)
 	_robot_button = _make_category_button("机器人", &"robots")
 	category_list.add_child(_robot_button)
+	_logistics_button = _make_category_button("物流", &"logistics")
+	category_list.add_child(_logistics_button)
 
 	var separator := VSeparator.new()
 	body.add_child(separator)
@@ -137,9 +142,11 @@ func _refresh() -> void:
 	for child in _content_list.get_children():
 		child.queue_free()
 
-	var report: Dictionary = ReportBuilderScript.build_report(_event_log, _blueprints, _resource_defs, WINDOW_SECONDS)
+	var report: Dictionary = ReportBuilderScript.build_report(_event_log, _blueprints, _resource_defs, WINDOW_SECONDS, _logistics_diagnostics)
 	if _active_category == &"robots":
 		_rebuild_robot_page(report.get("robots", []))
+	elif _active_category == &"logistics":
+		_rebuild_logistics_page(report.get("logistics", {}))
 	else:
 		_rebuild_resource_page(report.get("resources", []))
 	_refresh_category_button_states()
@@ -189,6 +196,76 @@ func _rebuild_robot_page(rows: Array) -> void:
 		_content_list.add_child(block)
 		_content_list.add_child(HSeparator.new())
 
+func _rebuild_logistics_page(logistics: Dictionary) -> void:
+	_page_title.text = "物流诊断"
+	var rows: Array = logistics.get("resources", [])
+	_content_list.add_child(_make_table_row(["资源", "取货", "送达", "在途差额"], true))
+	var has_rows := false
+	for row in rows:
+		var picked := int(row.get("picked", 0))
+		var delivered := int(row.get("delivered", 0))
+		if picked <= 0 and delivered <= 0:
+			continue
+		has_rows = true
+		_content_list.add_child(_make_table_row([
+			str(row.get("display_name", row.get("resource_id", "未知资源"))),
+			str(picked),
+			str(delivered),
+			_format_signed(int(row.get("net_in_transit", 0))),
+		]))
+		var tasks: Dictionary = row.get("tasks", {})
+		if not tasks.is_empty():
+			_content_list.add_child(_make_detail_label("  路线：%s" % _format_logistics_task_counts(tasks)))
+	if not has_rows:
+		_content_list.add_child(_make_label("最近 5 分钟暂无物流吞吐", 14, Color(0.72, 0.78, 0.84, 1.0)))
+
+	var diagnostics: Dictionary = logistics.get("diagnostics", {})
+	_content_list.add_child(HSeparator.new())
+	_content_list.add_child(_make_detail_label("当前缺货："))
+	var shortages: Array = diagnostics.get("shortages", [])
+	if shortages.is_empty():
+		_content_list.add_child(_make_detail_label("  无"))
+	else:
+		shortages.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return float(a.get("urgency", 0.0)) > float(b.get("urgency", 0.0))
+		)
+		for shortage in shortages:
+			_content_list.add_child(_make_detail_label("  %s 缺 %s x%d" % [
+				str(shortage.get("target", "-")),
+				_format_resource_id(str(shortage.get("resource_id", ""))),
+				int(shortage.get("amount", 0)),
+			]))
+
+	_content_list.add_child(_make_detail_label("等待取货："))
+	var waiting_sources: Array = diagnostics.get("waiting_sources", [])
+	if waiting_sources.is_empty():
+		_content_list.add_child(_make_detail_label("  无"))
+	else:
+		waiting_sources.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return float(a.get("wait_seconds", 0.0)) > float(b.get("wait_seconds", 0.0))
+		)
+		for item in waiting_sources.slice(0, mini(waiting_sources.size(), 8)):
+			_content_list.add_child(_make_detail_label("  %s 有 %s x%d，等待 %.1fs" % [
+				str(item.get("source", "-")),
+				_format_resource_id(str(item.get("resource_id", ""))),
+				int(item.get("available", 0)),
+				float(item.get("wait_seconds", 0.0)),
+			]))
+
+	_content_list.add_child(_make_detail_label("当前任务："))
+	var active_tasks: Array = diagnostics.get("active_tasks", [])
+	if active_tasks.is_empty():
+		_content_list.add_child(_make_detail_label("  无"))
+	else:
+		for task in active_tasks:
+			_content_list.add_child(_make_detail_label("  %s：%s x%d，%s -> %s" % [
+				_format_logistics_task_type(str(task.get("type", ""))),
+				_format_resource_id(str(task.get("resource_id", ""))),
+				int(task.get("amount", 0)),
+				str(task.get("pickup", "-")),
+				str(task.get("dropoff", "-")),
+			]))
+
 func _append_trigger_details(block: VBoxContainer, title: String, items: Dictionary) -> void:
 	if items.is_empty():
 		return
@@ -229,6 +306,8 @@ func _refresh_category_button_states() -> void:
 		_resource_button.modulate = Color(0.68, 0.92, 1.0, 1.0) if _active_category == &"resources" else Color.WHITE
 	if _robot_button:
 		_robot_button.modulate = Color(0.68, 0.92, 1.0, 1.0) if _active_category == &"robots" else Color.WHITE
+	if _logistics_button:
+		_logistics_button.modulate = Color(0.68, 0.92, 1.0, 1.0) if _active_category == &"logistics" else Color.WHITE
 
 func _format_counts(counts: Dictionary) -> String:
 	var parts: Array[String] = []
@@ -250,6 +329,40 @@ func _format_signed(value: int) -> String:
 	if value > 0:
 		return "+%d" % value
 	return str(value)
+
+func _format_logistics_task_counts(tasks: Dictionary) -> String:
+	var parts: Array[String] = []
+	for task_type in tasks.keys():
+		var row: Dictionary = tasks[task_type]
+		parts.append("%s 取%d/送%d" % [
+			_format_logistics_task_type(str(task_type)),
+			int(row.get("picked", 0)),
+			int(row.get("delivered", 0)),
+		])
+	parts.sort()
+	return " / ".join(parts)
+
+func _format_logistics_task_type(task_type: String) -> String:
+	match task_type:
+		"urgent_supply":
+			return "紧急补货"
+		"source_to_relay":
+			return "矿点到补给点"
+		"relay_to_base":
+			return "补给点回主基地"
+		"direct_to_base":
+			return "远程直送"
+		"recover_cargo":
+			return "残货回收"
+		"leftover_to_base":
+			return "余货入库"
+	return task_type
+
+func _format_resource_id(resource_id: String) -> String:
+	for resource_def in _resource_defs:
+		if String(resource_def.id) == resource_id:
+			return resource_def.display_name
+	return resource_id
 
 func _make_label(text: String, font_size: int, color: Color) -> Label:
 	var label := Label.new()

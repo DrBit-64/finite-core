@@ -100,7 +100,6 @@ func _format_summary(summary: Dictionary) -> String:
 		lines.append("规则触发明细：")
 		for rule_name in rule_names.keys():
 			lines.append("  %s：%d 次" % [String(rule_name), int(rule_names[rule_name])])
-	var reward: Dictionary = summary.get("reward", {})
 	return "\n".join(lines)
 
 func _update_reward_row(summary: Dictionary) -> void:

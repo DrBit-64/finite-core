@@ -6,35 +6,63 @@
       "display_name": "主基地",
       "icon_path": "res://Resources/art/buildings/main_base.svg",
       "grid_size": [2, 2],
-      "max_hp": 1400
+      "max_hp": 1400,
+      "build_bar_visible": true,
+      "unlock_stage": 0
     },
     {
       "id": "miner",
       "display_name": "采矿机",
       "icon_path": "res://Resources/art/buildings/miner.svg",
       "grid_size": [1, 1],
-      "max_hp": 420
+      "max_hp": 420,
+      "build_bar_visible": true,
+      "unlock_stage": 0
     },
     {
       "id": "processor",
       "display_name": "基础加工厂",
       "icon_path": "res://Resources/art/buildings/processor.svg",
       "grid_size": [1, 1],
-      "max_hp": 600
+      "max_hp": 600,
+      "build_bar_visible": true,
+      "unlock_stage": 0
     },
     {
       "id": "robot_forge",
       "display_name": "机器人锻造厂",
       "icon_path": "res://Resources/art/buildings/robot_forge.svg",
       "grid_size": [1, 1],
-      "max_hp": 700
+      "max_hp": 700,
+      "build_bar_visible": true,
+      "unlock_stage": 0
     },
     {
       "id": "research_terminal",
       "display_name": "研究终端",
       "icon_path": "res://Resources/art/buildings/research_terminal.svg",
       "grid_size": [1, 1],
-      "max_hp": 520
+      "max_hp": 520,
+      "build_bar_visible": true,
+      "unlock_stage": 0
+    },
+    {
+      "id": "water_pump",
+      "display_name": "水泵",
+      "icon_path": "res://Resources/art/buildings/water_pump.svg",
+      "grid_size": [1, 1],
+      "max_hp": 460,
+      "build_bar_visible": true,
+      "unlock_stage": 0
+    },
+    {
+      "id": "forward_supply_point",
+      "display_name": "前线补给点",
+      "icon_path": "res://Resources/art/buildings/forward_supply_point.svg",
+      "grid_size": [2, 2],
+      "max_hp": 900,
+      "build_bar_visible": true,
+      "unlock_stage": 0
     }
   ]
 }

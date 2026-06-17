@@ -3,6 +3,7 @@ class_name MvpHud
 
 signal build_mode_requested(building_id: StringName)
 signal processor_recipe_selected(processor: Node, recipe_id: StringName)
+signal building_demolish_requested(building: Node)
 signal forge_rally_point_requested(forge: Node)
 signal blueprint_library_requested
 signal blueprint_save_requested(source_blueprint_id: StringName, display_name: String, tactical_templates: Array, embedded_rules: Array, state_flag_defaults: Dictionary, save_as_new: bool)
@@ -10,6 +11,8 @@ signal forge_blueprint_selected(forge: Node, blueprint_id: StringName)
 signal technology_research_requested(technology_id: StringName)
 signal new_game_requested
 signal restart_requested
+signal save_game_requested
+signal load_game_requested
 
 const BottomPromptScript := preload("res://Scripts/ui/bottom_prompt.gd")
 const BuildingOperationPanelScript := preload("res://Scripts/ui/building_operation_panel.gd")
@@ -44,6 +47,7 @@ var _statistics_button: Button = null
 var _technology_button: Button = null
 var _resource_defs: Array[ResourceDef] = []
 var _blueprints: Array[UnitBlueprint] = []
+var _logistics_diagnostics: Dictionary = {}
 var _campaign_state: Variant = null
 var _technology_defs: Array = []
 var _campaign_inventory_amounts: Dictionary = {}
@@ -116,7 +120,7 @@ func set_resource_summary(text: String) -> void:
 func set_elapsed_seconds(elapsed_seconds: float) -> void:
 	if elapsed_time_label:
 		var total_seconds := maxi(0, floori(elapsed_seconds))
-		elapsed_time_label.text = "用时 %02d:%02d" % [total_seconds / 60, total_seconds % 60]
+		elapsed_time_label.text = "用时 %02d:%02d" % [floori(float(total_seconds) / 60.0), total_seconds % 60]
 
 func set_objective_direction(text: String) -> void:
 	if objective_direction_label:
@@ -210,6 +214,10 @@ func show_miner_panel(miner: Node, resource_defs: Array[ResourceDef], screen_pos
 	_ensure_operation_panel()
 	_building_operation_panel.show_miner_panel(miner, resource_defs, screen_position)
 
+func show_producer_panel(producer: Node, resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
+	_ensure_operation_panel()
+	_building_operation_panel.show_producer_panel(producer, resource_defs, screen_position)
+
 func show_forge_panel(forge: Node, blueprint: UnitBlueprint, blueprints: Array[UnitBlueprint], resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
 	_ensure_operation_panel()
 	_building_operation_panel.show_forge_panel(forge, blueprint, blueprints, resource_defs, screen_position)
@@ -217,6 +225,21 @@ func show_forge_panel(forge: Node, blueprint: UnitBlueprint, blueprints: Array[U
 func show_research_terminal_panel(terminal: Node, technology_defs: Array, resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
 	_ensure_operation_panel()
 	_building_operation_panel.show_research_terminal_panel(terminal, technology_defs, resource_defs, screen_position)
+
+func show_cargo_robot_panel(robot: Node, resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
+	_ensure_operation_panel()
+	_building_operation_panel.show_cargo_robot_panel(robot, resource_defs, screen_position)
+
+func show_inventory_storage_panel(storage_node: Node, resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
+	_ensure_operation_panel()
+	_building_operation_panel.show_inventory_storage_panel(storage_node, resource_defs, screen_position)
+
+func show_supply_point_panel(supply_point: Node, resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
+	show_inventory_storage_panel(supply_point, resource_defs, screen_position)
+
+func show_basic_building_panel(building: Node, screen_position: Vector2) -> void:
+	_ensure_operation_panel()
+	_building_operation_panel.show_basic_building_panel(building, screen_position)
 
 func hide_operation_panel() -> void:
 	if _building_operation_panel:
@@ -265,7 +288,7 @@ func set_resource_amounts(resource_defs: Array[ResourceDef], amounts: Dictionary
 func set_resource_definitions(resource_defs: Array[ResourceDef]) -> void:
 	_resource_defs = resource_defs.duplicate()
 	if _combat_report_overlay and _combat_report_overlay.has_method("configure"):
-		_combat_report_overlay.call("configure", _get_combat_event_log(), _resource_defs, _blueprints)
+		_combat_report_overlay.call("configure", _get_combat_event_log(), _resource_defs, _blueprints, _logistics_diagnostics)
 
 func set_building_options(building_defs: Array[BuildingDef]) -> void:
 	_building_defs = building_defs.duplicate()
@@ -278,7 +301,12 @@ func set_blueprint_library(blueprints: Array[UnitBlueprint]) -> void:
 	if _blueprint_panel and _blueprint_panel.visible:
 		_rebuild_blueprint_panel()
 	if _combat_report_overlay and _combat_report_overlay.has_method("configure"):
-		_combat_report_overlay.call("configure", _get_combat_event_log(), _resource_defs, _blueprints)
+		_combat_report_overlay.call("configure", _get_combat_event_log(), _resource_defs, _blueprints, _logistics_diagnostics)
+
+func set_logistics_diagnostics(diagnostics: Dictionary) -> void:
+	_logistics_diagnostics = diagnostics.duplicate(true)
+	if _combat_report_overlay and _combat_report_overlay.has_method("configure"):
+		_combat_report_overlay.call("configure", _get_combat_event_log(), _resource_defs, _blueprints, _logistics_diagnostics)
 
 func set_unlocked_template_ids(template_ids: Array[StringName]) -> void:
 	_unlocked_template_ids = template_ids.duplicate()
@@ -661,7 +689,7 @@ func _on_statistics_button_pressed() -> void:
 		_blueprint_overlay.visible = false
 	if _technology_overlay:
 		_technology_overlay.visible = false
-	_combat_report_overlay.call("configure", _get_combat_event_log(), _resource_defs, _blueprints)
+	_combat_report_overlay.call("configure", _get_combat_event_log(), _resource_defs, _blueprints, _logistics_diagnostics)
 	_combat_report_overlay.visible = not _combat_report_overlay.visible
 	if _combat_report_overlay.visible and _combat_report_overlay.has_method("refresh_report"):
 		_combat_report_overlay.call("refresh_report")
@@ -848,6 +876,8 @@ func _ensure_pause_overlay() -> void:
 		return
 	_pause_overlay = _make_center_menu_panel("PauseMenu", "Pause", [
 		{"text": "Continue", "callable": Callable(self, "_on_pause_continue_pressed")},
+		{"text": "Save Game", "callable": Callable(self, "_on_pause_save_pressed")},
+		{"text": "Load Game", "callable": Callable(self, "_on_pause_load_pressed")},
 		{"text": "Settings", "callable": Callable(self, "_on_pause_settings_pressed")},
 		{"text": "Restart", "callable": Callable(self, "_on_pause_restart_pressed")},
 		{"text": "Main Menu", "callable": Callable(self, "_on_pause_main_menu_pressed")},
@@ -877,6 +907,14 @@ func _on_pause_continue_pressed() -> void:
 func _on_pause_settings_pressed() -> void:
 	_play_ui_click()
 	_show_settings_overlay()
+
+func _on_pause_save_pressed() -> void:
+	_play_ui_click()
+	save_game_requested.emit()
+
+func _on_pause_load_pressed() -> void:
+	_play_ui_click()
+	load_game_requested.emit()
 
 func _on_pause_restart_pressed() -> void:
 	_play_ui_click()
@@ -1266,6 +1304,7 @@ func _ensure_operation_panel() -> void:
 		return
 	_building_operation_panel = BuildingOperationPanelScript.new()
 	_building_operation_panel.processor_recipe_selected.connect(_on_operation_processor_recipe_selected)
+	_building_operation_panel.building_demolish_requested.connect(_on_operation_building_demolish_requested)
 	_building_operation_panel.forge_rally_point_requested.connect(_on_operation_forge_rally_point_requested)
 	_building_operation_panel.forge_blueprint_picker_requested.connect(_on_operation_forge_blueprint_picker_requested)
 	_building_operation_panel.technology_panel_requested.connect(_on_operation_technology_panel_requested)
@@ -1276,6 +1315,9 @@ func _ensure_operation_panel() -> void:
 
 func _on_operation_processor_recipe_selected(processor: Node, recipe_id: StringName) -> void:
 	processor_recipe_selected.emit(processor, recipe_id)
+
+func _on_operation_building_demolish_requested(building: Node) -> void:
+	building_demolish_requested.emit(building)
 
 func _on_operation_forge_rally_point_requested(forge: Node) -> void:
 	forge_rally_point_requested.emit(forge)

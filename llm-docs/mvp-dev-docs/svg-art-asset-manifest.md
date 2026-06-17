@@ -157,9 +157,9 @@
 
 | 稳定 ID | 显示名 | 建议路径 | 尺寸 | 状态 |
 | --- | --- | --- | --- | --- |
-| `crystal_ore` | 晶体矿 | `Resources/art/resources/crystal_ore.svg` | `32x32` | `generate` |
-| `coal` | 原煤 | `Resources/art/resources/coal.svg` | `32x32` | `generate` |
-| `water` | 水 | `Resources/art/resources/water.svg` | `32x32` | `generate` |
+| `crystal_ore` | 晶体矿 | `Resources/art/resources/crystal_ore.svg` | `32x32` | `done` |
+| `coal` | 原煤 | `Resources/art/resources/coal.svg` | `32x32` | `done` |
+| `water` | 水 | `Resources/art/resources/water.svg` | `32x32` | `done` |
 | `steel_billet` | 钢坯 | `Resources/art/resources/steel_billet.svg` | `32x32` | `pending` |
 | `reinforced_steel_plate` | 强化钢板 | `Resources/art/resources/reinforced_steel_plate.svg` | `32x32` | `generate` |
 | `optical_lens` | 光学透镜 | `Resources/art/resources/optical_lens.svg` | `32x32` | `generate` |
@@ -182,15 +182,16 @@
 | `chemical_processor` | 化学精炼厂 | `Resources/art/buildings/chemical_processor.svg` | `48x48` | `generate` |
 | `ammo_loader` | 弹药装填厂 | `Resources/art/buildings/ammo_loader.svg` | `48x48` | `generate` |
 | `structure_printer` | 结构打印厂 | `Resources/art/buildings/structure_printer.svg` | `48x48` | `generate` |
-| `forward_supply_point` | 前线补给点 | `Resources/art/buildings/forward_supply_point.svg` | `48x48` | `generate` |
+| `water_pump` | 水泵 | `Resources/art/buildings/water_pump.svg` | `48x48` | `done` |
+| `forward_supply_point` | 前线补给点 | `Resources/art/buildings/forward_supply_point.svg` | `48x48` | `done` |
 
 ### 3. 底盘、模块与蓝图
 
 | 稳定 ID | 显示名 | 建议路径 | 尺寸 | 状态 |
 | --- | --- | --- | --- | --- |
-| `standard_cargo_chassis` | 标准货运底盘 | `Resources/art/chassis/standard_cargo_chassis.svg` | `32x32` | `generate` |
+| `standard_cargo_chassis` | 标准货运底盘 | `Resources/art/chassis/standard_cargo_chassis.svg` | `32x32` | `done` |
 | `heavy_tracked_chassis` | 重型履带底盘 | `Resources/art/chassis/heavy_tracked_chassis.svg` | `32x32` | `generate` |
-| `expanded_cargo_pack` | 扩展背包 | `Resources/art/modules/expanded_cargo_pack.svg` | `32x32` | `generate` |
+| `expanded_cargo_pack` | 扩展背包 | `Resources/art/modules/expanded_cargo_pack.svg` | `32x32` | `done` |
 | `light_shield_module` | 轻型护盾 | `Resources/art/modules/light_shield_module.svg` | `32x32` | `generate` |
 | `light_self_defense_weapon` | 轻型自卫武器 | `Resources/art/modules/light_self_defense_weapon.svg` | `32x32` | `generate` |
 | `heavy_machine_gun` | 重机枪 | `Resources/art/modules/heavy_machine_gun.svg` | `32x32` | `generate` |
@@ -198,7 +199,7 @@
 | `cryo_gel_sprayer` | 冷凝凝胶喷射器 | `Resources/art/modules/cryo_gel_sprayer.svg` | `32x32` | `generate` |
 | `mid_logic_board` | 中级逻辑板 | `Resources/art/modules/mid_logic_board.svg` | `32x32` | `generate` |
 | `zone_shield_guard` | 战区盾卫 | `Resources/art/blueprints/zone_shield_guard.svg` | `48x48` | `generate` |
-| `battlefield_hauler` | 战地搬运车 | `Resources/art/blueprints/battlefield_hauler.svg` | `48x48` | `generate` |
+| `battlefield_hauler` | 战地搬运车 | `Resources/art/blueprints/battlefield_hauler.svg` | `48x48` | `done` |
 
 ### 4. 敌人与敌巢
 
@@ -214,7 +215,7 @@
 | 稳定 ID | 显示名 | 建议路径 | 尺寸 | 状态 |
 | --- | --- | --- | --- | --- |
 | `state_retreat` | 撤退 | `Resources/art/ui/state_retreat.svg` | `20x20` | `generate` |
-| `state_transport` | 运输 | `Resources/art/ui/state_transport.svg` | `20x20` | `generate` |
+| `state_transport` | 运输 | `Resources/art/ui/state_transport.svg` | `20x20` | `done` |
 | `state_shield` | 护盾 | `Resources/art/ui/state_shield.svg` | `20x20` | `generate` |
 | `state_overheat` | 过热 | `Resources/art/ui/state_overheat.svg` | `20x20` | `generate` |
 | `state_ammo_depleted` | 弹药不足 | `Resources/art/ui/state_ammo_depleted.svg` | `20x20` | `generate` |
@@ -418,7 +419,8 @@
 | `action_create` | 新建 | `Resources/art/ui/action_create.svg` | `20x20` | `generate` |
 | `action_edit` | 编辑 | `Resources/art/ui/action_edit.svg` | `20x20` | `generate` |
 | `action_copy` | 复制 | `Resources/art/ui/action_copy.svg` | `20x20` | `generate` |
-| `action_save` | 保存 | `Resources/art/ui/action_save.svg` | `20x20` | `generate` |
+| `action_save` | 保存 | `Resources/art/ui/action_save.svg` | `20x20` | `done` |
+| `action_load` | 读取 | `Resources/art/ui/action_load.svg` | `20x20` | `done` |
 | `action_update_binding` | 更新产线绑定 | `Resources/art/ui/action_update_binding.svg` | `20x20` | `generate` |
 | `action_search` | 搜索 | `Resources/art/ui/action_search.svg` | `20x20` | `generate` |
 | `action_filter` | 筛选 | `Resources/art/ui/action_filter.svg` | `20x20` | `generate` |

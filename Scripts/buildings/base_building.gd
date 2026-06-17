@@ -76,6 +76,32 @@ func take_damage_from(amount: int, _source_payload: Dictionary = {}) -> void:
 func get_target_position() -> Vector2:
 	return global_position + Vector2(grid_size.x * cell_size, grid_size.y * cell_size) * 0.5
 
+func restore_health_state(next_hp: int, destroyed: bool = false) -> void:
+	_ensure_combat_nodes()
+	var restored_hp := clampi(next_hp, 0, max_hp)
+	_destroyed = destroyed or restored_hp <= 0
+	health_component.max_hp = max_hp
+	health_component.hp = 0 if _destroyed else restored_hp
+	health_component.set("_dead", _destroyed)
+	hp = health_component.hp
+	if _destroyed:
+		set_deferred("collision_layer", 0)
+		if collision_shape:
+			collision_shape.set_deferred("disabled", true)
+		remove_from_group("combat_target")
+		_unregister_combat_target()
+		set_process(false)
+	else:
+		if collision_shape:
+			collision_shape.set_deferred("disabled", false)
+		set_process(true)
+		_sync_combat_groups()
+	if hp_bar:
+		hp_bar.max_value = max_hp
+		hp_bar.value = hp
+		hp_bar.visible = hp < max_hp and hp > 0
+	_update_visuals()
+
 func _update_visuals(update_collision_shape: bool = false) -> void:
 	if building_def == null or icon_sprite == null or footprint == null:
 		return

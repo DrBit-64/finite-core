@@ -316,10 +316,10 @@ func _draw_asset_stamps(feature: Dictionary, fallback_color: Color) -> void:
 	tint.a = alpha
 	for index in range(cells.size()):
 		var center := (_vector2_from_value(cells[index]) + Vector2(0.5, 0.5)) * float(cell_size)
-		var rotation_degrees := _rotation_degrees_for_stamp(feature.get("rotation_degrees", 0.0), index)
+		var stamp_rotation_degrees := _rotation_degrees_for_stamp(feature.get("rotation_degrees", 0.0), index)
 		var default_size_cells := 0.62 * maxf(0.1, float(feature.get("scale", 1.0)))
 		var size_cells := _stamp_size_cells_for_index(feature.get("size_cells", default_size_cells), index, default_size_cells)
-		_draw_texture_stamp(texture, center, size_cells, deg_to_rad(rotation_degrees), tint)
+		_draw_texture_stamp(texture, center, size_cells, deg_to_rad(stamp_rotation_degrees), tint)
 
 func _draw_asset_scatter(feature: Dictionary, fallback_color: Color) -> void:
 	var texture := _get_terrain_signature_texture(str(feature.get("asset_id", "")), str(feature.get("asset_path", "")))
@@ -329,27 +329,27 @@ func _draw_asset_scatter(feature: Dictionary, fallback_color: Color) -> void:
 	if anchor_rects.is_empty():
 		return
 	var count: int = max(0, int(feature.get("count", 0)))
-	var seed: int = int(feature.get("seed", 1))
+	var scatter_seed: int = int(feature.get("seed", 1))
 	var distribution: String = str(feature.get("distribution", "interior"))
 	var base_tint := _color_from_value(feature.get("tint", []), Color(fallback_color.r, fallback_color.g, fallback_color.b, maxf(fallback_color.a, 0.28)))
 	for index in range(count):
 		var rect := _cell_rect_from_value(anchor_rects[index % anchor_rects.size()])
 		if rect.size.x <= 0.0 or rect.size.y <= 0.0:
 			continue
-		var center := _scatter_cell_position(rect, distribution, seed, index) * float(cell_size)
-		var alpha := _ranged_float(feature.get("alpha", maxf(base_tint.a, 0.28)), index, seed, 11, maxf(base_tint.a, 0.28))
-		var size_cells := _ranged_float(feature.get("size_cells", 0.85), index, seed, 23, 0.85)
-		var rotation_degrees := _ranged_float(feature.get("rotation_degrees", 0.0), index, seed, 37, 0.0)
+		var center := _scatter_cell_position(rect, distribution, scatter_seed, index) * float(cell_size)
+		var alpha := _ranged_float(feature.get("alpha", maxf(base_tint.a, 0.28)), index, scatter_seed, 11, maxf(base_tint.a, 0.28))
+		var size_cells := _ranged_float(feature.get("size_cells", 0.85), index, scatter_seed, 23, 0.85)
+		var stamp_rotation_degrees := _ranged_float(feature.get("rotation_degrees", 0.0), index, scatter_seed, 37, 0.0)
 		var tint := Color(base_tint.r, base_tint.g, base_tint.b, alpha)
-		_draw_texture_stamp(texture, center, size_cells, deg_to_rad(rotation_degrees), tint)
+		_draw_texture_stamp(texture, center, size_cells, deg_to_rad(stamp_rotation_degrees), tint)
 
-func _draw_texture_stamp(texture: Texture2D, center: Vector2, size_cells: float, rotation: float, tint: Color) -> void:
+func _draw_texture_stamp(texture: Texture2D, center: Vector2, size_cells: float, stamp_rotation: float, tint: Color) -> void:
 	var base_size := float(cell_size) * maxf(0.1, size_cells)
 	var texture_size := texture.get_size()
 	if texture_size.x <= 0.0 or texture_size.y <= 0.0:
 		return
 	var draw_size := Vector2(base_size, base_size * texture_size.y / texture_size.x)
-	draw_set_transform(center, rotation, Vector2.ONE)
+	draw_set_transform(center, stamp_rotation, Vector2.ONE)
 	draw_texture_rect(texture, Rect2(-draw_size * 0.5, draw_size), false, tint)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
@@ -371,13 +371,13 @@ func _stamp_size_cells_for_index(value: Variant, index: int, fallback: float) ->
 		return maxf(0.1, float(value))
 	return maxf(0.1, fallback)
 
-func _ranged_float(value: Variant, index: int, seed: int, salt: int, fallback: float) -> float:
+func _ranged_float(value: Variant, index: int, rng_seed: int, salt: int, fallback: float) -> float:
 	if typeof(value) == TYPE_ARRAY:
 		var values: Array = value
 		if values.size() >= 2:
 			var from_value := float(values[0])
 			var to_value := float(values[1])
-			return lerpf(from_value, to_value, _hash_unit(seed, index, salt))
+			return lerpf(from_value, to_value, _hash_unit(rng_seed, index, salt))
 		if values.size() == 1:
 			return float(values[0])
 		return fallback
@@ -385,11 +385,11 @@ func _ranged_float(value: Variant, index: int, seed: int, salt: int, fallback: f
 		return float(value)
 	return fallback
 
-func _scatter_cell_position(rect: Rect2, distribution: String, seed: int, index: int) -> Vector2:
+func _scatter_cell_position(rect: Rect2, distribution: String, rng_seed: int, index: int) -> Vector2:
 	if distribution == "boundary":
-		var side := int(floorf(_hash_unit(seed, index, 41) * 4.0))
-		var t := _hash_unit(seed, index, 43)
-		var inset := lerpf(0.18, 0.82, _hash_unit(seed, index, 47))
+		var side := int(floorf(_hash_unit(rng_seed, index, 41) * 4.0))
+		var t := _hash_unit(rng_seed, index, 43)
+		var inset := lerpf(0.18, 0.82, _hash_unit(rng_seed, index, 47))
 		match side:
 			0:
 				return Vector2(lerpf(rect.position.x, rect.end.x, t), rect.position.y + inset)
@@ -400,12 +400,12 @@ func _scatter_cell_position(rect: Rect2, distribution: String, seed: int, index:
 			_:
 				return Vector2(rect.position.x + inset, lerpf(rect.position.y, rect.end.y, t))
 	return rect.position + Vector2(
-		_hash_unit(seed, index, 53) * rect.size.x,
-		_hash_unit(seed, index, 59) * rect.size.y
+		_hash_unit(rng_seed, index, 53) * rect.size.x,
+		_hash_unit(rng_seed, index, 59) * rect.size.y
 	)
 
-func _hash_unit(seed: int, index: int, salt: int) -> float:
-	var value := sin(float(seed * 928371 + index * 364479 + salt * 1013)) * 43758.5453
+func _hash_unit(rng_seed: int, index: int, salt: int) -> float:
+	var value := sin(float(rng_seed * 928371 + index * 364479 + salt * 1013)) * 43758.5453
 	return value - floorf(value)
 
 func _get_terrain_signature_texture(asset_id: String, asset_path: String = "") -> Texture2D:
@@ -556,8 +556,8 @@ func _distance_to_segment(point: Vector2, start: Vector2, end: Vector2) -> float
 	var t := clampf((point - start).dot(segment) / length_squared, 0.0, 1.0)
 	return point.distance_to(start + segment * t)
 
-func _cell_noise(seed: int, cell: Vector2i, salt: int) -> float:
-	return _hash_unit(seed + cell.x * 92821 + cell.y * 68917, cell.x - cell.y, salt)
+func _cell_noise(rng_seed: int, cell: Vector2i, salt: int) -> float:
+	return _hash_unit(rng_seed + cell.x * 92821 + cell.y * 68917, cell.x - cell.y, salt)
 
 func _draw_water_bodies() -> void:
 	for water_value in water_bodies:
