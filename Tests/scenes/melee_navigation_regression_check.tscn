@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Tests/scenes/melee_navigation_regression_check.gd" id="1_test"]
+
+[node name="MeleeNavigationRegressionCheck" type="Node2D"]
+script = ExtResource("1_test")

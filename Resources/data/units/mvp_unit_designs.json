@@ -68,6 +68,41 @@
       }
     },
     {
+      "id": "shield_bulwark_robot",
+      "display_name": "高速肉盾机器人",
+      "description": "无武器的高速前排单位，快速贴近敌人并依靠高生命值吸引火力。",
+      "tags": ["combat", "melee", "tank"],
+      "icon_path": "res://Resources/art/chassis/light_chassis.svg",
+      "chassis_id": "light_chassis",
+      "chassis_display_name": "轻型冲锋底盘",
+      "chassis_icon_path": "res://Resources/art/chassis/light_chassis.svg",
+      "module_ids": [],
+      "module_display_names": [],
+      "module_icon_paths": [],
+      "production_recipe_id": "forge_shield_bulwark_robot",
+      "production_time_seconds": 13.0,
+      "upgrade_point_limit": 3,
+      "default_brain_enabled": true,
+      "stats": {
+        "max_hp": 800,
+        "speed": 128.0,
+        "lifespan_seconds": 120.0,
+        "target_lock_seconds": 1.0,
+        "fire_range": 0.0,
+        "damage": 0,
+        "damage_type": "none",
+        "armor_type": "armored",
+        "fire_cooldown_seconds": 1.0,
+        "cargo_capacity": 0,
+        "logic_capacity": 3
+      },
+      "base_cost": {
+        "iron_plate": 9,
+        "copper_wire": 3,
+        "construction_mass": 8
+      }
+    },
+    {
       "id": "battlefield_hauler",
       "display_name": "战地货运机器人",
       "description": "物流专用单位，负责远程资源、中继补给点与主基地之间的运输。",
@@ -98,6 +133,48 @@
         "fire_cooldown_seconds": 1.0,
         "cargo_capacity": 24,
         "logic_capacity": 1
+      }
+    },
+    {
+      "id": "thermal_laser_robot",
+      "display_name": "热能激光机器人",
+      "description": "使用热能激光模块压制装甲目标。输出稳定但需要热量管理。",
+      "tags": ["combat", "ranged", "thermal", "heat_weapon"],
+      "icon_path": "res://Resources/art/blueprints/thermal_laser_robot.svg",
+      "chassis_id": "heavy_tracked_chassis",
+      "chassis_display_name": "重型履带底盘",
+      "chassis_icon_path": "res://Resources/art/chassis/heavy_tracked_chassis.svg",
+      "module_ids": ["thermal_laser"],
+      "module_display_names": ["热能激光模块"],
+      "module_icon_paths": ["res://Resources/art/modules/thermal_laser.svg"],
+      "production_recipe_id": "forge_thermal_laser_robot",
+      "production_time_seconds": 16.0,
+      "upgrade_point_limit": 3,
+      "default_brain_enabled": true,
+      "base_cost": {
+        "reinforced_steel_plate": 8,
+        "optical_lens": 2,
+        "high_capacity_battery": 1,
+        "copper_wire": 8,
+        "construction_mass": 10
+      },
+      "stats": {
+        "max_hp": 92,
+        "speed": 68.0,
+        "lifespan_seconds": 120.0,
+        "target_lock_seconds": 2.0,
+        "fire_range": 170.0,
+        "damage": 2,
+        "damage_type": "thermal",
+        "armor_type": "armored",
+        "fire_cooldown_seconds": 0.0,
+        "heat_capacity": 100.0,
+        "heat_per_shot": 4.0,
+        "heat_cooling_per_second": 15.0,
+        "overheat_threshold": 92.0,
+        "overheated_resume_threshold": 42.0,
+        "cargo_capacity": 0,
+        "logic_capacity": 4
       }
     }
   ],
@@ -156,6 +233,15 @@
       "applies_to_tags": ["combat", "logistics"],
       "stat_add": {"logic_capacity": 1},
       "cost_add": {"copper_wire": 6}
+    },
+    {
+      "id": "cooling_fins_1",
+      "display_name": "冷却鳍片 I",
+      "description": "降低热能武器的单发热量，并提升被动散热。",
+      "point_cost": 1,
+      "applies_to_tags": ["heat_weapon"],
+      "stat_mult": {"heat_per_shot": 0.86, "heat_cooling_per_second": 1.22},
+      "cost_add": {"optical_lens": 1, "high_capacity_battery": 1}
     }
   ]
 }

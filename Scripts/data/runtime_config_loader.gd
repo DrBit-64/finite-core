@@ -4,6 +4,8 @@ class_name RuntimeConfigLoader
 static func load_runtime_config(path: String) -> Dictionary:
 	var fallback := {
 		"use_debug_starting_inventory": false,
+		"spawn_debug_wandering_enemy": false,
+		"unlock_all_technologies": false,
 		"balance_starting_inventory_path": "res://Resources/data/balance/mvp_starting_inventory.json",
 		"debug_starting_inventory_path": "res://Resources/data/debug/mvp_debug_starting_inventory.json",
 	}

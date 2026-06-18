@@ -188,8 +188,11 @@ static func format_stats(stats: UnitStats) -> String:
 		parts.append("货舱 %d" % stats.cargo_capacity)
 	else:
 		parts.append("伤害 %d" % stats.damage)
+		parts.append("类型 %s" % String(stats.damage_type))
 		parts.append("射程 %.0f" % stats.fire_range)
 		parts.append("间隔 %.2fs" % stats.fire_cooldown_seconds)
+		if stats.heat_capacity > 0.0:
+			parts.append("热量 %.0f" % stats.heat_capacity)
 	parts.append("逻辑 %d" % stats.logic_capacity)
 	return " | ".join(parts)
 
@@ -226,6 +229,13 @@ static func _make_stats(data: Variant) -> UnitStats:
 	stats.fire_range = float(data.get("fire_range", stats.fire_range))
 	stats.damage = int(data.get("damage", stats.damage))
 	stats.fire_cooldown_seconds = float(data.get("fire_cooldown_seconds", stats.fire_cooldown_seconds))
+	stats.damage_type = StringName(str(data.get("damage_type", stats.damage_type)))
+	stats.armor_type = StringName(str(data.get("armor_type", stats.armor_type)))
+	stats.heat_capacity = float(data.get("heat_capacity", stats.heat_capacity))
+	stats.heat_per_shot = float(data.get("heat_per_shot", stats.heat_per_shot))
+	stats.heat_cooling_per_second = float(data.get("heat_cooling_per_second", stats.heat_cooling_per_second))
+	stats.overheat_threshold = float(data.get("overheat_threshold", stats.overheat_threshold))
+	stats.overheated_resume_threshold = float(data.get("overheated_resume_threshold", stats.overheated_resume_threshold))
 	stats.cargo_capacity = int(data.get("cargo_capacity", stats.cargo_capacity))
 	stats.logic_capacity = int(data.get("logic_capacity", stats.logic_capacity))
 	return stats
@@ -249,6 +259,16 @@ static func _apply_stat_add(stats: UnitStats, values: Variant) -> void:
 				stats.damage += int(values[key])
 			"fire_cooldown_seconds":
 				stats.fire_cooldown_seconds += float(values[key])
+			"heat_capacity":
+				stats.heat_capacity += float(values[key])
+			"heat_per_shot":
+				stats.heat_per_shot += float(values[key])
+			"heat_cooling_per_second":
+				stats.heat_cooling_per_second += float(values[key])
+			"overheat_threshold":
+				stats.overheat_threshold += float(values[key])
+			"overheated_resume_threshold":
+				stats.overheated_resume_threshold += float(values[key])
 			"cargo_capacity":
 				stats.cargo_capacity += int(values[key])
 			"logic_capacity":
@@ -274,6 +294,16 @@ static func _apply_stat_mult(stats: UnitStats, values: Variant) -> void:
 				stats.damage = roundi(float(stats.damage) * multiplier)
 			"fire_cooldown_seconds":
 				stats.fire_cooldown_seconds *= multiplier
+			"heat_capacity":
+				stats.heat_capacity *= multiplier
+			"heat_per_shot":
+				stats.heat_per_shot *= multiplier
+			"heat_cooling_per_second":
+				stats.heat_cooling_per_second *= multiplier
+			"overheat_threshold":
+				stats.overheat_threshold *= multiplier
+			"overheated_resume_threshold":
+				stats.overheated_resume_threshold *= multiplier
 			"cargo_capacity":
 				stats.cargo_capacity = roundi(float(stats.cargo_capacity) * multiplier)
 			"logic_capacity":
@@ -353,6 +383,16 @@ static func _format_stat_name(stat_id: String) -> String:
 			return "伤害"
 		"fire_cooldown_seconds":
 			return "间隔"
+		"heat_capacity":
+			return "热量"
+		"heat_per_shot":
+			return "单发热量"
+		"heat_cooling_per_second":
+			return "散热"
+		"overheat_threshold":
+			return "过热阈值"
+		"overheated_resume_threshold":
+			return "恢复阈值"
 		"cargo_capacity":
 			return "货舱"
 		"logic_capacity":

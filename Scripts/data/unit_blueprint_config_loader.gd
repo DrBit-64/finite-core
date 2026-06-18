@@ -55,7 +55,7 @@ static func _make_blueprint(data: Dictionary, recipe_defs: Array[RecipeDef]) -> 
 	blueprint.tactical_templates = TacticalTemplateCompilerScript.normalize_templates(data.get("tactical_templates", []))
 	blueprint.embedded_rules = data.get("embedded_rules", []).duplicate(true)
 	blueprint.state_flag_defaults = data.get("state_flag_defaults", {}).duplicate(true)
-	if blueprint.embedded_rules.is_empty() and not blueprint.tactical_templates.is_empty():
+	if not blueprint.tactical_templates.is_empty():
 		var compiled: Dictionary = TacticalTemplateCompilerScript.compile_templates(blueprint.tactical_templates)
 		blueprint.embedded_rules = compiled.get("rules", []).duplicate(true)
 		blueprint.state_flag_defaults = compiled.get("state_flag_defaults", {}).duplicate(true)
@@ -81,6 +81,13 @@ static func _make_stats(data: Variant) -> UnitStats:
 	stats.fire_range = float(data.get("fire_range", stats.fire_range))
 	stats.damage = int(data.get("damage", stats.damage))
 	stats.fire_cooldown_seconds = float(data.get("fire_cooldown_seconds", stats.fire_cooldown_seconds))
+	stats.damage_type = StringName(str(data.get("damage_type", stats.damage_type)))
+	stats.armor_type = StringName(str(data.get("armor_type", stats.armor_type)))
+	stats.heat_capacity = float(data.get("heat_capacity", stats.heat_capacity))
+	stats.heat_per_shot = float(data.get("heat_per_shot", stats.heat_per_shot))
+	stats.heat_cooling_per_second = float(data.get("heat_cooling_per_second", stats.heat_cooling_per_second))
+	stats.overheat_threshold = float(data.get("overheat_threshold", stats.overheat_threshold))
+	stats.overheated_resume_threshold = float(data.get("overheated_resume_threshold", stats.overheated_resume_threshold))
 	stats.cargo_capacity = int(data.get("cargo_capacity", stats.cargo_capacity))
 	stats.logic_capacity = int(data.get("logic_capacity", stats.logic_capacity))
 	return stats

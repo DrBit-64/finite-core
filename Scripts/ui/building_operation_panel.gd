@@ -2,6 +2,7 @@ extends PanelContainer
 class_name BuildingOperationPanel
 
 signal processor_recipe_selected(processor: Node, recipe_id: StringName)
+signal processor_pause_toggled(processor: Node)
 signal building_demolish_requested(building: Node)
 signal forge_rally_point_requested(forge: Node)
 signal forge_blueprint_picker_requested(forge: Node, blueprints: Array[UnitBlueprint])
@@ -30,6 +31,7 @@ var _recipe_card: PanelContainer = null
 var _status_label: Label = null
 var _progress_label: Label = null
 var _progress_bar: ProgressBar = null
+var _processor_pause_button: Button = null
 var _input_cache_list: VBoxContainer = null
 var _output_cache_list: VBoxContainer = null
 var _recipe_buttons: Dictionary = {}
@@ -231,6 +233,10 @@ func _rebuild_processor_panel(processor: Node, recipes: Array[RecipeDef]) -> voi
 	_list.add_child(_progress_label)
 	_progress_bar = _make_progress_bar(184)
 	_list.add_child(_progress_bar)
+	_processor_pause_button = Button.new()
+	_processor_pause_button.custom_minimum_size = Vector2(112, 28)
+	_processor_pause_button.pressed.connect(_on_processor_pause_button_pressed.bind(processor), CONNECT_DEFERRED)
+	_list.add_child(_processor_pause_button)
 
 	_list.add_child(_make_label("原料缓存", Color(0.72, 0.80, 0.88, 1.0), 12))
 	_input_cache_list = VBoxContainer.new()
@@ -254,6 +260,10 @@ func _update_processor_panel(processor: Node, resource_defs: Array[ResourceDef])
 		_progress_label.text = _format_processor_progress_text(processor, selected_recipe)
 	if _progress_bar:
 		_progress_bar.value = float(processor.call("get_progress_ratio"))
+	if _processor_pause_button:
+		var paused := bool(processor.get("is_paused"))
+		_processor_pause_button.text = "继续加工" if paused else "暂停加工"
+		_processor_pause_button.modulate = Color(1.0, 0.78, 0.34, 1.0) if paused else Color.WHITE
 	_rebuild_resource_stack_list(_input_cache_list, processor.get("input_cache"), resource_defs)
 	_rebuild_resource_stack_list(_output_cache_list, processor.get("output_cache"), resource_defs)
 	_refresh_recipe_button_states(selected_recipe)
@@ -627,6 +637,7 @@ func _clear_content() -> void:
 	_status_label = null
 	_progress_label = null
 	_progress_bar = null
+	_processor_pause_button = null
 	_input_cache_list = null
 	_output_cache_list = null
 	_recipe_buttons.clear()
@@ -721,6 +732,9 @@ func _load_ui_icon(path: String) -> Texture2D:
 
 func _on_processor_recipe_button_pressed(processor: Node, recipe_id: StringName) -> void:
 	processor_recipe_selected.emit(processor, recipe_id)
+
+func _on_processor_pause_button_pressed(processor: Node) -> void:
+	processor_pause_toggled.emit(processor)
 
 func _on_demolish_button_pressed(building: Node) -> void:
 	building_demolish_requested.emit(building)

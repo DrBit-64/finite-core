@@ -29,6 +29,7 @@ func setup_nest(id: StringName, type_id: StringName, config: Dictionary, origin:
 	reward = config.get("reward", {}).duplicate(true)
 	time_alive_seconds = 0.0
 	team = "Team_B"
+	armor_type = StringName(str(config.get("armor_type", "structure")))
 
 	var def := BuildingDef.new()
 	def.id = type_id
@@ -79,6 +80,10 @@ func get_spawn_position(index: int = -1) -> Vector2:
 		Vector2(0.0, 92.0),
 		Vector2(-80.0, 46.0),
 		Vector2(-80.0, -46.0),
+		Vector2(64.0, -64.0),
+		Vector2(64.0, 64.0),
+		Vector2(-64.0, 64.0),
+		Vector2(-64.0, -64.0),
 	]
 	var selected_index := _first_available_guard_slot(false) if index < 0 else index
 	return get_target_position() + offsets[selected_index % offsets.size()]

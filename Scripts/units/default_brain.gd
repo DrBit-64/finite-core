@@ -34,13 +34,13 @@ func tick(robot) -> void:
 
 	if robot.movement_component:
 		if robot.current_distance_to_target > fire_range:
-			robot.movement_component.move_towards(robot.global_position, target_position)
+			robot.move_towards(target_position, enemy)
 			robot.current_action = "接近敌人"
 		elif robot.current_distance_to_target < lower_bound:
-			robot.movement_component.move_away_from(robot.global_position, target_position, 0.82)
+			robot.flee_from(target_position, 0.82)
 			robot.current_action = "后退拉开"
 		elif robot.current_distance_to_target > upper_bound:
-			robot.movement_component.move_towards(robot.global_position, target_position, 0.48)
+			robot.move_towards(target_position, enemy, 0.48)
 			robot.current_action = "微调射程"
 		else:
 			robot.movement_component.stop(&"hold_range")

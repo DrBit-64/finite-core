@@ -33,8 +33,8 @@ const TECHNOLOGY_CONFIG_PATH := "res://Resources/data/technology/mvp_stage1_tech
 const STAGE14_SAVE_PATH := "user://finite_core_stage14_save.json"
 const KEY_ITEM_INITIAL_SENSOR_COIL := &"initial_sensor_coil"
 const FOG_REGION_SIZE_CELLS := 4
-const OPERATION_PANEL_REFRESH_INTERVAL := 0.1
-const UNIT_INSPECTOR_REFRESH_INTERVAL := 0.2
+const OPERATION_PANEL_REFRESH_INTERVAL := 0.2
+const UNIT_INSPECTOR_REFRESH_INTERVAL := 0.5
 const STAGE14_LOGISTICS_TICK_INTERVAL := 0.15
 const STAGE14_MIN_LOAD_RATIO := 0.7
 const STAGE14_MAX_PICKUP_WAIT_SECONDS := 6.0
@@ -322,6 +322,8 @@ func _load_stage_one_data() -> void:
 			blueprint_library.add_blueprint(basic_rifle_blueprint)
 	building_defs = MvpDataDefaults.create_mvp_building_defs()
 	technology_defs = TechnologyConfigLoaderScript.load_technology_defs(TECHNOLOGY_CONFIG_PATH)
+	if bool(runtime_profile.get("unlock_all_technologies", false)):
+		campaign_state.debug_unlock_all_technologies(technology_defs)
 	enemy_config = EnemyConfigLoaderScript.load_enemy_config(ENEMY_CONFIG_PATH)
 	starting_inventory = StartingInventoryConfigLoaderScript.load_starting_inventory(starting_inventory_config_path, starting_inventory)
 	resource_summary_placeholder = "资源 %d / 配方 %d / 建筑 %d" % [
@@ -347,6 +349,8 @@ func _configure_hud() -> void:
 		hud.connect("build_mode_requested", Callable(self, "_on_build_mode_requested"))
 	if hud.has_signal("processor_recipe_selected"):
 		hud.connect("processor_recipe_selected", Callable(self, "_on_processor_recipe_selected"))
+	if hud.has_signal("processor_pause_toggled"):
+		hud.connect("processor_pause_toggled", Callable(self, "_on_processor_pause_toggled"))
 	if hud.has_signal("building_demolish_requested"):
 		hud.connect("building_demolish_requested", Callable(self, "_on_building_demolish_requested"))
 	if hud.has_signal("forge_rally_point_requested"):
@@ -709,6 +713,7 @@ func _make_building_save_snapshots() -> Array[Dictionary]:
 			entry["input_cache"] = _string_key_dictionary(child.get("input_cache"))
 			entry["output_cache"] = _string_key_dictionary(child.get("output_cache"))
 			entry["progress_seconds"] = float(child.get("progress_seconds"))
+			entry["is_paused"] = bool(child.get("is_paused"))
 		elif child is MinerBuilding or child is WaterPumpBuilding:
 			entry["output_cache"] = _string_key_dictionary(child.get("output_cache"))
 			entry["progress_seconds"] = float(child.get("progress_seconds"))
@@ -794,6 +799,7 @@ func _make_robot_save_snapshot(robot: RobotUnit, layer_name: String) -> Dictiona
 		"patrol_points": _vector2_array_to_arrays(robot.get("patrol_points")),
 		"patrol_loop": robot.get("patrol_loop") == true,
 		"source_nest_id": _get_robot_source_nest_id(robot),
+		"enemy_unit_type": str(robot.get("pool_name")),
 		"guard_home_position": [guard_home.x, guard_home.y],
 	}
 	if robot.has_meta("guard_slot_index"):
@@ -972,6 +978,8 @@ func _restore_scavenger_hound_from_snapshot(entry: Dictionary, layer: Node) -> R
 	var guard_type := StringName("scavenger_hound")
 	if nest != null and is_instance_valid(nest):
 		guard_type = StringName(str(nest.get("guard_unit_type")))
+	elif not str(entry.get("enemy_unit_type", "")).is_empty():
+		guard_type = StringName(str(entry.get("enemy_unit_type", "")))
 	var guard_config := EnemyConfigLoaderScript.get_type(enemy_config, "unit_types", guard_type)
 	if guard_config.is_empty():
 		guard_config = EnemyConfigLoaderScript.get_type(enemy_config, "unit_types", &"scavenger_hound")
@@ -1086,6 +1094,8 @@ func _apply_building_specific_save_state(building: Node, building_def: BuildingD
 		building.set("input_cache", _string_name_key_dictionary(entry.get("input_cache", {})))
 		building.set("output_cache", _string_name_key_dictionary(entry.get("output_cache", {})))
 		building.set("progress_seconds", float(entry.get("progress_seconds", 0.0)))
+		if building.has_method("set_paused"):
+			building.call("set_paused", bool(entry.get("is_paused", false)))
 	elif building is MinerBuilding or building is WaterPumpBuilding:
 		building.set("output_cache", _string_name_key_dictionary(entry.get("output_cache", {})))
 		building.set("progress_seconds", float(entry.get("progress_seconds", 0.0)))
@@ -1191,6 +1201,10 @@ func _blueprint_from_save_entry(entry: Dictionary) -> UnitBlueprint:
 	blueprint.tactical_templates = _dictionary_array_from_variant(entry.get("tactical_templates", []))
 	blueprint.embedded_rules = _dictionary_array_from_variant(entry.get("embedded_rules", []))
 	blueprint.state_flag_defaults = entry.get("state_flag_defaults", {}).duplicate(true)
+	if not blueprint.tactical_templates.is_empty():
+		var compiled: Dictionary = TacticalTemplateCompilerScript.compile_templates(blueprint.tactical_templates)
+		blueprint.embedded_rules = compiled.get("rules", []).duplicate(true)
+		blueprint.state_flag_defaults = compiled.get("state_flag_defaults", {}).duplicate(true)
 	blueprint.default_brain_enabled = bool(entry.get("default_brain_enabled", true))
 	blueprint.stats = _stats_from_save_dictionary(entry.get("stats", {}))
 	if blueprint.stats == null:
@@ -1375,10 +1389,19 @@ func _find_navigation_id_path(start_cell: Vector2i, candidates: Array[Vector2i],
 	return best_path
 
 func _get_navigation_node_interaction_candidates(start_cell: Vector2i, target_node: Node) -> Array[Vector2i]:
+	if target_node is CharacterBody2D:
+		var moving_target_cell: Vector2i = grid_map.call("world_to_grid", (target_node as CharacterBody2D).global_position)
+		if grid_map.call("is_cell_in_bounds", moving_target_cell) == true and not _navigation_grid.is_point_solid(moving_target_cell):
+			var moving_target_candidates: Array[Vector2i] = [moving_target_cell]
+			return moving_target_candidates
+		return _get_navigation_adjacent_candidates(start_cell, moving_target_cell)
 	var origin_value = target_node.get("grid_origin")
 	var size_value = target_node.get("grid_size")
 	if typeof(origin_value) != TYPE_VECTOR2I or typeof(size_value) != TYPE_VECTOR2I:
 		var target_cell: Vector2i = grid_map.call("world_to_grid", _get_logistics_node_position(target_node))
+		if grid_map.call("is_cell_in_bounds", target_cell) == true and not _navigation_grid.is_point_solid(target_cell):
+			var direct_candidates: Array[Vector2i] = [target_cell]
+			return direct_candidates
 		return _get_navigation_adjacent_candidates(start_cell, target_cell)
 	var origin: Vector2i = origin_value
 	var size: Vector2i = size_value
@@ -1448,7 +1471,7 @@ func _ensure_navigation_grid() -> void:
 	_navigation_grid = AStarGrid2D.new()
 	_navigation_grid.region = Rect2i(Vector2i.ZERO, map_size)
 	_navigation_grid.cell_size = Vector2.ONE
-	_navigation_grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_AT_LEAST_ONE_WALKABLE
+	_navigation_grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
 	_navigation_grid.update()
 	for y in range(map_size.y):
 		for x in range(map_size.x):
@@ -1468,6 +1491,22 @@ func _is_navigation_cell_blocked(cell: Vector2i) -> bool:
 
 func _mark_navigation_dirty() -> void:
 	_navigation_dirty = true
+
+func is_navigation_world_position_walkable(world_position: Vector2) -> bool:
+	if grid_map == null:
+		return false
+	_ensure_navigation_grid()
+	if _navigation_grid == null:
+		return false
+	var cell: Vector2i = grid_map.call("world_to_grid", world_position)
+	if grid_map.call("is_cell_in_bounds", cell) != true:
+		return false
+	return not _navigation_grid.is_point_solid(cell)
+
+func get_navigation_cell_for_world(world_position: Vector2) -> Vector2i:
+	if grid_map == null:
+		return Vector2i(-1, -1)
+	return grid_map.call("world_to_grid", world_position)
 
 func _on_build_mode_requested(building_id: StringName) -> void:
 	var building_def := _find_building_def(building_id)
@@ -2283,7 +2322,10 @@ func _is_miner_def(building_def: BuildingDef) -> bool:
 	return building_def != null and building_def.id == MvpDataDefaults.BUILDING_MINER
 
 func _is_processor_def(building_def: BuildingDef) -> bool:
-	return building_def != null and building_def.id == MvpDataDefaults.BUILDING_PROCESSOR
+	return building_def != null and (
+		building_def.id == MvpDataDefaults.BUILDING_PROCESSOR
+		or building_def.id == MvpDataDefaults.BUILDING_ADVANCED_PROCESSOR
+	)
 
 func _is_robot_forge_def(building_def: BuildingDef) -> bool:
 	return building_def != null and building_def.id == MvpDataDefaults.BUILDING_ROBOT_FORGE
@@ -2351,11 +2393,17 @@ func _load_fixed_map(map_config: Dictionary = {}) -> void:
 		if typeof(item) != TYPE_DICTIONARY:
 			continue
 		_spawn_resource_node(item)
-	var debug_enemy_items: Array = map_config.get("debug_enemies", [])
-	for item in debug_enemy_items:
+	if bool(runtime_profile.get("spawn_debug_wandering_enemy", false)):
+		var debug_enemy_items: Array = map_config.get("debug_enemies", [])
+		for item in debug_enemy_items:
+			if typeof(item) != TYPE_DICTIONARY:
+				continue
+			_spawn_debug_enemy(item)
+	var enemy_patrol_items: Array = map_config.get("enemy_patrols", [])
+	for item in enemy_patrol_items:
 		if typeof(item) != TYPE_DICTIONARY:
 			continue
-		_spawn_debug_enemy(item)
+		_spawn_enemy_patrol(item)
 	var enemy_nest_items: Array = map_config.get("enemy_nests", [])
 	for item in enemy_nest_items:
 		if typeof(item) != TYPE_DICTIONARY:
@@ -2390,6 +2438,31 @@ func _spawn_debug_enemy(data: Dictionary) -> void:
 		debug_config.merge(data, true)
 		enemy.call("setup_debug_enemy", str(data.get("display_name", debug_config.get("display_name", "调试靶机"))), path_points, data.get("loop", true) == true, debug_config)
 	push_debug_event("调试敌军已生成：%s，路径点 %d" % [enemy.name, path_points.size()])
+
+func _spawn_enemy_patrol(data: Dictionary) -> void:
+	var unit_type := StringName(str(data.get("unit_type", "armored_scout")))
+	var guard_config := EnemyConfigLoaderScript.get_type(enemy_config, "unit_types", unit_type)
+	if guard_config.is_empty():
+		push_warning("Unknown enemy patrol unit type: %s" % String(unit_type))
+		return
+	guard_config.merge(data, true)
+	var origin := MapConfigLoaderScript.get_vector2i(data, "grid_origin", Vector2i(-1, -1))
+	if origin.x < 0 or origin.y < 0:
+		push_warning("Enemy patrol missing grid_origin: %s" % str(data.get("id", "")))
+		return
+	var world_position: Vector2 = grid_map.call("grid_to_world", origin) if grid_map and grid_map.has_method("grid_to_world") else Vector2(origin.x, origin.y) * _get_grid_cell_size()
+	var layer := _get_layer("EnemyLayer")
+	var pool_name := str(guard_config.get("pool_name", unit_type))
+	var patrol := ObjectPool.get_instance(ScavengerHoundScene, layer if layer else self, pool_name) as RobotUnit
+	if patrol == null:
+		return
+	patrol.name = str(data.get("id", IdProvider.next_id(unit_type)))
+	patrol.global_position = world_position
+	patrol.call("setup_scavenger_hound", guard_config, null)
+	patrol.set("guard_home_position", world_position)
+	if patrol.has_signal("robot_lost") and not patrol.is_connected("robot_lost", Callable(self, "_on_enemy_hound_lost")):
+		patrol.connect("robot_lost", Callable(self, "_on_enemy_hound_lost"))
+	push_debug_event("阶段16装甲巡逻已生成：%s" % patrol.name)
 
 func _spawn_enemy_nest(data: Dictionary) -> void:
 	var nest_id := StringName(str(data.get("id", IdProvider.next_id(&"enemy_nest"))))
@@ -2632,10 +2705,11 @@ func _on_enemy_nest_guard_spawn_requested(nest: Node, guard_type: StringName) ->
 		push_warning("Unknown enemy guard type: %s" % String(guard_type))
 		return
 	var layer := _get_layer("EnemyLayer")
-	var guard := ObjectPool.get_instance(ScavengerHoundScene, layer if layer else self, "scavenger_hound") as CharacterBody2D
+	var pool_name := str(guard_config.get("pool_name", guard_type))
+	var guard := ObjectPool.get_instance(ScavengerHoundScene, layer if layer else self, pool_name) as CharacterBody2D
 	if guard == null:
 		return
-	guard.name = IdProvider.next_id(&"scavenger_hound")
+	guard.name = IdProvider.next_id(guard_type)
 	var guard_slot_index := -1
 	if nest.has_method("reserve_guard_slot"):
 		guard_slot_index = int(nest.call("reserve_guard_slot"))
@@ -2654,7 +2728,7 @@ func _on_enemy_hound_lost(hound: Node, reason: StringName) -> void:
 	if event_log and event_log.has_method("record"):
 		var payload := {
 			"enemy_id": hound.name,
-			"enemy_type": "scavenger_hound",
+			"enemy_type": str(hound.get("pool_name")) if hound.get("pool_name") != null else "enemy_guard",
 			"reason": String(reason),
 		}
 		if hound.has_method("get_last_damage_source_payload"):
@@ -2763,7 +2837,7 @@ func _configure_building_runtime(building: Node, building_def: BuildingDef, orig
 		if building.has_signal("miner_state_changed"):
 			building.connect("miner_state_changed", Callable(self, "_on_miner_state_changed").bind(building))
 	elif _is_processor_def(building_def) and building.has_method("setup_processor"):
-		building.call("setup_processor", _get_resource_recipes(), inventory)
+		building.call("setup_processor", _get_resource_recipes_for_processor(building_def), inventory)
 		if building.has_signal("processor_state_changed"):
 			building.connect("processor_state_changed", Callable(self, "_on_processor_state_changed").bind(building))
 	elif _is_robot_forge_def(building_def) and building.has_method("setup_forge"):
@@ -2789,9 +2863,35 @@ func _configure_building_runtime(building: Node, building_def: BuildingDef, orig
 func _get_resource_recipes() -> Array[RecipeDef]:
 	var result: Array[RecipeDef] = []
 	for recipe in recipe_defs:
-		if recipe.recipe_type == &"resource":
+		if recipe.recipe_type == &"resource" and _is_resource_recipe_unlocked(recipe):
 			result.append(recipe)
 	return result
+
+func _get_resource_recipes_for_processor(building_def: BuildingDef) -> Array[RecipeDef]:
+	var allowed_recipe_ids: Array[StringName] = []
+	if building_def != null and building_def.id == MvpDataDefaults.BUILDING_ADVANCED_PROCESSOR:
+		allowed_recipe_ids = [
+			&"process_reinforced_steel_plate",
+			&"process_optical_lens",
+			&"process_high_capacity_battery",
+		]
+	else:
+		allowed_recipe_ids = [
+			&"process_iron_plate",
+			&"process_copper_wire",
+		]
+	var result: Array[RecipeDef] = []
+	for recipe in _get_resource_recipes():
+		if allowed_recipe_ids.has(recipe.id):
+			result.append(recipe)
+	return result
+
+func _is_resource_recipe_unlocked(recipe: RecipeDef) -> bool:
+	if recipe == null:
+		return false
+	if campaign_state == null:
+		return true
+	return campaign_state.unlocked_resources.has(recipe.target_id)
 
 func _show_operation_panel_for_node(node: Node) -> void:
 	selected_operation_building = null
@@ -2858,7 +2958,7 @@ func _refresh_operation_panel() -> void:
 		hud.call(
 			"show_processor_panel",
 			selected_operation_building,
-			_get_resource_recipes(),
+			_get_resource_recipes_for_processor(building_def),
 			resource_defs,
 			_world_to_screen(selected_operation_building.global_position)
 		)
@@ -2911,6 +3011,12 @@ func _on_processor_recipe_selected(processor: Node, recipe_id: StringName) -> vo
 	if processor and processor.has_method("set_recipe"):
 		processor.call("set_recipe", recipe_id)
 		push_debug_event("加工厂配方切换：%s" % String(recipe_id))
+	call_deferred("_refresh_operation_panel")
+
+func _on_processor_pause_toggled(processor: Node) -> void:
+	if processor and processor.has_method("toggle_paused"):
+		processor.call("toggle_paused")
+		push_debug_event("加工厂%s" % ("已暂停" if bool(processor.get("is_paused")) else "继续加工"))
 	call_deferred("_refresh_operation_panel")
 
 func _on_building_demolish_requested(building: Node) -> void:
@@ -3195,7 +3301,7 @@ func _build_stage14_urgent_supply_candidates(robot: Node) -> Array:
 		if source == null:
 			continue
 		var available := _get_stage14_available_for_assignment(source, resource_id)
-		var amount := mini(free_capacity, mini(missing, available))
+		var amount := _get_stage14_urgent_supply_pickup_amount(missing, available, free_capacity)
 		if amount <= 0:
 			continue
 		candidates.append(_make_stage14_task(
@@ -3205,9 +3311,12 @@ func _build_stage14_urgent_supply_candidates(robot: Node) -> Array:
 			resource_id,
 			amount,
 			"紧急补货",
-			100000.0 + float(demand.get("urgency", 0.0)) + float(amount)
+			100000.0 + float(demand.get("urgency", 0.0)) + float(missing) * 25.0 + float(amount)
 		))
 	return candidates
+
+func _get_stage14_urgent_supply_pickup_amount(_missing: int, available: int, free_capacity: int) -> int:
+	return mini(maxi(0, free_capacity), maxi(0, available))
 
 func _build_stage14_source_to_relay_candidates(robot: Node) -> Array:
 	var candidates: Array = []

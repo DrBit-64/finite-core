@@ -133,6 +133,20 @@ func check_condition(target: Node2D, cond: Variant) -> bool:
 			return bool(robot.call("get_state_flag", flag_id)) == bool(_rule_get(cond, "value", false))
 		"has_enemy":
 			return robot.has_method("get_current_enemy") and robot.call("get_current_enemy") != null
+		"heat_above_percent":
+			if not robot.has_method("heat_ratio"):
+				return false
+			var heat_above := float(_rule_get(cond, "value", cond_param))
+			if heat_above > 1.0:
+				heat_above /= 100.0
+			return float(robot.call("heat_ratio")) >= heat_above
+		"heat_below_percent":
+			if not robot.has_method("heat_ratio"):
+				return false
+			var heat_below := float(_rule_get(cond, "value", cond_param))
+			if heat_below > 1.0:
+				heat_below /= 100.0
+			return float(robot.call("heat_ratio")) <= heat_below
 		"allies_near_rally_less":
 			if not robot.has_method("count_allies_near_rally_point"):
 				return false
@@ -141,6 +155,9 @@ func check_condition(target: Node2D, cond: Variant) -> bool:
 			if _sync_rally_squad_ready(less_radius):
 				return false
 			var less_count := int(robot.call("count_rally_release_candidates", less_radius)) if robot.has_method("count_rally_release_candidates") else int(robot.call("count_allies_near_rally_point", less_radius))
+			if less_count >= less_required and robot.has_method("try_mark_rally_squad_ready"):
+				robot.call("try_mark_rally_squad_ready", less_radius, less_required)
+				return false
 			return less_count < less_required
 		"allies_near_rally_at_least":
 			if not robot.has_method("count_allies_near_rally_point"):
@@ -217,6 +234,10 @@ func execute_action(act: Variant, target: Node2D, rule: Variant = null) -> bool:
 				return true
 		"default_combat":
 			return false
+		"hold_fire_for_heat":
+			if robot.has_method("hold_fire_for_heat"):
+				robot.call("hold_fire_for_heat")
+				return true
 		"wait":
 			if robot.has_method("stop_and_idle"):
 				robot.call("stop_and_idle")
@@ -225,7 +246,7 @@ func execute_action(act: Variant, target: Node2D, rule: Variant = null) -> bool:
 	match act:
 		AI_RULE_SCRIPT.Action.APPROACH:
 			if target and robot.has_method("move_towards"):
-				robot.move_towards(target.global_position)
+				robot.move_towards(target.global_position, target)
 				return true
 		AI_RULE_SCRIPT.Action.FLEE:
 			if not robot.has_method("flee_from"):

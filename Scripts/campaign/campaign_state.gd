@@ -59,6 +59,19 @@ func unlock_technology(technology: Variant) -> void:
 	technology_unlocked.emit(technology.id)
 	unlocks_changed.emit()
 
+func debug_unlock_all_technologies(technologies: Array) -> int:
+	var unlocked_count := 0
+	for technology in technologies:
+		if technology == null or unlocked_technologies.has(technology.id):
+			continue
+		unlocked_technologies.append(technology.id)
+		_apply_unlocks(technology.unlocks)
+		current_stage = maxi(current_stage, int(technology.stage))
+		unlocked_count += 1
+	if unlocked_count > 0:
+		unlocks_changed.emit()
+	return unlocked_count
+
 func is_building_unlocked(building_id: StringName) -> bool:
 	return unlocked_buildings.has(building_id)
 

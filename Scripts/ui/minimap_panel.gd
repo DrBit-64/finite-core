@@ -177,7 +177,7 @@ func _grid_rect_array_to_origin_size(value: Variant) -> Rect2:
 	return Rect2(Vector2(float(value[0]), float(value[1])), Vector2(float(value[2]), float(value[3])))
 
 func _make_redraw_key(snapshot: Dictionary) -> String:
-	return JSON.stringify([
+	return str(hash([
 		snapshot.get("static_version", 0),
 		snapshot.get("resources", []),
 		snapshot.get("enemy_nests", []),
@@ -186,7 +186,7 @@ func _make_redraw_key(snapshot: Dictionary) -> String:
 		snapshot.get("region_signals", []),
 		snapshot.get("water_flow_target_cell", []),
 		snapshot.get("viewport_rect", {}),
-	])
+	]))
 
 func _draw_regions(content_rect: Rect2, map_size: Vector2) -> void:
 	var region_cells: Array = _snapshot.get("region_cells", [])

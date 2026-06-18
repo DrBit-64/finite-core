@@ -161,13 +161,13 @@
 | `coal` | 原煤 | `Resources/art/resources/coal.svg` | `32x32` | `done` |
 | `water` | 水 | `Resources/art/resources/water.svg` | `32x32` | `done` |
 | `steel_billet` | 钢坯 | `Resources/art/resources/steel_billet.svg` | `32x32` | `pending` |
-| `reinforced_steel_plate` | 强化钢板 | `Resources/art/resources/reinforced_steel_plate.svg` | `32x32` | `generate` |
-| `optical_lens` | 光学透镜 | `Resources/art/resources/optical_lens.svg` | `32x32` | `generate` |
-| `high_capacity_battery` | 大容量电池 | `Resources/art/resources/high_capacity_battery.svg` | `32x32` | `generate` |
+| `reinforced_steel_plate` | 强化钢板 | `Resources/art/resources/reinforced_steel_plate.svg` | `32x32` | `done` |
+| `optical_lens` | 光学透镜 | `Resources/art/resources/optical_lens.svg` | `32x32` | `done` |
+| `high_capacity_battery` | 大容量电池 | `Resources/art/resources/high_capacity_battery.svg` | `32x32` | `done` |
 | `cryo_gel` | 冷凝凝胶 | `Resources/art/resources/cryo_gel.svg` | `32x32` | `generate` |
 | `kinetic_ammo_box` | 动能弹药箱 | `Resources/art/resources/kinetic_ammo_box.svg` | `32x32` | `generate` |
 | `construction_pack` | 结构打印包 | `Resources/art/resources/construction_pack.svg` | `32x32` | `generate` |
-| `high_frequency_oscillator` | 高频振荡器 | `Resources/art/resources/high_frequency_oscillator.svg` | `32x32` | `generate` |
+| `high_frequency_oscillator` | 高频振荡器 | `Resources/art/resources/high_frequency_oscillator.svg` | `32x32` | `done` |
 | `energy_conduction_fluid` | 能量传导液 | `Resources/art/resources/energy_conduction_fluid.svg` | `32x32` | `generate` |
 | `transmission_component` | 传动组件 | `Resources/art/resources/transmission_component.svg` | `32x32` | `pending` |
 | `advanced_circuit` | 进阶电路 | `Resources/art/resources/advanced_circuit.svg` | `32x32` | `pending` |
@@ -179,6 +179,7 @@
 | 稳定 ID | 显示名 | 建议路径 | 尺寸 | 状态 |
 | --- | --- | --- | --- | --- |
 | `advanced_smelter` | 强化冶炼炉 | `Resources/art/buildings/advanced_smelter.svg` | `48x48` | `generate` |
+| `advanced_processor` | 高级加工厂 | `Resources/art/buildings/advanced_processor.svg` | `48x48` | `done` |
 | `chemical_processor` | 化学精炼厂 | `Resources/art/buildings/chemical_processor.svg` | `48x48` | `generate` |
 | `ammo_loader` | 弹药装填厂 | `Resources/art/buildings/ammo_loader.svg` | `48x48` | `generate` |
 | `structure_printer` | 结构打印厂 | `Resources/art/buildings/structure_printer.svg` | `48x48` | `generate` |
@@ -190,24 +191,25 @@
 | 稳定 ID | 显示名 | 建议路径 | 尺寸 | 状态 |
 | --- | --- | --- | --- | --- |
 | `standard_cargo_chassis` | 标准货运底盘 | `Resources/art/chassis/standard_cargo_chassis.svg` | `32x32` | `done` |
-| `heavy_tracked_chassis` | 重型履带底盘 | `Resources/art/chassis/heavy_tracked_chassis.svg` | `32x32` | `generate` |
+| `heavy_tracked_chassis` | 重型履带底盘 | `Resources/art/chassis/heavy_tracked_chassis.svg` | `32x32` | `done` |
 | `expanded_cargo_pack` | 扩展背包 | `Resources/art/modules/expanded_cargo_pack.svg` | `32x32` | `done` |
 | `light_shield_module` | 轻型护盾 | `Resources/art/modules/light_shield_module.svg` | `32x32` | `generate` |
 | `light_self_defense_weapon` | 轻型自卫武器 | `Resources/art/modules/light_self_defense_weapon.svg` | `32x32` | `generate` |
 | `heavy_machine_gun` | 重机枪 | `Resources/art/modules/heavy_machine_gun.svg` | `32x32` | `generate` |
-| `thermal_laser` | 热熔激光 | `Resources/art/modules/thermal_laser.svg` | `32x32` | `generate` |
+| `thermal_laser` | 热熔激光 | `Resources/art/modules/thermal_laser.svg` | `32x32` | `done` |
 | `cryo_gel_sprayer` | 冷凝凝胶喷射器 | `Resources/art/modules/cryo_gel_sprayer.svg` | `32x32` | `generate` |
 | `mid_logic_board` | 中级逻辑板 | `Resources/art/modules/mid_logic_board.svg` | `32x32` | `generate` |
 | `zone_shield_guard` | 战区盾卫 | `Resources/art/blueprints/zone_shield_guard.svg` | `48x48` | `generate` |
+| `thermal_laser_robot` | 热能激光机器人 | `Resources/art/blueprints/thermal_laser_robot.svg` | `48x48` | `done` |
 | `battlefield_hauler` | 战地搬运车 | `Resources/art/blueprints/battlefield_hauler.svg` | `48x48` | `done` |
 
 ### 4. 敌人与敌巢
 
 | 稳定 ID | 显示名 | 建议路径 | 尺寸 | 状态 |
 | --- | --- | --- | --- | --- |
-| `armored_rhino` | 重甲犀牛 | `Resources/art/enemies/armored_rhino.svg` | `48x48` | `generate` |
+| `armored_rhino` | 重甲犀牛 | `Resources/art/enemies/armored_rhino.svg` | `48x48` | `done` |
 | `plasma_mosquito` | 等离子飞蚊 | `Resources/art/enemies/plasma_mosquito.svg` | `32x32` | `generate` |
-| `armored_nest` | 装甲型敌巢 | `Resources/art/enemies/armored_nest.svg` | `96x96` | `generate` |
+| `armored_nest` | 装甲型敌巢 | `Resources/art/enemies/armored_nest.svg` | `96x96` | `done` |
 | `energy_nest` | 能量型敌巢 | `Resources/art/enemies/energy_nest.svg` | `96x96` | `generate` |
 
 ### 5. UI、状态与战斗反馈
@@ -217,7 +219,7 @@
 | `state_retreat` | 撤退 | `Resources/art/ui/state_retreat.svg` | `20x20` | `generate` |
 | `state_transport` | 运输 | `Resources/art/ui/state_transport.svg` | `20x20` | `done` |
 | `state_shield` | 护盾 | `Resources/art/ui/state_shield.svg` | `20x20` | `generate` |
-| `state_overheat` | 过热 | `Resources/art/ui/state_overheat.svg` | `20x20` | `generate` |
+| `state_overheat` | 过热 | `Resources/art/ui/state_overheat.svg` | `20x20` | `done` |
 | `state_ammo_depleted` | 弹药不足 | `Resources/art/ui/state_ammo_depleted.svg` | `20x20` | `generate` |
 | `laser_beam` | 激光束 | 无独立文件 | - | `programmatic` |
 | `shield_arc` | 护盾弧 | 无独立文件 | - | `programmatic` |

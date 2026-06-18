@@ -17,12 +17,17 @@ const RES_INITIAL_SENSOR_COIL := &"initial_sensor_coil"
 const RES_CRYSTAL_ORE := &"crystal_ore"
 const RES_COAL := &"coal"
 const RES_WATER := &"water"
+const RES_REINFORCED_STEEL_PLATE := &"reinforced_steel_plate"
+const RES_OPTICAL_LENS := &"optical_lens"
+const RES_HIGH_CAPACITY_BATTERY := &"high_capacity_battery"
+const RES_HIGH_FREQUENCY_OSCILLATOR := &"high_frequency_oscillator"
 
 const UNIT_BASIC_RIFLE_ROBOT := &"basic_rifle_robot"
 
 const BUILDING_MAIN_BASE := &"main_base"
 const BUILDING_MINER := &"miner"
 const BUILDING_PROCESSOR := &"processor"
+const BUILDING_ADVANCED_PROCESSOR := &"advanced_processor"
 const BUILDING_ROBOT_FORGE := &"robot_forge"
 const BUILDING_RESEARCH_TERMINAL := &"research_terminal"
 const BUILDING_WATER_PUMP := &"water_pump"
@@ -39,6 +44,10 @@ static func create_resource_defs() -> Array[ResourceDef]:
 		_make_resource(RES_CRYSTAL_ORE, "晶体矿", "res://Resources/art/resources/crystal_ore.svg", "第二资源圈的高频结构矿物。"),
 		_make_resource(RES_COAL, "原煤", "res://Resources/art/resources/coal.svg", "中期能源链的基础燃料。"),
 		_make_resource(RES_WATER, "水", "res://Resources/art/resources/water.svg", "水泵从水池抽取的流体资源。"),
+		_make_resource(RES_REINFORCED_STEEL_PLATE, "强化钢板", "res://Resources/art/resources/reinforced_steel_plate.svg", "装甲底盘和中期建筑使用的复合结构材料。"),
+		_make_resource(RES_OPTICAL_LENS, "光学透镜", "res://Resources/art/resources/optical_lens.svg", "热能激光与精密传感模块使用的晶体组件。"),
+		_make_resource(RES_HIGH_CAPACITY_BATTERY, "高容电池", "res://Resources/art/resources/high_capacity_battery.svg", "热能武器与能量模块使用的中期储能件。"),
+		_make_resource(RES_HIGH_FREQUENCY_OSCILLATOR, "高频振荡器", "res://Resources/art/resources/high_frequency_oscillator.svg", "装甲拾荒巢穴抽象回收的阶段 2 关键道具。"),
 	]
 
 static func create_recipe_defs() -> Array[RecipeDef]:
@@ -97,6 +106,7 @@ static func _create_building_fallbacks(recipe_defs: Array[RecipeDef]) -> Array[B
 		_make_building(BUILDING_MAIN_BASE, "主基地", Vector2i(2, 2), recipe_defs, "res://Resources/art/buildings/main_base.svg", 1400),
 		_make_building(BUILDING_MINER, "采矿机", Vector2i(1, 1), recipe_defs, "res://Resources/art/buildings/miner.svg", 420),
 		_make_building(BUILDING_PROCESSOR, "基础加工厂", Vector2i(1, 1), recipe_defs, "res://Resources/art/buildings/processor.svg", 600),
+		_make_building(BUILDING_ADVANCED_PROCESSOR, "高级加工厂", Vector2i(1, 1), recipe_defs, "res://Resources/art/buildings/advanced_processor.svg", 760),
 		_make_building(BUILDING_ROBOT_FORGE, "机器人锻造厂", Vector2i(1, 1), recipe_defs, "res://Resources/art/buildings/robot_forge.svg", 700),
 		_make_building(BUILDING_RESEARCH_TERMINAL, "研究终端", Vector2i(1, 1), recipe_defs, "res://Resources/art/buildings/research_terminal.svg", 520),
 		_make_building(BUILDING_WATER_PUMP, "水泵", Vector2i(1, 1), recipe_defs, "res://Resources/art/buildings/water_pump.svg", 460),

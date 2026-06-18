@@ -6,13 +6,23 @@ const TEMPLATE_MOVE_TO_RALLY := "move_to_rally"
 const TEMPLATE_RALLY_THEN_ATTACK := "rally_then_attack"
 const TEMPLATE_TARGET_NEAREST := "target_nearest"
 const TEMPLATE_REACTIVE_OVERRIDE := "reactive_override"
+const TEMPLATE_WEAPON_HEAT_CONTROL := "weapon_heat_control"
 
 const DEFAULT_ARRIVAL_DISTANCE := 20.0
 const DEFAULT_RALLY_RADIUS := 90.0
 const DEFAULT_REQUIRED_ALLIES := 4
+const MIN_SQUAD_ARRIVAL_DISTANCE := 48.0
 
 static func get_template_defs() -> Array[Dictionary]:
 	return [
+		{
+			"id": TEMPLATE_WEAPON_HEAT_CONTROL,
+			"display_name": "热能武器控制",
+			"intent": "热量过高时停火散热，降温后交还默认脑干继续战斗。",
+			"parameters": [
+				{"id": "hold_heat_percent", "display_name": "停火热量%", "type": "float", "default": 0.82},
+			],
+		},
 		{
 			"id": TEMPLATE_DEFAULT_ATTACK,
 			"display_name": "默认进攻",
@@ -107,7 +117,13 @@ static func normalize_templates(value: Variant) -> Array[Dictionary]:
 static func compile_templates(templates: Array) -> Dictionary:
 	var rules: Array = []
 	var state_defaults := {}
-	for template in normalize_templates(templates):
+	var normalized_templates := normalize_templates(templates)
+	for template in normalized_templates:
+		var template_id := str(template.get("id", ""))
+		if template_id != TEMPLATE_WEAPON_HEAT_CONTROL:
+			continue
+		rules.append_array(_compile_weapon_heat_control(template))
+	for template in normalized_templates:
 		var template_id := str(template.get("id", ""))
 		match template_id:
 			TEMPLATE_MOVE_TO_RALLY:
@@ -160,16 +176,17 @@ static func _compile_rally_then_attack(template: Dictionary) -> Array:
 	var arrival_distance := float(params.get("arrival_distance", DEFAULT_ARRIVAL_DISTANCE))
 	var rally_radius := float(params.get("rally_radius", DEFAULT_RALLY_RADIUS))
 	var required_allies := int(params.get("required_allies", DEFAULT_REQUIRED_ALLIES))
+	var squad_arrival_distance := minf(rally_radius, maxf(arrival_distance, MIN_SQUAD_ARRIVAL_DISTANCE))
 	return [
 		_rule("move_to_rally", "前往集结点", template, "前往集结点", [
 			{"type": "has_rally_point"},
 			{"type": "self_flag_is", "flag": "rallied", "value": false},
-			{"type": "distance_to_rally_greater", "value": arrival_distance}
+			{"type": "distance_to_rally_greater", "value": squad_arrival_distance}
 		], "move_to_rally"),
 		_rule("mark_rallied", "标记已集结", template, "到达集结点", [
 			{"type": "has_rally_point"},
 			{"type": "self_flag_is", "flag": "rallied", "value": false},
-			{"type": "distance_to_rally_less_equal", "value": arrival_distance}
+			{"type": "distance_to_rally_less_equal", "value": squad_arrival_distance}
 		], "set_self_flag", {"flag": "rallied", "value": true}),
 		_rule("wait_for_squad", "等待队友", template, "等待队友", [
 			{"type": "has_rally_point"},
@@ -186,6 +203,15 @@ static func _compile_rally_then_attack(template: Dictionary) -> Array:
 		_rule("default_after_rally", "默认脑干接管", template, "默认脑干接管", [
 			{"type": "self_flag_is", "flag": "squad_ready", "value": true}
 		], "default_combat"),
+	]
+
+static func _compile_weapon_heat_control(template: Dictionary) -> Array:
+	var params: Dictionary = template.get("params", {})
+	var hold_heat_percent := clampf(float(params.get("hold_heat_percent", 0.82)), 0.1, 1.0)
+	return [
+		_rule("hold_fire_when_hot", "过热停火", template, "热能控制", [
+			{"type": "heat_above_percent", "value": hold_heat_percent}
+		], "hold_fire_for_heat"),
 	]
 
 static func _rule(

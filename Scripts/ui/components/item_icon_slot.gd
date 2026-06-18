@@ -38,6 +38,8 @@ func _build() -> void:
 	if _icon_rect != null:
 		return
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	mouse_entered.connect(_show_custom_tooltip)
+	mouse_exited.connect(_hide_custom_tooltip)
 	custom_minimum_size = slot_size
 	add_theme_stylebox_override("panel", _make_slot_style(Color(0.30, 0.36, 0.42, 0.9)))
 
@@ -73,17 +75,8 @@ func _build() -> void:
 	_quantity_label.add_theme_constant_override("outline_size", 3)
 	_root.add_child(_quantity_label)
 
-func _process(_delta: float) -> void:
-	if _tooltip_value.is_empty() or not is_visible_in_tree():
-		_hide_custom_tooltip()
-		return
-	if _is_pointer_over_slot():
-		_show_custom_tooltip()
-	else:
-		_hide_custom_tooltip()
-
 func _show_custom_tooltip() -> void:
-	if _tooltip_value.is_empty():
+	if _tooltip_value.is_empty() or not is_visible_in_tree():
 		return
 	_ensure_shared_tooltip()
 	_shared_tooltip_owner_id = get_instance_id()

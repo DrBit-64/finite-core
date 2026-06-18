@@ -33,7 +33,7 @@
         "copper_wire": 10
       },
       "unlocks": {
-        "unit_types": ["kinetic_chainsaw_robot"],
+        "unit_types": ["kinetic_chainsaw_robot", "shield_bulwark_robot"],
         "modules": ["kinetic_chainsaw"],
         "weapons": ["kinetic_chainsaw"]
       }
@@ -75,6 +75,69 @@
         "resources": ["water"],
         "buildings": ["water_pump", "forward_supply_point"],
         "upgrades": ["cargo_bay_1"]
+      }
+    },
+    {
+      "id": "stage2_advanced_processing",
+      "display_name": "\u9636\u6bb52\uff1a\u590d\u5408\u6750\u6599\u52a0\u5de5",
+      "description": "\u5c06\u6676\u4f53\u77ff\u3001\u539f\u7164\u548c\u57fa\u7840\u91d1\u5c5e\u52a0\u5de5\u6210\u88c5\u7532\u548c\u80fd\u91cf\u6b66\u5668\u6240\u9700\u7684\u4e2d\u95f4\u4ef6\uff0c\u5e76\u89e3\u9501\u9ad8\u7ea7\u52a0\u5de5\u5382\u3002",
+      "stage": 2,
+      "duration_seconds": 14.0,
+      "key_item_requirements": ["initial_sensor_coil"],
+      "prerequisites": ["stage2_remote_logistics_and_water"],
+      "costs": {
+        "construction_mass": 130,
+        "iron_plate": 30,
+        "copper_wire": 28,
+        "water": 6
+      },
+      "unlocks": {
+        "resources": ["crystal_ore", "coal", "reinforced_steel_plate", "optical_lens", "high_capacity_battery"],
+        "buildings": ["advanced_processor"],
+        "chassis": ["heavy_tracked_chassis"],
+        "modules": ["thermal_laser"]
+      }
+    },
+    {
+      "id": "stage2_thermal_laser_weaponry",
+      "display_name": "\u9636\u6bb52\uff1a\u70ed\u80fd\u6fc0\u5149\u6b66\u5668",
+      "description": "\u5728\u8fdb\u653b\u88c5\u7532\u5de2\u7a74\u524d\u5b8c\u6210\u70ed\u80fd\u6fc0\u5149\u6b66\u5668\u5b9a\u578b\uff0c\u5bf9\u539a\u88c5\u7532\u654c\u4eba\u5f62\u6210\u9488\u5bf9\u6027\u53cd\u5236\u3002",
+      "stage": 2,
+      "duration_seconds": 16.0,
+      "key_item_requirements": ["initial_sensor_coil"],
+      "prerequisites": ["stage2_advanced_processing"],
+      "costs": {
+        "construction_mass": 150,
+        "reinforced_steel_plate": 10,
+        "optical_lens": 4,
+        "high_capacity_battery": 2,
+        "copper_wire": 24
+      },
+      "unlocks": {
+        "unit_types": ["thermal_laser_robot"],
+        "weapons": ["thermal_laser"],
+        "modules": ["thermal_laser"],
+        "templates": ["weapon_heat_control"],
+        "conditions": ["heat_above_percent", "heat_below_percent"],
+        "actions": ["hold_fire_for_heat"]
+      }
+    },
+    {
+      "id": "stage2_oscillator_cooling",
+      "display_name": "\u9636\u6bb52\uff1a\u632f\u8361\u51b7\u5374\u6821\u51c6",
+      "description": "\u5229\u7528\u88c5\u7532\u5de2\u7a74\u56de\u6536\u7684\u9ad8\u9891\u632f\u8361\u5668\u4f18\u5316\u6fc0\u5149\u6b66\u5668\u7684\u51b7\u5374\u5faa\u73af\uff0c\u964d\u4f4e\u8fde\u7eed\u5c04\u51fb\u7684\u70ed\u91cf\u538b\u529b\u3002",
+      "stage": 2,
+      "duration_seconds": 12.0,
+      "key_item_requirements": ["high_frequency_oscillator"],
+      "prerequisites": ["stage2_thermal_laser_weaponry"],
+      "costs": {
+        "construction_mass": 90,
+        "reinforced_steel_plate": 6,
+        "optical_lens": 2,
+        "copper_wire": 16
+      },
+      "unlocks": {
+        "upgrades": ["cooling_fins_1"]
       }
     }
   ]

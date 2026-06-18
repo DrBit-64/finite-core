@@ -6,14 +6,20 @@ class_name GridHoverMarker
 @export var outline_width: float = 1.0
 
 var cell_size: int = 64
+var _hovered_cell: Vector2i = Vector2i(-999999, -999999)
 
 func show_hover(cell: Vector2i, next_cell_size: int) -> void:
+	var changed := cell != _hovered_cell or cell_size != next_cell_size or not visible
+	_hovered_cell = cell
 	cell_size = next_cell_size
 	position = Vector2(cell.x * cell_size, cell.y * cell_size)
 	visible = true
-	queue_redraw()
+	if changed:
+		queue_redraw()
 
 func clear_hover() -> void:
+	if not visible:
+		return
 	visible = false
 
 func _draw() -> void:

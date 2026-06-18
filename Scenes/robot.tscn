@@ -37,6 +37,15 @@ offset_right = 24.0
 offset_bottom = -25.0
 show_percentage = false
 
+[node name="HeatBar" type="ProgressBar" parent="."]
+visible = false
+z_index = 12
+offset_left = -24.0
+offset_top = -42.0
+offset_right = 24.0
+offset_bottom = -35.0
+show_percentage = false
+
 [node name="ActionLabel" type="Label" parent="."]
 visible = false
 offset_left = -56.0

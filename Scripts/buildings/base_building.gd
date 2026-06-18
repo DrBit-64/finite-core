@@ -8,6 +8,7 @@ const CombatTargetRegistryScript := preload("res://Scripts/map/combat_target_reg
 
 @export var icon_size: Vector2 = Vector2(56, 56)
 @export_enum("Team_A", "Team_B") var team: String = "Team_A"
+@export var armor_type: StringName = &"structure"
 
 var building_def: BuildingDef
 var grid_origin: Vector2i = Vector2i.ZERO
@@ -70,8 +71,25 @@ func take_damage(amount: int) -> void:
 	if health_component:
 		health_component.take_damage(amount)
 
-func take_damage_from(amount: int, _source_payload: Dictionary = {}) -> void:
-	take_damage(amount)
+func take_damage_from(amount: int, source_payload: Dictionary = {}) -> void:
+	take_damage(_apply_damage_profile(amount, source_payload))
+
+func _apply_damage_profile(amount: int, source_payload: Dictionary) -> int:
+	var source_damage_type := StringName(str(source_payload.get("damage_type", "kinetic")))
+	var multiplier := 1.0
+	if armor_type == &"structure_armor":
+		match source_damage_type:
+			&"kinetic":
+				multiplier = 0.72
+			&"thermal":
+				multiplier = 1.25
+	elif armor_type == &"armored":
+		match source_damage_type:
+			&"kinetic":
+				multiplier = 0.55
+			&"thermal":
+				multiplier = 1.35
+	return maxi(1, roundi(float(amount) * multiplier))
 
 func get_target_position() -> Vector2:
 	return global_position + Vector2(grid_size.x * cell_size, grid_size.y * cell_size) * 0.5

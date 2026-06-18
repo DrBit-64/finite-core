@@ -126,6 +126,63 @@
       }
     },
     {
+      "id": "build_advanced_processor",
+      "display_name": "建造高级加工厂",
+      "type": "building",
+      "target_id": "advanced_processor",
+      "duration_seconds": 12.0,
+      "inputs": {
+        "construction_mass": 80,
+        "iron_plate": 16,
+        "copper_wire": 12,
+        "crystal_ore": 4
+      },
+      "outputs": {
+        "advanced_processor": 1
+      }
+    },
+    {
+      "id": "process_reinforced_steel_plate",
+      "display_name": "压制强化钢板",
+      "type": "resource",
+      "target_id": "reinforced_steel_plate",
+      "duration_seconds": 6.0,
+      "inputs": {
+        "iron_plate": 2,
+        "coal": 1
+      },
+      "outputs": {
+        "reinforced_steel_plate": 1
+      }
+    },
+    {
+      "id": "process_optical_lens",
+      "display_name": "研磨光学透镜",
+      "type": "resource",
+      "target_id": "optical_lens",
+      "duration_seconds": 7.0,
+      "inputs": {
+        "crystal_ore": 2
+      },
+      "outputs": {
+        "optical_lens": 1
+      }
+    },
+    {
+      "id": "process_high_capacity_battery",
+      "display_name": "封装高容电池",
+      "type": "resource",
+      "target_id": "high_capacity_battery",
+      "duration_seconds": 8.0,
+      "inputs": {
+        "crystal_ore": 1,
+        "copper_wire": 2
+      },
+      "outputs": {
+        "high_capacity_battery": 1
+      }
+    },
+    {
       "id": "forge_basic_rifle_robot",
       "display_name": "生产基础步枪机器人",
       "type": "unit",
@@ -168,6 +225,38 @@
       },
       "outputs": {
         "kinetic_chainsaw_robot": 1
+      }
+    },
+    {
+      "id": "forge_shield_bulwark_robot",
+      "display_name": "生产高速肉盾机器人",
+      "type": "unit",
+      "target_id": "shield_bulwark_robot",
+      "duration_seconds": 13.0,
+      "inputs": {
+        "iron_plate": 9,
+        "copper_wire": 3,
+        "construction_mass": 8
+      },
+      "outputs": {
+        "shield_bulwark_robot": 1
+      }
+    },
+    {
+      "id": "forge_thermal_laser_robot",
+      "display_name": "生产热能激光机器人",
+      "type": "unit",
+      "target_id": "thermal_laser_robot",
+      "duration_seconds": 16.0,
+      "inputs": {
+        "reinforced_steel_plate": 8,
+        "optical_lens": 2,
+        "high_capacity_battery": 1,
+        "copper_wire": 8,
+        "construction_mass": 10
+      },
+      "outputs": {
+        "thermal_laser_robot": 1
       }
     }
   ]

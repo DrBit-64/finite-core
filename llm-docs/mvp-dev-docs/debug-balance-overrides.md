@@ -17,6 +17,8 @@
 
 ## 已外部化的相关配置
 
+- 全科技解锁开关：`Resources/data/debug/mvp_runtime_profile.json` 的 `unlock_all_technologies`。开发调试时设为 `true`，正式试玩和数值验收前必须恢复为 `false`。
+
 - 单位蓝图与属性：`Resources/data/units/mvp_unit_blueprints.json`
 - 正式开局库存：`Resources/data/balance/mvp_starting_inventory.json`
 - 调试开局库存：`Resources/data/debug/mvp_debug_starting_inventory.json`

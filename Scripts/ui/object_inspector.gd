@@ -155,7 +155,7 @@ func _try_render_cargo_robot(node: Node) -> bool:
 	if cargo.is_empty():
 		_detail_root.add_child(_make_info_label("空"))
 	else:
-		_detail_root.add_child(_make_resource_slot_grid(cargo, {}, false, 4))
+		_detail_root.add_child(_make_resource_slot_grid(cargo, {}, false, 4, Vector2(42.5, 42.5)))
 	_detail_root.add_child(_make_section_label("当前物流任务"))
 	if node.has_method("get_logistics_task_summary_lines"):
 		for line in node.call("get_logistics_task_summary_lines"):
@@ -253,6 +253,8 @@ func _add_building_specific_sections(node: Node) -> void:
 		_add_forge_section(node as RobotForgeBuilding)
 	elif node.has_method("setup_water_pump"):
 		_add_water_pump_section(node)
+	elif node.has_method("get_all_resources"):
+		_add_storage_section(node)
 	elif node is EnemyNest:
 		_add_enemy_nest_section(node as EnemyNest)
 
@@ -262,9 +264,17 @@ func _add_main_base_section(main_base: MainBase) -> void:
 	if inventory.is_empty():
 		_detail_root.add_child(_make_info_label("空"))
 		return
-	_detail_root.add_child(_make_resource_slot_grid(inventory, {}, false, 4))
+	_detail_root.add_child(_make_resource_slot_grid(inventory, {}, false, 4, Vector2(42.5, 42.5)))
 	_detail_root.add_child(_make_info_label("建设质料产出：%s / 分钟" % main_base.construction_mass_per_minute))
 	_detail_root.add_child(_make_info_label("服务半径：%s 格" % main_base.service_radius_cells))
+
+func _add_storage_section(storage_node: Node) -> void:
+	_detail_root.add_child(_make_section_label("库存"))
+	var inventory: Dictionary = storage_node.call("get_all_resources")
+	if inventory.is_empty():
+		_detail_root.add_child(_make_info_label("空"))
+		return
+	_detail_root.add_child(_make_resource_slot_grid(inventory, {}, false, 4, Vector2(42.5, 42.5)))
 
 func _add_processor_section(processor: ProcessorBuilding) -> void:
 	_detail_root.add_child(_make_section_label("当前配方"))
@@ -329,9 +339,15 @@ func _add_cache_section(title: String, cache: Dictionary) -> void:
 		return
 	_detail_root.add_child(_make_resource_slot_grid(cache, {}, false, 4))
 
-func _make_resource_slot_grid(resources: Dictionary, current_amounts: Dictionary = {}, show_required: bool = false, columns: int = 4) -> GridContainer:
+func _make_resource_slot_grid(
+		resources: Dictionary,
+		current_amounts: Dictionary = {},
+		show_required: bool = false,
+		columns: int = 4,
+		slot_size: Vector2 = Vector2(34, 34)
+) -> GridContainer:
 	var grid := ItemSlotGridScript.new()
-	grid.slot_size = Vector2(34, 34)
+	grid.slot_size = slot_size
 	grid.setup_from_resources(resources, _resource_defs, current_amounts, show_required, columns)
 	return grid
 

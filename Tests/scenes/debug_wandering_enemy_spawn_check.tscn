@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Tests/scenes/debug_wandering_enemy_spawn_check.gd" id="1_debug_enemy_spawn"]
+
+[node name="DebugWanderingEnemySpawnCheck" type="Node"]
+script = ExtResource("1_debug_enemy_spawn")

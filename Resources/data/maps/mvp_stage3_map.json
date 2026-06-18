@@ -260,7 +260,7 @@
 	{
 	  "id": "crystal_ore_002",
 	  "resource_id": "crystal_ore",
-	  "grid_origin": [103, 73],
+	  "grid_origin": [87, 79],
 	  "grid_size": [1, 1],
 	  "amount": 8000
 	},
@@ -274,7 +274,7 @@
 	{
 	  "id": "coal_002",
 	  "resource_id": "coal",
-	  "grid_origin": [111, 67],
+	  "grid_origin": [91, 53],
 	  "grid_size": [1, 1],
 	  "amount": 9000
 	},
@@ -288,17 +288,51 @@
 	{
 	  "id": "water_source_south_001",
 	  "resource_id": "water",
-	  "grid_origin": [101, 79],
+	  "grid_origin": [94, 82],
 	  "grid_size": [1, 1],
 	  "amount": 12000
 	}
   ],
-  "debug_enemies": [],
+  "enemy_patrols": [
+	{
+	  "id": "crystal_entrance_armored_patrol_001",
+	  "unit_type": "armored_scout",
+	  "grid_origin": [86, 56]
+	},
+	{
+	  "id": "crystal_entrance_armored_patrol_002",
+	  "unit_type": "armored_scout",
+	  "grid_origin": [88, 59]
+	},
+	{
+	  "id": "crystal_entrance_armored_patrol_003",
+	  "unit_type": "armored_scout",
+	  "grid_origin": [88, 65]
+	}
+  ],
+  "debug_enemies": [
+	{
+	  "id": "debug_wandering_target_001",
+	  "display_name": "调试游荡靶标",
+	  "grid_path": [[62, 58], [68, 58], [68, 64], [62, 64]],
+	  "loop": true
+	}
+  ],
   "enemy_nests": [
 	{
 	  "id": "enemy_nest_001",
 	  "nest_type": "weak_scavenger_nest",
 	  "grid_origin": [65, 73]
+	},
+	{
+	  "id": "crystal_resource_outpost_001",
+	  "nest_type": "crystal_armored_outpost",
+	  "grid_origin": [91, 78]
+	},
+	{
+	  "id": "armored_scavenger_command_nest_001",
+	  "nest_type": "armored_scavenger_command_nest",
+	  "grid_origin": [108, 68]
 	}
   ]
 }

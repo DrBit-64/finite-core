@@ -7,6 +7,7 @@
       "icon_path": "res://Resources/art/enemies/scavenger_hound.svg",
       "max_hp": 90,
       "speed": 135.0,
+      "visual_size": [32, 32],
       "melee_damage": 16,
       "melee_range": 32.0,
       "melee_cooldown_seconds": 1.0,
@@ -14,11 +15,60 @@
       "hound_follow_up_radius": 180.0
     },
     {
+      "id": "armored_scout",
+      "display_name": "弱化装甲巡查者",
+      "icon_path": "res://Resources/art/enemies/armored_rhino.svg",
+      "max_hp": 125,
+      "speed": 108.0,
+      "visual_size": [44, 44],
+      "armor_type": "armored",
+      "damage_type": "melee",
+      "melee_damage": 10,
+      "melee_range": 32.0,
+      "melee_cooldown_seconds": 1.35,
+      "guard_aggro_radius": 260.0,
+      "hound_follow_up_radius": 150.0,
+      "pool_name": "armored_scout"
+    },
+    {
+      "id": "armored_patroller",
+      "display_name": "装甲巡查者",
+      "icon_path": "res://Resources/art/enemies/armored_rhino.svg",
+      "max_hp": 185,
+      "speed": 112.0,
+      "visual_size": [48, 48],
+      "armor_type": "armored",
+      "damage_type": "melee",
+      "melee_damage": 18,
+      "melee_range": 34.0,
+      "melee_cooldown_seconds": 1.25,
+      "guard_aggro_radius": 320.0,
+      "hound_follow_up_radius": 190.0,
+      "pool_name": "armored_patroller"
+    },
+    {
+      "id": "armored_rhino",
+      "display_name": "装甲冲撞者",
+      "icon_path": "res://Resources/art/enemies/armored_charger.svg",
+      "max_hp": 260,
+      "speed": 118.0,
+      "visual_size": [54, 54],
+      "armor_type": "armored",
+      "damage_type": "melee",
+      "melee_damage": 28,
+      "melee_range": 36.0,
+      "melee_cooldown_seconds": 1.15,
+      "guard_aggro_radius": 360.0,
+      "hound_follow_up_radius": 220.0,
+      "pool_name": "armored_rhino"
+    },
+    {
       "id": "debug_enemy",
       "display_name": "调试靶机",
       "icon_path": "res://Resources/art/units/debug_enemy_unit.svg",
-      "max_hp": 420,
+      "max_hp": 2000,
       "speed": 54.0,
+      "visual_size": [46, 46],
       "lifespan_seconds": 0.0
     }
   ],
@@ -35,6 +85,50 @@
       "guard_replenish_seconds": 30.0,
       "reward": {
         "technology_item": "初级感应线圈"
+      }
+    },
+    {
+      "id": "armored_scavenger_nest",
+      "display_name": "装甲拾荒大巢穴",
+      "icon_path": "res://Resources/art/enemies/armored_nest.svg",
+      "grid_size": [2, 2],
+      "max_hp": 360,
+      "armor_type": "structure_armor",
+      "guard_unit_type": "armored_rhino",
+      "initial_guard_count": 4,
+      "max_guard_count": 6,
+      "guard_replenish_seconds": 36.0,
+      "reward": {
+        "technology_item": "high_frequency_oscillator"
+      }
+    },
+    {
+      "id": "crystal_armored_outpost",
+      "display_name": "晶体荒原装甲前哨",
+      "icon_path": "res://Resources/art/enemies/armored_nest.svg",
+      "grid_size": [2, 2],
+      "max_hp": 300,
+      "armor_type": "structure_armor",
+      "guard_unit_type": "armored_patroller",
+      "initial_guard_count": 3,
+      "max_guard_count": 3,
+      "guard_replenish_seconds": 42.0,
+      "reward": {}
+    },
+    {
+      "id": "armored_scavenger_command_nest",
+      "display_name": "装甲拾荒指挥巢",
+      "icon_path": "res://Resources/art/enemies/armored_nest.svg",
+      "grid_size": [3, 3],
+      "max_hp": 820,
+      "armor_type": "structure_armor",
+      "guard_unit_type": "armored_rhino",
+      "initial_guard_count": 7,
+      "max_guard_count": 8,
+      "guard_replenish_seconds": 40.0,
+      "reward": {
+        "technology_item": "high_frequency_oscillator",
+        "reveals_signal": "next_region_hint"
       }
     }
   ]

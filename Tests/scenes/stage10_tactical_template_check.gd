@@ -19,6 +19,12 @@ func _ready() -> void:
 	_expect(bool(compiled.get("state_flag_defaults", {}).has("rallied")), "集结模板应声明 rallied 状态")
 	_expect(bool(compiled.get("state_flag_defaults", {}).has("squad_ready")), "集结模板应声明 squad_ready 状态")
 
+	var heat_template := TacticalTemplateCompilerScript.make_instance("weapon_heat_control")
+	var mixed_compiled: Dictionary = TacticalTemplateCompilerScript.compile_templates([template, heat_template])
+	var mixed_rules: Array = mixed_compiled.get("rules", [])
+	_expect(not mixed_rules.is_empty(), "Mixed tactical templates should compile rules.")
+	_expect(str(mixed_rules[0].get("action", "")) == "hold_fire_for_heat", "Heat control should compile before rally default-combat handoff.")
+
 	var library := BlueprintLibraryScript.new()
 	var rally_blueprint: UnitBlueprint = library.create_rally_variant(basic_blueprint, "测试集结模板蓝图")
 	_expect(rally_blueprint.tactical_templates.size() == 1, "集结变体应保存战术模板实例")

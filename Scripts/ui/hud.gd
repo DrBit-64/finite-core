@@ -3,6 +3,7 @@ class_name MvpHud
 
 signal build_mode_requested(building_id: StringName)
 signal processor_recipe_selected(processor: Node, recipe_id: StringName)
+signal processor_pause_toggled(processor: Node)
 signal building_demolish_requested(building: Node)
 signal forge_rally_point_requested(forge: Node)
 signal blueprint_library_requested
@@ -1338,6 +1339,7 @@ func _ensure_operation_panel() -> void:
 		return
 	_building_operation_panel = BuildingOperationPanelScript.new()
 	_building_operation_panel.processor_recipe_selected.connect(_on_operation_processor_recipe_selected)
+	_building_operation_panel.processor_pause_toggled.connect(_on_operation_processor_pause_toggled)
 	_building_operation_panel.building_demolish_requested.connect(_on_operation_building_demolish_requested)
 	_building_operation_panel.forge_rally_point_requested.connect(_on_operation_forge_rally_point_requested)
 	_building_operation_panel.forge_blueprint_picker_requested.connect(_on_operation_forge_blueprint_picker_requested)
@@ -1349,6 +1351,9 @@ func _ensure_operation_panel() -> void:
 
 func _on_operation_processor_recipe_selected(processor: Node, recipe_id: StringName) -> void:
 	processor_recipe_selected.emit(processor, recipe_id)
+
+func _on_operation_processor_pause_toggled(processor: Node) -> void:
+	processor_pause_toggled.emit(processor)
 
 func _on_operation_building_demolish_requested(building: Node) -> void:
 	building_demolish_requested.emit(building)
