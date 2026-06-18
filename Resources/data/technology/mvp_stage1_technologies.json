@@ -16,7 +16,7 @@
       },
       "unlocks": {
         "chassis": ["light_chassis"],
-        "upgrades": ["light_chassis_hp_1", "light_chassis_speed_1"]
+        "upgrades": ["reinforced_frame_1", "overclocked_drive_1", "rifle_calibration_1", "rapid_cycle_1"]
       }
     },
     {
@@ -33,6 +33,7 @@
         "copper_wire": 10
       },
       "unlocks": {
+        "unit_types": ["kinetic_chainsaw_robot"],
         "modules": ["kinetic_chainsaw"],
         "weapons": ["kinetic_chainsaw"]
       }
@@ -54,7 +55,26 @@
         "modules": ["basic_logic_board"],
         "conditions": ["self_flag_is"],
         "actions": ["default_combat"],
-        "upgrades": ["logic_slot_1"]
+        "upgrades": ["logic_board_1"]
+      }
+    },
+    {
+      "id": "stage2_remote_logistics_and_water",
+      "display_name": "\u9636\u6bb52\uff1a\u8fdc\u7a0b\u7269\u6d41\u4e0e\u6c34\u8d44\u6e90",
+      "description": "\u5728\u6467\u6bc1\u7b2c\u4e00\u5904\u654c\u5de2\u5e76\u5efa\u7acb\u57fa\u7840\u903b\u8f91\u677f\u540e\uff0c\u89e3\u9501\u7b2c\u4e8c\u8d44\u6e90\u5708\u6240\u9700\u7684\u6c34\u6cf5\u548c\u524d\u7ebf\u8865\u7ed9\u70b9\u3002",
+      "stage": 2,
+      "duration_seconds": 12.0,
+      "key_item_requirements": ["initial_sensor_coil"],
+      "prerequisites": ["stage1_basic_logic_capacity"],
+      "costs": {
+        "construction_mass": 110,
+        "iron_plate": 24,
+        "copper_wire": 24
+      },
+      "unlocks": {
+        "resources": ["water"],
+        "buildings": ["water_pump", "forward_supply_point"],
+        "upgrades": ["cargo_bay_1"]
       }
     }
   ]

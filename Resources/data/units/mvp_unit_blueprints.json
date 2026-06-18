@@ -1,69 +1,41 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "unit_blueprints": [
     {
       "id": "basic_rifle_robot",
       "display_name": "基础步枪机器人",
       "version": 1,
-      "icon_path": "res://Resources/art/blueprints/basic_rifle_robot.svg",
-      "chassis_id": "light_chassis",
-      "chassis_display_name": "轻型底盘",
-      "chassis_icon_path": "res://Resources/art/chassis/light_chassis.svg",
-      "module_ids": [
-        "rifle_module"
-      ],
-      "module_display_names": [
-        "步枪模块"
-      ],
-      "module_icon_paths": [
-        "res://Resources/art/modules/rifle_module.svg"
-      ],
+      "unit_type_id": "basic_rifle_robot",
+      "upgrade_ids": [],
       "production_recipe_id": "forge_basic_rifle_robot",
       "default_brain_enabled": true,
       "tactical_templates": [],
       "state_flag_defaults": {},
-      "embedded_rules": [],
-      "stats": {
-        "max_hp": 60,
-        "speed": 90.0,
-        "lifespan_seconds": 120.0,
-        "target_lock_seconds": 1.5,
-        "fire_range": 140.0,
-        "damage": 8,
-        "fire_cooldown_seconds": 0.8
-      }
+      "embedded_rules": []
+    },
+    {
+      "id": "kinetic_chainsaw_robot",
+      "display_name": "近战链锯机器人",
+      "version": 1,
+      "unit_type_id": "kinetic_chainsaw_robot",
+      "upgrade_ids": [],
+      "production_recipe_id": "forge_kinetic_chainsaw_robot",
+      "default_brain_enabled": true,
+      "tactical_templates": [],
+      "state_flag_defaults": {},
+      "embedded_rules": []
     },
     {
       "id": "battlefield_hauler",
       "display_name": "战地货运机器人",
       "version": 1,
-      "icon_path": "res://Resources/art/blueprints/battlefield_hauler.svg",
-      "chassis_id": "standard_cargo_chassis",
-      "chassis_display_name": "标准货运底盘",
-      "chassis_icon_path": "res://Resources/art/chassis/standard_cargo_chassis.svg",
-      "module_ids": [
-        "expanded_cargo_pack"
-      ],
-      "module_display_names": [
-        "扩展背包模块"
-      ],
-      "module_icon_paths": [
-        "res://Resources/art/modules/expanded_cargo_pack.svg"
-      ],
+      "unit_type_id": "battlefield_hauler",
+      "upgrade_ids": [],
       "production_recipe_id": "forge_battlefield_hauler",
       "default_brain_enabled": false,
       "tactical_templates": [],
       "state_flag_defaults": {},
-      "embedded_rules": [],
-      "stats": {
-        "max_hp": 85,
-        "speed": 78.0,
-        "lifespan_seconds": 0.0,
-        "target_lock_seconds": 0.0,
-        "fire_range": 0.0,
-        "damage": 0,
-        "fire_cooldown_seconds": 1.0
-      }
+      "embedded_rules": []
     }
   ]
 }

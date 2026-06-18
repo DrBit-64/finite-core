@@ -8,6 +8,9 @@ const ACTION_ICON_RALLY := preload("res://Resources/art/ui/state_rally.svg")
 const ACTION_ICON_WAIT := preload("res://Resources/art/ui/state_wait.svg")
 const ACTION_ICON_DEFAULT_BRAIN := preload("res://Resources/art/ui/state_default_brain.svg")
 
+static var _rally_release_windows: Dictionary = {}
+const RALLY_READY_SYNC_WINDOW_MSEC := 2500
+
 @export var display_name: String = "基础步枪机器人"
 @export var max_hp: int = 60
 @export var speed: float = 90.0
@@ -34,6 +37,10 @@ const ACTION_ICON_DEFAULT_BRAIN := preload("res://Resources/art/ui/state_default
 @export var melee_cooldown_seconds: float = 1.0
 @export var guard_aggro_radius: float = 0.0
 @export var hound_follow_up_radius: float = 180.0
+@export var separation_radius: float = 34.0
+@export var separation_strength: float = 28.0
+@export var separation_max_step: float = 8.0
+@export var melee_target_lateral_offset: float = 14.0
 
 var hp: int = 60
 var blueprint_id: StringName = &""
@@ -77,7 +84,12 @@ var _combat_target_registry: Node = null
 var _last_damage_source_payload: Dictionary = {}
 var _damage_flash_until_msec: int = 0
 var _death_tween: Tween = null
+var _module_icon_path: String = ""
+var _loaded_module_icon_path: String = ""
+var _chainsaw_swing_until_msec: int = 0
+var _chainsaw_hit_center: Vector2 = Vector2.ZERO
 var action_icon: Sprite2D = null
+var module_sprite: Sprite2D = null
 
 @onready var unit_sprite: Sprite2D = get_node_or_null("UnitSprite")
 @onready var hp_bar: ProgressBar = get_node_or_null("HPBar")
@@ -134,6 +146,7 @@ func _physics_process(delta: float) -> void:
 
 	if movement_component:
 		movement_component.apply_to(self)
+	_apply_separation_micro_offset(delta)
 	_update_facing(delta)
 	_update_unit_visuals()
 
@@ -145,7 +158,8 @@ func setup_from_blueprint(blueprint: UnitBlueprint, next_rally_point: Vector2 = 
 	blueprint_snapshot_id = StringName(blueprint.get_snapshot_key())
 	chassis_id = blueprint.chassis_id
 	weapon_audio_id = _get_primary_weapon_audio_id(blueprint)
-	active_upgrade_ids.clear()
+	_module_icon_path = _get_primary_module_icon_path(blueprint)
+	active_upgrade_ids = blueprint.upgrade_ids.duplicate()
 	display_name = blueprint.display_name
 	if not blueprint.icon_path.is_empty():
 		icon_path = blueprint.icon_path
@@ -157,7 +171,10 @@ func setup_from_blueprint(blueprint: UnitBlueprint, next_rally_point: Vector2 = 
 		fire_range = blueprint.stats.fire_range
 		bullet_damage = blueprint.stats.damage
 		fire_cooldown_seconds = blueprint.stats.fire_cooldown_seconds
-	cargo_capacity = _get_blueprint_cargo_capacity(blueprint)
+	melee_damage = bullet_damage
+	melee_range = fire_range
+	melee_cooldown_seconds = fire_cooldown_seconds
+	cargo_capacity = blueprint.stats.cargo_capacity if blueprint.stats and blueprint.stats.cargo_capacity > 0 else _get_blueprint_cargo_capacity(blueprint)
 	if cargo_capacity > 0:
 		tags = ["cargo", "logistics"]
 		brain_mode = "logistics"
@@ -194,18 +211,18 @@ func apply_campaign_upgrades(upgrade_ids: Array[StringName]) -> void:
 	_configure_components()
 	_update_unit_visuals()
 
-func setup_debug_enemy(next_name: String, path_points: Array[Vector2], loop_path: bool = true) -> void:
-	display_name = next_name
+func setup_debug_enemy(next_name: String, path_points: Array[Vector2], loop_path: bool = true, config: Dictionary = {}) -> void:
+	display_name = next_name if not next_name.is_empty() else str(config.get("display_name", "调试靶机"))
 	team = "Team_B"
 	brain_mode = "path_patrol"
 	blueprint_snapshot_id = &""
 	default_brain_enabled = false
 	weapon_enabled = false
-	max_hp = 420
-	speed = 54.0
-	lifespan_seconds = 0.0
+	max_hp = int(config.get("max_hp", 420))
+	speed = float(config.get("speed", 54.0))
+	lifespan_seconds = float(config.get("lifespan_seconds", 0.0))
 	pool_name = "debug_enemy_unit"
-	icon_path = "res://Resources/art/units/debug_enemy_unit.svg"
+	icon_path = str(config.get("icon_path", "res://Resources/art/units/debug_enemy_unit.svg"))
 	set_patrol_path(path_points, loop_path)
 	reset_state()
 
@@ -280,6 +297,15 @@ func _get_primary_weapon_audio_id(blueprint: UnitBlueprint) -> StringName:
 		if module_text.contains("chainsaw"):
 			return module_id
 	return blueprint.module_ids[0] if not blueprint.module_ids.is_empty() else &"default"
+
+func _get_primary_module_icon_path(blueprint: UnitBlueprint) -> String:
+	if blueprint == null or blueprint.module_icon_paths.is_empty():
+		return ""
+	for i in range(blueprint.module_ids.size()):
+		var module_text := String(blueprint.module_ids[i])
+		if module_text.contains("chainsaw") and i < blueprint.module_icon_paths.size():
+			return blueprint.module_icon_paths[i]
+	return blueprint.module_icon_paths[0]
 
 func get_inspector_lines() -> Array[String]:
 	var target_name := "无"
@@ -372,17 +398,60 @@ func get_radar_targets() -> Array[Node2D]:
 	return _get_sensed_enemies()
 
 func get_target_position(target: Node2D = self) -> Vector2:
+	var base_position := global_position
 	if target and target != self and target.has_method("get_target_position"):
-		return target.call("get_target_position")
-	if target:
-		return target.global_position
-	return global_position
+		base_position = target.call("get_target_position")
+	elif target:
+		base_position = target.global_position
+	if target != self and _uses_melee_target_offset():
+		return base_position + _get_stable_melee_lateral_offset(target, base_position)
+	return base_position
 
 func is_current_enemy_in_fire_range() -> bool:
 	var enemy := get_current_enemy()
 	if enemy == null:
 		return false
 	return global_position.distance_to(get_target_position(enemy)) <= fire_range
+
+func _apply_separation_micro_offset(delta: float) -> void:
+	if delta <= 0.0 or separation_radius <= 0.0 or separation_strength <= 0.0:
+		return
+	var group_name: String = "team_a" if team == "Team_A" else "team_b"
+	var push: Vector2 = Vector2.ZERO
+	var neighbor_count: int = 0
+	for unit in get_tree().get_nodes_in_group(group_name):
+		if unit == self or not (unit is RobotUnit):
+			continue
+		var other := unit as RobotUnit
+		if not other.is_inside_tree() or not other.is_alive():
+			continue
+		var offset: Vector2 = global_position - other.global_position
+		var distance: float = offset.length()
+		if distance <= 0.001 or distance >= separation_radius:
+			continue
+		var weight: float = 1.0 - distance / separation_radius
+		push += offset.normalized() * weight
+		neighbor_count += 1
+	if neighbor_count <= 0 or push.length() <= 0.001:
+		return
+	var step: Vector2 = push.normalized() * minf(separation_max_step, separation_strength * delta * minf(1.0, push.length()))
+	global_position += step
+
+func _uses_melee_target_offset() -> bool:
+	return _uses_chainsaw_weapon() or brain_mode == "melee_hound"
+
+func _get_stable_melee_lateral_offset(target: Node2D, target_position: Vector2) -> Vector2:
+	if target == null or melee_target_lateral_offset <= 0.0:
+		return Vector2.ZERO
+	var approach := target_position - global_position
+	if approach.length() <= 0.001:
+		approach = Vector2.RIGHT
+	var side := Vector2(-approach.y, approach.x).normalized()
+	var self_key := int(get_instance_id()) & 3
+	var target_key := int(target.get_instance_id()) & 3
+	var sign_value := 1.0 if ((self_key + target_key) % 2 == 0) else -1.0
+	var scale := 0.45 + 0.18 * float((self_key + target_key) % 4)
+	return side * sign_value * melee_target_lateral_offset * scale
 
 func hp_ratio() -> float:
 	if health_component:
@@ -471,6 +540,118 @@ func count_allies_near_rally_point(radius: float = 90.0) -> int:
 		if rally_point_position.distance_to((unit as Node2D).global_position) <= radius:
 			count += 1
 	return count
+
+func is_rally_squad_ready(radius: float = 90.0) -> bool:
+	if not has_rally_point:
+		return false
+	var release := _get_active_rally_release(radius)
+	if release.is_empty():
+		return false
+	var unit_ids: Dictionary = release.get("unit_ids", {})
+	return bool(unit_ids.get(int(get_instance_id()), false))
+
+func mark_rally_squad_ready(radius: float = 90.0) -> void:
+	try_mark_rally_squad_ready(radius, 1)
+
+func try_mark_rally_squad_ready(radius: float = 90.0, required_allies: int = 1) -> bool:
+	if not has_rally_point:
+		return false
+	if is_rally_squad_ready(radius):
+		sync_rally_squad_ready(radius)
+		return true
+	var unit_ids := _collect_rally_release_unit_ids(radius)
+	if unit_ids.size() < maxi(1, required_allies):
+		return false
+	_rally_release_windows[_get_rally_ready_key(radius)] = {
+		"expires_msec": Time.get_ticks_msec() + RALLY_READY_SYNC_WINDOW_MSEC,
+		"unit_ids": unit_ids,
+	}
+	_broadcast_rally_squad_ready(radius)
+	return is_rally_squad_ready(radius)
+
+func sync_rally_squad_ready(radius: float = 90.0) -> void:
+	if not is_rally_squad_ready(radius):
+		return
+	_set_squad_ready_flag()
+
+func count_rally_release_candidates(radius: float = 90.0) -> int:
+	return _collect_rally_release_unit_ids(radius).size()
+
+static func clear_shared_rally_readiness() -> void:
+	_rally_release_windows.clear()
+
+func _get_rally_ready_key(radius: float) -> String:
+	var cell := 24.0
+	return "%s:%d:%d:%d" % [
+		team,
+		roundi(rally_point_position.x / cell),
+		roundi(rally_point_position.y / cell),
+		roundi(radius),
+	]
+
+func _broadcast_rally_squad_ready(radius: float) -> void:
+	if get_tree() == null:
+		return
+	var release := _get_active_rally_release(radius)
+	if release.is_empty():
+		return
+	var unit_ids: Dictionary = release.get("unit_ids", {})
+	for unit in get_tree().get_nodes_in_group("combat_unit"):
+		if unit == null or not is_instance_valid(unit) or not (unit is RobotUnit):
+			continue
+		var other := unit as RobotUnit
+		if not other.is_inside_tree() or not other.is_alive():
+			continue
+		if not unit_ids.has(int(other.get_instance_id())):
+			continue
+		other._set_squad_ready_flag()
+
+func _collect_rally_release_unit_ids(radius: float) -> Dictionary:
+	var unit_ids := {}
+	if get_tree() == null:
+		return unit_ids
+	var ready_key := _get_rally_ready_key(radius)
+	var release_radius := radius + 24.0
+	for unit in get_tree().get_nodes_in_group("combat_unit"):
+		if unit == null or not is_instance_valid(unit) or not (unit is RobotUnit):
+			continue
+		var other := unit as RobotUnit
+		if not other.is_inside_tree() or not other.is_alive():
+			continue
+		if other.get_state_flag(&"squad_ready"):
+			continue
+		if not other.has_rally_point or other.team != team:
+			continue
+		if other._get_rally_ready_key(radius) != ready_key:
+			continue
+		var distance := other.distance_to_rally_point()
+		if distance > release_radius:
+			continue
+		if distance > radius and not other.get_state_flag(&"rallied"):
+			continue
+		unit_ids[int(other.get_instance_id())] = true
+	if not get_state_flag(&"squad_ready"):
+		unit_ids[int(get_instance_id())] = true
+	return unit_ids
+
+func _get_active_rally_release(radius: float) -> Dictionary:
+	_prune_rally_release_windows()
+	var value = _rally_release_windows.get(_get_rally_ready_key(radius), {})
+	if typeof(value) != TYPE_DICTIONARY:
+		return {}
+	return value
+
+func _prune_rally_release_windows() -> void:
+	var now := Time.get_ticks_msec()
+	for key in _rally_release_windows.keys():
+		var value = _rally_release_windows[key]
+		if typeof(value) != TYPE_DICTIONARY or int(value.get("expires_msec", 0)) <= now:
+			_rally_release_windows.erase(key)
+
+func _set_squad_ready_flag() -> void:
+	if get_state_flag(&"squad_ready"):
+		return
+	set_state_flag(&"squad_ready", true, "Rally squad ready")
 
 func get_state_flag(flag_id: StringName) -> bool:
 	if state_flags == null:
@@ -576,6 +757,9 @@ func record_brain_trigger(key: StringName, description: String) -> void:
 	_current_rule_bubble_until_msec = now + 1800
 
 func fire_weapon(target: Node2D) -> void:
+	if _uses_chainsaw_weapon():
+		_try_fire_chainsaw(target)
+		return
 	if weapon_component == null:
 		return
 	if target:
@@ -587,6 +771,59 @@ func fire_weapon(target: Node2D) -> void:
 	var spawn_parent := _get_projectile_parent()
 	weapon_component.try_fire(team, muzzle, target, spawn_parent)
 	current_fire_state = _format_fire_state()
+
+func _try_fire_chainsaw(target: Node2D) -> void:
+	if target == null or not is_instance_valid(target):
+		current_fire_state = "无目标"
+		return
+	var target_position := get_target_position(target)
+	_turn_towards(target_position, get_physics_process_delta_time())
+	if not _is_facing_position(target_position):
+		current_fire_state = "转向中"
+		return
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _last_melee_attack_seconds < fire_cooldown_seconds:
+		current_fire_state = "冷却"
+		return
+	var hit_center := global_position + Vector2.RIGHT.rotated(_facing_angle) * minf(fire_range * 0.46, 42.0)
+	var hit_radius := maxf(28.0, fire_range * 0.58)
+	var hit_count := 0
+	for enemy in _get_sensed_enemies():
+		if enemy == null or not is_instance_valid(enemy):
+			continue
+		var enemy_position := get_target_position(enemy)
+		if enemy_position.distance_to(hit_center) > hit_radius:
+			continue
+		if not _is_within_chainsaw_arc(enemy_position):
+			continue
+		if enemy.has_method("take_damage_from"):
+			enemy.call("take_damage_from", bullet_damage, _make_weapon_source_payload())
+		elif enemy.has_method("take_damage"):
+			enemy.call("take_damage", bullet_damage)
+		hit_count += 1
+	_last_melee_attack_seconds = now
+	_chainsaw_swing_until_msec = Time.get_ticks_msec() + 180
+	_chainsaw_hit_center = to_local(hit_center)
+	current_fire_state = "链锯命中 %d" % hit_count if hit_count > 0 else "链锯挥空"
+	record_brain_trigger(&"chainsaw_sweep", current_fire_state)
+	queue_redraw()
+
+func _is_within_chainsaw_arc(world_position: Vector2) -> bool:
+	var direction := world_position - global_position
+	if direction.length() <= 0.001:
+		return true
+	return absf(angle_difference(_facing_angle, direction.angle())) <= 1.45
+
+func _make_weapon_source_payload() -> Dictionary:
+	return {
+		"team": team,
+		"robot_id": str(name),
+		"weapon_id": String(weapon_audio_id),
+		"blueprint_id": String(blueprint_id),
+		"blueprint_version": blueprint_version,
+		"blueprint_snapshot_id": String(blueprint_snapshot_id),
+		"blueprint_name": display_name,
+	}
 
 func take_damage(amount: int) -> void:
 	if _is_dead:
@@ -734,6 +971,7 @@ func _update_unit_visuals() -> void:
 				unit_sprite.scale = Vector2(visual_size.x / texture_size.x, visual_size.y / texture_size.y)
 		unit_sprite.rotation = 0.0 if _uses_fixed_icon_orientation() else _facing_angle
 		unit_sprite.modulate = Color(1.0, 0.48, 0.38, 1.0) if Time.get_ticks_msec() < _damage_flash_until_msec else Color.WHITE
+	_update_module_visuals()
 	if muzzle:
 		muzzle.position = Vector2.RIGHT.rotated(_facing_angle) * muzzle_distance
 	if hp_bar:
@@ -752,6 +990,10 @@ func _update_unit_visuals() -> void:
 		_layout_action_bubble(bubble_text, action_label.visible)
 	queue_redraw()
 
+func _update_module_visuals() -> void:
+	if module_sprite:
+		module_sprite.visible = false
+
 func _update_facing(delta: float) -> void:
 	if _should_face_attack_target():
 		_turn_towards(get_target_position(current_target), delta)
@@ -761,6 +1003,9 @@ func _update_facing(delta: float) -> void:
 
 func _uses_fixed_icon_orientation() -> bool:
 	return brain_mode == "logistics" or tags.has("cargo") or tags.has("logistics")
+
+func _uses_chainsaw_weapon() -> bool:
+	return String(weapon_audio_id).contains("chainsaw") or String(blueprint_id).contains("chainsaw")
 
 func _turn_towards(world_position: Vector2, delta: float) -> void:
 	var direction := world_position - global_position
@@ -778,6 +1023,8 @@ func _is_facing_position(world_position: Vector2) -> bool:
 	var direction := world_position - global_position
 	if direction.length() <= 0.001:
 		return true
+	if _uses_chainsaw_weapon():
+		return absf(angle_difference(_facing_angle, direction.angle())) <= 0.82
 	return absf(angle_difference(_facing_angle, direction.angle())) <= fire_arc_radians
 
 func _should_face_attack_target() -> bool:
@@ -886,9 +1133,14 @@ func _unregister_combat_target() -> void:
 	_combat_target_registry = null
 
 func _draw() -> void:
-	if not _selected:
-		return
-	draw_arc(Vector2.ZERO, 28.0, 0.0, TAU, 64, Color(1.0, 0.86, 0.12, 0.95), 2.5)
+	if _uses_chainsaw_weapon() and Time.get_ticks_msec() <= _chainsaw_swing_until_msec:
+		var radius := maxf(24.0, fire_range * 0.34)
+		var start_angle := _facing_angle - 1.15
+		var end_angle := _facing_angle + 1.15
+		draw_arc(_chainsaw_hit_center, radius, start_angle, end_angle, 28, Color(1.0, 0.76, 0.18, 0.9), 3.0)
+		draw_arc(_chainsaw_hit_center, radius * 0.62, start_angle + 0.18, end_angle - 0.18, 22, Color(0.62, 0.95, 1.0, 0.55), 2.0)
+	if _selected:
+		draw_arc(Vector2.ZERO, 28.0, 0.0, TAU, 64, Color(1.0, 0.86, 0.12, 0.95), 2.5)
 
 func _format_team_name() -> String:
 	return "玩家" if team == "Team_A" else "调试敌军"
@@ -924,6 +1176,8 @@ func _format_movement_intent() -> String:
 			return "停止"
 
 func _format_fire_state() -> String:
+	if _uses_chainsaw_weapon():
+		return current_fire_state
 	if current_fire_state == "转向中":
 		return current_fire_state
 	if weapon_component == null:
@@ -965,6 +1219,17 @@ func _ensure_action_icon() -> void:
 		add_child(action_icon)
 	action_icon.visible = false
 	action_icon.scale = Vector2(0.82, 0.82)
+
+func _ensure_module_sprite() -> void:
+	if module_sprite != null:
+		return
+	module_sprite = get_node_or_null("ModuleSprite") as Sprite2D
+	if module_sprite == null:
+		module_sprite = Sprite2D.new()
+		module_sprite.name = "ModuleSprite"
+		module_sprite.z_index = 8
+		add_child(module_sprite)
+	module_sprite.visible = false
 
 func _update_action_icon(bubble_text: String, should_show: bool) -> void:
 	_ensure_action_icon()
@@ -1016,6 +1281,8 @@ func _get_action_icon_texture(bubble_text: String) -> Texture2D:
 func _get_blueprint_cargo_capacity(blueprint: UnitBlueprint) -> int:
 	if blueprint == null:
 		return 0
+	if blueprint.stats and blueprint.stats.cargo_capacity > 0:
+		return blueprint.stats.cargo_capacity
 	var capacity := 0
 	var chassis_text := String(blueprint.chassis_id)
 	if chassis_text.contains("cargo") or chassis_text.contains("hauler"):

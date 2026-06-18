@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "unit_types": [
+    {
+      "id": "basic_rifle_robot",
+      "display_name": "基础步枪机器人",
+      "description": "标准远程作战单位，适合承担默认火力与集结进攻。",
+      "tags": ["combat", "ranged"],
+      "icon_path": "res://Resources/art/blueprints/basic_rifle_robot.svg",
+      "chassis_id": "light_chassis",
+      "chassis_display_name": "轻型底盘",
+      "chassis_icon_path": "res://Resources/art/chassis/light_chassis.svg",
+      "module_ids": ["rifle_module"],
+      "module_display_names": ["步枪模块"],
+      "module_icon_paths": ["res://Resources/art/modules/rifle_module.svg"],
+      "production_recipe_id": "forge_basic_rifle_robot",
+      "production_time_seconds": 12.0,
+      "upgrade_point_limit": 3,
+      "default_brain_enabled": true,
+      "base_cost": {
+        "iron_plate": 6,
+        "copper_wire": 3,
+        "construction_mass": 5
+      },
+      "stats": {
+        "max_hp": 60,
+        "speed": 90.0,
+        "lifespan_seconds": 120.0,
+        "target_lock_seconds": 1.5,
+        "fire_range": 140.0,
+        "damage": 8,
+        "fire_cooldown_seconds": 0.8,
+        "cargo_capacity": 0,
+        "logic_capacity": 3
+      }
+    },
+    {
+      "id": "kinetic_chainsaw_robot",
+      "display_name": "近战链锯机器人",
+      "description": "高速近程作战单位，提供范围伤害。",
+      "tags": ["combat", "melee"],
+      "icon_path": "res://Resources/art/blueprints/kinetic_chainsaw_robot.svg",
+      "chassis_id": "light_chassis",
+      "chassis_display_name": "轻型突击底盘",
+      "chassis_icon_path": "res://Resources/art/chassis/light_chassis.svg",
+      "module_ids": ["kinetic_chainsaw"],
+      "module_display_names": ["动能链锯模块"],
+      "module_icon_paths": ["res://Resources/art/modules/kinetic_chainsaw.svg"],
+      "production_recipe_id": "forge_kinetic_chainsaw_robot",
+      "production_time_seconds": 13.0,
+      "upgrade_point_limit": 3,
+      "default_brain_enabled": true,
+      "stats": {
+        "max_hp": 80,
+        "speed": 112.0,
+        "lifespan_seconds": 120.0,
+        "target_lock_seconds": 1.0,
+        "fire_range": 72.0,
+        "damage": 9,
+        "fire_cooldown_seconds": 1.6,
+        "cargo_capacity": 0,
+        "logic_capacity": 3
+      },
+      "base_cost": {
+        "iron_plate": 8,
+        "copper_wire": 4,
+        "construction_mass": 7
+      }
+    },
+    {
+      "id": "battlefield_hauler",
+      "display_name": "战地货运机器人",
+      "description": "物流专用单位，负责远程资源、中继补给点与主基地之间的运输。",
+      "tags": ["logistics", "cargo"],
+      "icon_path": "res://Resources/art/blueprints/battlefield_hauler.svg",
+      "chassis_id": "standard_cargo_chassis",
+      "chassis_display_name": "标准货运底盘",
+      "chassis_icon_path": "res://Resources/art/chassis/standard_cargo_chassis.svg",
+      "module_ids": ["expanded_cargo_pack"],
+      "module_display_names": ["扩展货舱模块"],
+      "module_icon_paths": ["res://Resources/art/modules/expanded_cargo_pack.svg"],
+      "production_recipe_id": "forge_battlefield_hauler",
+      "production_time_seconds": 14.0,
+      "upgrade_point_limit": 3,
+      "default_brain_enabled": false,
+      "base_cost": {
+        "iron_plate": 7,
+        "copper_wire": 5,
+        "construction_mass": 8
+      },
+      "stats": {
+        "max_hp": 85,
+        "speed": 78.0,
+        "lifespan_seconds": 0.0,
+        "target_lock_seconds": 0.0,
+        "fire_range": 0.0,
+        "damage": 0,
+        "fire_cooldown_seconds": 1.0,
+        "cargo_capacity": 24,
+        "logic_capacity": 1
+      }
+    }
+  ],
+  "upgrades": [
+    {
+      "id": "reinforced_frame_1",
+      "display_name": "加固框架 I",
+      "description": "提高生命值，适合前线承压单位。",
+      "point_cost": 1,
+      "applies_to_tags": ["combat", "logistics"],
+      "stat_add": {"max_hp": 24},
+      "cost_add": {"iron_plate": 4, "construction_mass": 3}
+    },
+    {
+      "id": "overclocked_drive_1",
+      "display_name": "超频驱动 I",
+      "description": "提高移动速度，但需要更多铜线。",
+      "point_cost": 1,
+      "applies_to_tags": ["combat", "logistics"],
+      "stat_mult": {"speed": 1.12},
+      "cost_add": {"copper_wire": 5}
+    },
+    {
+      "id": "rifle_calibration_1",
+      "display_name": "步枪校准 I",
+      "description": "提高步枪火力与射程。",
+      "point_cost": 1,
+      "applies_to_unit_types": ["basic_rifle_robot"],
+      "stat_add": {"damage": 3, "fire_range": 18},
+      "cost_add": {"iron_plate": 2, "copper_wire": 4}
+    },
+    {
+      "id": "rapid_cycle_1",
+      "display_name": "快速循环 I",
+      "description": "缩短攻击间隔，显著提高消耗。",
+      "point_cost": 1,
+      "applies_to_tags": ["combat"],
+      "stat_mult": {"fire_cooldown_seconds": 0.88},
+      "cost_add": {"copper_wire": 6}
+    },
+    {
+      "id": "cargo_bay_1",
+      "display_name": "扩展货舱 I",
+      "description": "提高货运容量，但略微降低速度。",
+      "point_cost": 1,
+      "applies_to_tags": ["cargo"],
+      "stat_add": {"cargo_capacity": 8},
+      "stat_mult": {"speed": 0.94},
+      "cost_add": {"iron_plate": 5, "construction_mass": 5}
+    },
+    {
+      "id": "logic_board_1",
+      "display_name": "逻辑板 I",
+      "description": "提高蓝图可承载的战术复杂度。",
+      "point_cost": 1,
+      "applies_to_tags": ["combat", "logistics"],
+      "stat_add": {"logic_capacity": 1},
+      "cost_add": {"copper_wire": 6}
+    }
+  ]
+}

@@ -12,6 +12,7 @@ var key_items: Array[StringName] = []
 var unlocked_technologies: Array[StringName] = []
 var unlocked_resources: Array[StringName] = []
 var unlocked_buildings: Array[StringName] = []
+var unlocked_unit_types: Array[StringName] = []
 var unlocked_chassis: Array[StringName] = []
 var unlocked_weapons: Array[StringName] = []
 var unlocked_modules: Array[StringName] = []
@@ -22,6 +23,7 @@ var unlocked_upgrades: Array[StringName] = []
 
 func seed_defaults() -> void:
 	unlocked_buildings = [&"main_base", &"miner", &"processor", &"robot_forge", &"research_terminal"]
+	unlocked_unit_types = [&"basic_rifle_robot", &"battlefield_hauler"]
 	unlocked_chassis = [&"light_chassis"]
 	unlocked_weapons = [&"rifle_module"]
 	unlocked_modules = [&"rifle_module"]
@@ -72,6 +74,7 @@ func to_save_snapshot() -> Dictionary:
 		"unlocked_technologies": _string_array(unlocked_technologies),
 		"unlocked_resources": _string_array(unlocked_resources),
 		"unlocked_buildings": _string_array(unlocked_buildings),
+		"unlocked_unit_types": _string_array(unlocked_unit_types),
 		"unlocked_chassis": _string_array(unlocked_chassis),
 		"unlocked_weapons": _string_array(unlocked_weapons),
 		"unlocked_modules": _string_array(unlocked_modules),
@@ -84,6 +87,7 @@ func to_save_snapshot() -> Dictionary:
 func _apply_unlocks(unlocks: Dictionary) -> void:
 	_append_unique(unlocked_resources, unlocks.get("resources", []))
 	_append_unique(unlocked_buildings, unlocks.get("buildings", []))
+	_append_unique(unlocked_unit_types, unlocks.get("unit_types", []))
 	_append_unique(unlocked_chassis, unlocks.get("chassis", []))
 	_append_unique(unlocked_weapons, unlocks.get("weapons", []))
 	_append_unique(unlocked_modules, unlocks.get("modules", []))

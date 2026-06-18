@@ -12,6 +12,14 @@
       "melee_cooldown_seconds": 1.0,
       "guard_aggro_radius": 320.0,
       "hound_follow_up_radius": 180.0
+    },
+    {
+      "id": "debug_enemy",
+      "display_name": "调试靶机",
+      "icon_path": "res://Resources/art/units/debug_enemy_unit.svg",
+      "max_hp": 420,
+      "speed": 54.0,
+      "lifespan_seconds": 0.0
     }
   ],
   "nest_types": [

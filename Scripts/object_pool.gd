@@ -1,61 +1,69 @@
 extends Node
 
-# 存储池化的对象: { "bullet_type_A": [node1, node2...], "robot_type_B": [...] }
-var _pools: Dictionary = {}
 const _POOL_RETURN_PENDING_META := "_pool_return_pending"
 
-# 获取对象
+var _pools: Dictionary = {}
+
 func get_instance(scene_to_load: PackedScene, parent: Node, pool_name: String) -> Node:
-    if not _pools.has(pool_name):
-        _pools[pool_name] = []
-        
-    var instance: Node
-    if _pools[pool_name].is_empty():
-        # 如果池子空了，实例化一个新的
-        instance = scene_to_load.instantiate()
-        parent.add_child(instance)
-    else:
-        # 如果池子里有，拿出来重新激活
-        instance = _pools[pool_name].pop_back()
-        # 注意：不要把它从树里移除，只需重新显示并重置状态
-        
-    # 唤醒节点
-    instance.set_meta(_POOL_RETURN_PENDING_META, false)
-    if instance.has_method("reset_state"):
-        instance.reset_state() # 必须在对象脚本里写这个方法，重置血量、位置等
+	if scene_to_load == null:
+		return null
+	if not _pools.has(pool_name):
+		_pools[pool_name] = []
 
-    if instance is CollisionObject2D:
-        instance.set_deferred("disabled", false)
-    
-    # 恢复物理和进程
-    instance.process_mode = Node.PROCESS_MODE_INHERIT
-    instance.show()
-    return instance
+	var instance: Node = null
+	var pool: Array = _pools[pool_name]
+	while not pool.is_empty():
+		var candidate: Node = pool.pop_back()
+		if candidate != null and is_instance_valid(candidate):
+			instance = candidate
+			break
 
-# 回收对象（替代 queue_free）
-func return_instance(instance: Node, pool_name: String):
-    if instance == null or not is_instance_valid(instance):
-        return
-    if instance.get_meta(_POOL_RETURN_PENDING_META, false):
-        return
+	if instance == null:
+		instance = scene_to_load.instantiate()
+		if parent != null:
+			parent.add_child(instance)
+	elif instance.get_parent() == null and parent != null:
+		parent.add_child(instance)
 
-    instance.set_meta(_POOL_RETURN_PENDING_META, true)
-    call_deferred("_deferred_return_instance", instance, pool_name)
+	instance.set_meta(_POOL_RETURN_PENDING_META, false)
+	if instance.has_method("reset_state"):
+		instance.reset_state()
+
+	if instance is CollisionObject2D:
+		instance.set_deferred("disabled", false)
+
+	instance.process_mode = Node.PROCESS_MODE_INHERIT
+	instance.show()
+	return instance
+
+func return_instance(instance: Node, pool_name: String) -> void:
+	if instance == null or not is_instance_valid(instance):
+		return
+	if instance.get_meta(_POOL_RETURN_PENDING_META, false):
+		return
+
+	instance.set_meta(_POOL_RETURN_PENDING_META, true)
+	call_deferred("_deferred_return_instance", instance, pool_name)
 
 func _deferred_return_instance(instance: Node, pool_name: String) -> void:
-    if instance == null or not is_instance_valid(instance):
-        return
+	if instance == null or not is_instance_valid(instance):
+		return
 
-    instance.set_meta(_POOL_RETURN_PENDING_META, false)
+	instance.set_meta(_POOL_RETURN_PENDING_META, false)
+	instance.process_mode = Node.PROCESS_MODE_DISABLED
+	if instance is CollisionObject2D:
+		instance.set_deferred("disabled", true)
+	instance.hide()
 
-    # 停止节点的运行和物理计算，将其隐藏
-    instance.process_mode = Node.PROCESS_MODE_DISABLED
-    if instance is CollisionObject2D:
-        instance.set_deferred("disabled", true)
-    instance.hide()
+	if _pools.has(pool_name):
+		_pools[pool_name].append(instance)
+	else:
+		_pools[pool_name] = [instance]
 
-    # 放回池中
-    if _pools.has(pool_name):
-        _pools[pool_name].append(instance)
-    else:
-        _pools[pool_name] = [instance]
+func clear_all() -> void:
+	for pool_name in _pools.keys():
+		var pool: Array = _pools[pool_name]
+		for instance in pool:
+			if instance != null and is_instance_valid(instance):
+				instance.queue_free()
+	_pools.clear()

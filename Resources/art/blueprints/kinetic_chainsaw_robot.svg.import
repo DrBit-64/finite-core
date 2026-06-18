@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cwn8thau4t5va"
-path="res://.godot/imported/basic_rifle_robot.svg-08b6446a946e78a6f5b03c649add9244.ctex"
+uid="uid://byyfdoe02uaah"
+path="res://.godot/imported/kinetic_chainsaw_robot.svg-788d70366cf0e9934f9ccbf1954b6831.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Resources/art/blueprints/basic_rifle_robot.svg"
-dest_files=["res://.godot/imported/basic_rifle_robot.svg-08b6446a946e78a6f5b03c649add9244.ctex"]
+source_file="res://Resources/art/blueprints/kinetic_chainsaw_robot.svg"
+dest_files=["res://.godot/imported/kinetic_chainsaw_robot.svg-788d70366cf0e9934f9ccbf1954b6831.ctex"]
 
 [params]
 

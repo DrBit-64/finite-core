@@ -6,7 +6,7 @@ signal processor_recipe_selected(processor: Node, recipe_id: StringName)
 signal building_demolish_requested(building: Node)
 signal forge_rally_point_requested(forge: Node)
 signal blueprint_library_requested
-signal blueprint_save_requested(source_blueprint_id: StringName, display_name: String, tactical_templates: Array, embedded_rules: Array, state_flag_defaults: Dictionary, save_as_new: bool)
+signal blueprint_save_requested(source_blueprint_id: StringName, display_name: String, unit_type_id: StringName, upgrade_ids: Array[StringName], tactical_templates: Array, embedded_rules: Array, state_flag_defaults: Dictionary, save_as_new: bool)
 signal forge_blueprint_selected(forge: Node, blueprint_id: StringName)
 signal technology_research_requested(technology_id: StringName)
 signal new_game_requested
@@ -53,6 +53,8 @@ var _technology_defs: Array = []
 var _campaign_inventory_amounts: Dictionary = {}
 var _research_terminal_status: Dictionary = {}
 var _unlocked_template_ids: Array[StringName] = []
+var _unlocked_unit_type_ids: Array[StringName] = []
+var _unlocked_upgrade_ids: Array[StringName] = []
 var _blueprint_panel: PanelContainer = null
 var _blueprint_list: VBoxContainer = null
 var _blueprint_source_option: OptionButton = null
@@ -298,6 +300,8 @@ func set_blueprint_library(blueprints: Array[UnitBlueprint]) -> void:
 	_blueprints = blueprints.duplicate()
 	if _blueprint_overlay and _blueprint_overlay.has_method("set_blueprints"):
 		_blueprint_overlay.call("set_blueprints", _blueprints)
+	if _blueprint_overlay and _blueprint_overlay.has_method("set_blueprint_unlocks"):
+		_blueprint_overlay.call("set_blueprint_unlocks", _unlocked_unit_type_ids, _unlocked_upgrade_ids, _unlocked_template_ids)
 	if _blueprint_panel and _blueprint_panel.visible:
 		_rebuild_blueprint_panel()
 	if _combat_report_overlay and _combat_report_overlay.has_method("configure"):
@@ -312,6 +316,13 @@ func set_unlocked_template_ids(template_ids: Array[StringName]) -> void:
 	_unlocked_template_ids = template_ids.duplicate()
 	if _blueprint_overlay and _blueprint_overlay.has_method("set_unlocked_template_ids"):
 		_blueprint_overlay.call("set_unlocked_template_ids", _unlocked_template_ids)
+
+func set_blueprint_unlocks(unit_type_ids: Array[StringName], upgrade_ids: Array[StringName], template_ids: Array[StringName]) -> void:
+	_unlocked_unit_type_ids = unit_type_ids.duplicate()
+	_unlocked_upgrade_ids = upgrade_ids.duplicate()
+	_unlocked_template_ids = template_ids.duplicate()
+	if _blueprint_overlay and _blueprint_overlay.has_method("set_blueprint_unlocks"):
+		_blueprint_overlay.call("set_blueprint_unlocks", _unlocked_unit_type_ids, _unlocked_upgrade_ids, _unlocked_template_ids)
 
 func set_campaign_data(
 	state: Variant,
@@ -678,7 +689,9 @@ func _on_blueprint_button_pressed() -> void:
 	if _blueprint_panel:
 		_blueprint_panel.visible = false
 	_blueprint_overlay.call("set_blueprints", _blueprints)
-	if _blueprint_overlay.has_method("set_unlocked_template_ids"):
+	if _blueprint_overlay.has_method("set_blueprint_unlocks"):
+		_blueprint_overlay.call("set_blueprint_unlocks", _unlocked_unit_type_ids, _unlocked_upgrade_ids, _unlocked_template_ids)
+	elif _blueprint_overlay.has_method("set_unlocked_template_ids"):
 		_blueprint_overlay.call("set_unlocked_template_ids", _unlocked_template_ids)
 	_blueprint_overlay.visible = not _blueprint_overlay.visible
 
@@ -1121,8 +1134,8 @@ func _ensure_blueprint_overlay() -> void:
 	_blueprint_overlay.save_requested.connect(_on_blueprint_overlay_save_requested)
 	root_control.add_child(_blueprint_overlay)
 
-func _on_blueprint_overlay_save_requested(source_blueprint_id: StringName, display_name: String, tactical_templates: Array, embedded_rules: Array, state_flag_defaults: Dictionary, save_as_new: bool) -> void:
-	blueprint_save_requested.emit(source_blueprint_id, display_name, tactical_templates, embedded_rules, state_flag_defaults, save_as_new)
+func _on_blueprint_overlay_save_requested(source_blueprint_id: StringName, display_name: String, unit_type_id: StringName, upgrade_ids: Array[StringName], tactical_templates: Array, embedded_rules: Array, state_flag_defaults: Dictionary, save_as_new: bool) -> void:
+	blueprint_save_requested.emit(source_blueprint_id, display_name, unit_type_id, upgrade_ids, tactical_templates, embedded_rules, state_flag_defaults, save_as_new)
 
 func _ensure_blueprint_panel() -> void:
 	if _blueprint_panel != null:
@@ -1203,10 +1216,13 @@ func _rebuild_blueprint_panel() -> void:
 		_blueprint_list.add_child(_make_operation_label("暂无蓝图", Color(0.84, 0.88, 0.92, 1.0), 13))
 		return
 	for blueprint in _blueprints:
+		if not _is_blueprint_available(blueprint):
+			continue
 		_blueprint_list.add_child(_make_blueprint_summary_row(blueprint))
 		_blueprint_source_option.add_item("%s v%s" % [blueprint.display_name, blueprint.version])
 		_blueprint_source_option.set_item_metadata(_blueprint_source_option.item_count - 1, blueprint.id)
-	_blueprint_source_option.select(0)
+	if _blueprint_source_option.item_count > 0:
+		_blueprint_source_option.select(0)
 
 func _make_blueprint_summary_row(blueprint: UnitBlueprint) -> Control:
 	var row := HBoxContainer.new()
@@ -1222,13 +1238,14 @@ func _make_blueprint_summary_row(blueprint: UnitBlueprint) -> Control:
 	return row
 
 func _format_blueprint_summary(blueprint: UnitBlueprint) -> String:
-	var modules := " / ".join(blueprint.module_display_names)
+	var unit_type_text := blueprint.unit_type_display_name if not blueprint.unit_type_display_name.is_empty() else blueprint.chassis_display_name
+	var upgrade_text := "无升级" if blueprint.upgrade_display_names.is_empty() else " / ".join(blueprint.upgrade_display_names)
 	var rule_count := blueprint.embedded_rules.size()
 	return "%s v%s | %s | %s | 规则 %d" % [
 		blueprint.display_name,
 		blueprint.version,
-		blueprint.chassis_display_name,
-		modules,
+		unit_type_text,
+		upgrade_text,
 		rule_count,
 	]
 
@@ -1237,7 +1254,8 @@ func _on_save_rally_blueprint_pressed() -> void:
 		return
 	var selected_index := _blueprint_source_option.selected
 	var source_id := StringName(str(_blueprint_source_option.get_item_metadata(selected_index)))
-	blueprint_save_requested.emit(source_id, _blueprint_name_edit.text if _blueprint_name_edit else "", [], [], {}, true)
+	var no_upgrades: Array[StringName] = []
+	blueprint_save_requested.emit(source_id, _blueprint_name_edit.text if _blueprint_name_edit else "", &"", no_upgrades, [], [], {}, true)
 
 func _on_blueprint_clone_rally_pressed(source_blueprint_id: StringName) -> void:
 	var display_name := "集结蓝图"
@@ -1245,7 +1263,8 @@ func _on_blueprint_clone_rally_pressed(source_blueprint_id: StringName) -> void:
 		if blueprint.id == source_blueprint_id:
 			display_name = "%s 集结版" % blueprint.display_name
 			break
-	blueprint_save_requested.emit(source_blueprint_id, display_name, [], [], {}, true)
+	var no_upgrades: Array[StringName] = []
+	blueprint_save_requested.emit(source_blueprint_id, display_name, &"", no_upgrades, [], [], {}, true)
 
 func _on_forge_blueprint_picker_pressed(forge: Node) -> void:
 	_forge_picker_blueprints.clear()
@@ -1256,7 +1275,7 @@ func _show_forge_blueprint_picker(forge: Node) -> void:
 	for child in _forge_blueprint_list.get_children():
 		_forge_blueprint_list.remove_child(child)
 		child.queue_free()
-	var available_blueprints := _forge_picker_blueprints if not _forge_picker_blueprints.is_empty() else _blueprints
+	var available_blueprints := _filter_available_blueprints(_forge_picker_blueprints if not _forge_picker_blueprints.is_empty() else _blueprints)
 	for blueprint in available_blueprints:
 		var button := Button.new()
 		button.text = "%s v%s" % [blueprint.display_name, blueprint.version]
@@ -1298,6 +1317,21 @@ func _on_forge_blueprint_selected(forge: Node, blueprint_id: StringName) -> void
 	if _forge_blueprint_picker:
 		_forge_blueprint_picker.visible = false
 	forge_blueprint_selected.emit(forge, blueprint_id)
+
+func _filter_available_blueprints(blueprints: Array[UnitBlueprint]) -> Array[UnitBlueprint]:
+	var result: Array[UnitBlueprint] = []
+	for blueprint in blueprints:
+		if _is_blueprint_available(blueprint):
+			result.append(blueprint)
+	return result
+
+func _is_blueprint_available(blueprint: UnitBlueprint) -> bool:
+	if blueprint == null:
+		return false
+	if _unlocked_unit_type_ids.is_empty():
+		return true
+	var unit_type_id := blueprint.unit_type_id if not String(blueprint.unit_type_id).is_empty() else blueprint.id
+	return _unlocked_unit_type_ids.has(unit_type_id)
 
 func _ensure_operation_panel() -> void:
 	if _building_operation_panel != null:

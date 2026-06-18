@@ -53,7 +53,8 @@
       "grid_size": [1, 1],
       "max_hp": 460,
       "build_bar_visible": true,
-      "unlock_stage": 0
+      "unlock_stage": 2,
+      "requires_campaign_unlock": true
     },
     {
       "id": "forward_supply_point",
@@ -62,7 +63,8 @@
       "grid_size": [2, 2],
       "max_hp": 900,
       "build_bar_visible": true,
-      "unlock_stage": 0
+      "unlock_stage": 2,
+      "requires_campaign_unlock": true
     }
   ]
 }

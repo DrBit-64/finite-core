@@ -23,6 +23,8 @@ const MapConfigLoaderScript := preload("res://Scripts/map/map_config_loader.gd")
 const StartingInventoryConfigLoaderScript := preload("res://Scripts/data/starting_inventory_config_loader.gd")
 const RuntimeConfigLoaderScript := preload("res://Scripts/data/runtime_config_loader.gd")
 const BlueprintLibraryScript := preload("res://Scripts/blueprints/blueprint_library.gd")
+const UnitDesignConfigLoaderScript := preload("res://Scripts/data/unit_design_config_loader.gd")
+const TacticalTemplateCompilerScript := preload("res://Scripts/ai/tactical_template_compiler.gd")
 const EnemyConfigLoaderScript := preload("res://Scripts/data/enemy_config_loader.gd")
 const CampaignStateScript := preload("res://Scripts/campaign/campaign_state.gd")
 const TechnologyConfigLoaderScript := preload("res://Scripts/campaign/technology_config_loader.gd")
@@ -448,6 +450,8 @@ func _refresh_campaign_hud() -> void:
 		hud.call("set_campaign_data", campaign_state, technology_defs, resource_defs, amounts, terminal_status)
 	if hud.has_method("set_unlocked_template_ids"):
 		hud.call("set_unlocked_template_ids", campaign_state.unlocked_templates)
+	if hud.has_method("set_blueprint_unlocks"):
+		hud.call("set_blueprint_unlocks", campaign_state.unlocked_unit_types, campaign_state.unlocked_upgrades, campaign_state.unlocked_templates)
 
 func _get_research_terminal_status() -> Dictionary:
 	var terminals := _get_valid_research_terminals()
@@ -545,15 +549,26 @@ func _on_campaign_stage_advanced(next_stage: int) -> void:
 	set_current_goal("阶段 %d：继续在同一张地图扩张" % next_stage)
 
 func _on_new_game_requested() -> void:
+	if ObjectPool and ObjectPool.has_method("clear_all"):
+		ObjectPool.call("clear_all")
+	RobotUnit.clear_shared_rally_readiness()
 	get_tree().reload_current_scene()
 
 func _on_restart_requested() -> void:
+	if ObjectPool and ObjectPool.has_method("clear_all"):
+		ObjectPool.call("clear_all")
+	RobotUnit.clear_shared_rally_readiness()
 	get_tree().reload_current_scene()
 
 func _get_active_unit_upgrade_ids() -> Array[StringName]:
 	if campaign_state == null:
 		return []
 	return campaign_state.unlocked_upgrades.duplicate()
+
+func _get_unlocked_unit_type_ids() -> Array[StringName]:
+	if campaign_state == null:
+		return []
+	return campaign_state.unlocked_unit_types.duplicate()
 
 func _format_technology_unlocks(unlocks: Dictionary) -> String:
 	var parts: Array[String] = []
@@ -577,6 +592,21 @@ func _string_name_array(values: Array[StringName]) -> Array[String]:
 		result.append(String(value))
 	return result
 
+func _stats_to_save_dictionary(stats: UnitStats) -> Dictionary:
+	if stats == null:
+		return {}
+	return {
+		"max_hp": stats.max_hp,
+		"speed": stats.speed,
+		"lifespan_seconds": stats.lifespan_seconds,
+		"target_lock_seconds": stats.target_lock_seconds,
+		"fire_range": stats.fire_range,
+		"damage": stats.damage,
+		"fire_cooldown_seconds": stats.fire_cooldown_seconds,
+		"cargo_capacity": stats.cargo_capacity,
+		"logic_capacity": stats.logic_capacity,
+	}
+
 func get_campaign_save_snapshot() -> Dictionary:
 	var inventory = _get_main_base_inventory()
 	var blueprint_snapshots: Array[Dictionary] = []
@@ -587,12 +617,17 @@ func get_campaign_save_snapshot() -> Dictionary:
 				"display_name": blueprint.display_name,
 				"version": blueprint.version,
 				"icon_path": blueprint.icon_path,
+				"unit_type_id": String(blueprint.unit_type_id),
+				"unit_type_display_name": blueprint.unit_type_display_name,
+				"upgrade_ids": _string_name_array(blueprint.upgrade_ids),
+				"upgrade_display_names": blueprint.upgrade_display_names,
 				"chassis_id": String(blueprint.chassis_id),
 				"chassis_display_name": blueprint.chassis_display_name,
 				"chassis_icon_path": blueprint.chassis_icon_path,
 				"module_ids": _string_name_array(blueprint.module_ids),
 				"module_display_names": blueprint.module_display_names,
 				"module_icon_paths": blueprint.module_icon_paths,
+				"stats": _stats_to_save_dictionary(blueprint.stats),
 				"production_recipe_id": String(blueprint.production_recipe_id),
 				"production_cost": blueprint.production_cost,
 				"production_time_seconds": blueprint.production_time_seconds,
@@ -612,9 +647,10 @@ func get_campaign_save_snapshot() -> Dictionary:
 		"map_regions": map_region_states.duplicate(true),
 		"runtime_profile_path": runtime_profile_path,
 		"stage15_blueprint_schema_reserve": {
+			"unit_type_id": true,
+			"upgrade_ids": true,
 			"chassis_id": true,
 			"module_ids": true,
-			"module_parameters": {},
 			"template_parameters": {},
 		},
 	}
@@ -760,6 +796,8 @@ func _make_robot_save_snapshot(robot: RobotUnit, layer_name: String) -> Dictiona
 		"source_nest_id": _get_robot_source_nest_id(robot),
 		"guard_home_position": [guard_home.x, guard_home.y],
 	}
+	if robot.has_meta("guard_slot_index"):
+		entry["guard_slot_index"] = int(robot.get_meta("guard_slot_index"))
 	return entry
 
 func _get_robot_producer_forge_name(robot: RobotUnit) -> String:
@@ -812,6 +850,7 @@ func _vector2_list_from_arrays(values: Variant) -> Array[Vector2]:
 func _apply_campaign_save_snapshot(snapshot: Dictionary) -> void:
 	_hide_operation_panel()
 	_clear_world_unit_selection()
+	RobotUnit.clear_shared_rally_readiness()
 	_apply_campaign_state_snapshot(snapshot.get("campaign", {}))
 	_restore_blueprint_library(snapshot.get("blueprints", []))
 	_clear_dynamic_units_for_load()
@@ -920,8 +959,6 @@ func _restore_player_robot_from_snapshot(entry: Dictionary, layer: Node) -> Robo
 			_vector2_from_array(entry.get("rally_point_position", [0.0, 0.0])),
 			entry.get("has_rally_point", false) == true
 		)
-	if robot.has_method("apply_campaign_upgrades"):
-		robot.call("apply_campaign_upgrades", _string_name_list_from_variant(entry.get("active_upgrade_ids", [])))
 	if robot.has_signal("robot_lost") and not robot.is_connected("robot_lost", Callable(self, "_on_robot_lost_for_blueprint_cleanup")):
 		robot.connect("robot_lost", Callable(self, "_on_robot_lost_for_blueprint_cleanup"))
 	var forge := producer_forge if producer_forge != null else _find_robot_restore_forge(entry, blueprint)
@@ -945,8 +982,12 @@ func _restore_scavenger_hound_from_snapshot(entry: Dictionary, layer: Node) -> R
 	robot.call("setup_scavenger_hound", guard_config, nest)
 	if robot.has_signal("robot_lost") and not robot.is_connected("robot_lost", Callable(self, "_on_enemy_hound_lost")):
 		robot.connect("robot_lost", Callable(self, "_on_enemy_hound_lost"))
-	if nest != null and is_instance_valid(nest) and nest.has_method("register_guard"):
-		nest.call("register_guard", robot)
+	var guard_slot_index := int(entry.get("guard_slot_index", -1))
+	if nest != null and is_instance_valid(nest):
+		if nest.has_method("register_guard_at_slot"):
+			nest.call("register_guard_at_slot", robot, guard_slot_index)
+		elif nest.has_method("register_guard"):
+			nest.call("register_guard", robot)
 	return robot
 
 func _restore_debug_enemy_from_snapshot(entry: Dictionary, layer: Node) -> RobotUnit:
@@ -957,7 +998,8 @@ func _restore_debug_enemy_from_snapshot(entry: Dictionary, layer: Node) -> Robot
 	layer.add_child(robot)
 	robot.name = str(entry.get("name", IdProvider.next_id(&"debug_enemy")))
 	robot.global_position = _vector2_from_array(entry.get("position", [0.0, 0.0]))
-	robot.call("setup_debug_enemy", str(entry.get("display_name", "调试靶机")), path_points, entry.get("patrol_loop", true) == true)
+	var debug_config := EnemyConfigLoaderScript.get_type(enemy_config, "unit_types", &"debug_enemy")
+	robot.call("setup_debug_enemy", str(entry.get("display_name", "调试靶机")), path_points, entry.get("patrol_loop", true) == true, debug_config)
 	return robot
 
 func _apply_robot_common_save_state(robot: RobotUnit, entry: Dictionary) -> void:
@@ -1100,6 +1142,7 @@ func _apply_campaign_state_snapshot(data: Dictionary) -> void:
 	campaign_state.unlocked_technologies = _string_name_list_from_variant(data.get("unlocked_technologies", []))
 	campaign_state.unlocked_resources = _string_name_list_from_variant(data.get("unlocked_resources", []))
 	campaign_state.unlocked_buildings = _string_name_list_from_variant(data.get("unlocked_buildings", []))
+	campaign_state.unlocked_unit_types = _string_name_list_from_variant(data.get("unlocked_unit_types", campaign_state.unlocked_unit_types))
 	campaign_state.unlocked_chassis = _string_name_list_from_variant(data.get("unlocked_chassis", []))
 	campaign_state.unlocked_weapons = _string_name_list_from_variant(data.get("unlocked_weapons", []))
 	campaign_state.unlocked_modules = _string_name_list_from_variant(data.get("unlocked_modules", []))
@@ -1132,6 +1175,10 @@ func _blueprint_from_save_entry(entry: Dictionary) -> UnitBlueprint:
 	blueprint.display_name = str(entry.get("display_name", String(blueprint.id)))
 	blueprint.version = int(entry.get("version", 1))
 	blueprint.icon_path = str(entry.get("icon_path", ""))
+	blueprint.unit_type_id = StringName(str(entry.get("unit_type_id", blueprint.id)))
+	blueprint.unit_type_display_name = str(entry.get("unit_type_display_name", ""))
+	blueprint.upgrade_ids = _string_name_list_from_variant(entry.get("upgrade_ids", []))
+	blueprint.upgrade_display_names = _string_list_from_variant(entry.get("upgrade_display_names", []))
 	blueprint.chassis_id = StringName(str(entry.get("chassis_id", "light_chassis")))
 	blueprint.chassis_display_name = str(entry.get("chassis_display_name", "轻型底盘"))
 	blueprint.chassis_icon_path = str(entry.get("chassis_icon_path", ""))
@@ -1145,7 +1192,11 @@ func _blueprint_from_save_entry(entry: Dictionary) -> UnitBlueprint:
 	blueprint.embedded_rules = _dictionary_array_from_variant(entry.get("embedded_rules", []))
 	blueprint.state_flag_defaults = entry.get("state_flag_defaults", {}).duplicate(true)
 	blueprint.default_brain_enabled = bool(entry.get("default_brain_enabled", true))
-	blueprint.stats = _find_blueprint_stats_fallback(blueprint.id)
+	blueprint.stats = _stats_from_save_dictionary(entry.get("stats", {}))
+	if blueprint.stats == null:
+		UnitDesignConfigLoaderScript.apply_design_to_blueprint(blueprint, blueprint.unit_type_id, blueprint.upgrade_ids, MvpDataDefaults.create_recipe_defs())
+	if blueprint.stats == null:
+		blueprint.stats = _find_blueprint_stats_fallback(blueprint.id)
 	return blueprint
 
 func _find_blueprint_stats_fallback(blueprint_id: StringName) -> UnitStats:
@@ -1153,6 +1204,23 @@ func _find_blueprint_stats_fallback(blueprint_id: StringName) -> UnitStats:
 		if blueprint != null and blueprint.id == blueprint_id and blueprint.stats:
 			return blueprint.stats.duplicate(true)
 	return UnitStats.new()
+
+func _stats_from_save_dictionary(data: Variant) -> UnitStats:
+	if typeof(data) != TYPE_DICTIONARY:
+		return null
+	if (data as Dictionary).is_empty():
+		return null
+	var stats := UnitStats.new()
+	stats.max_hp = int(data.get("max_hp", stats.max_hp))
+	stats.speed = float(data.get("speed", stats.speed))
+	stats.lifespan_seconds = float(data.get("lifespan_seconds", stats.lifespan_seconds))
+	stats.target_lock_seconds = float(data.get("target_lock_seconds", stats.target_lock_seconds))
+	stats.fire_range = float(data.get("fire_range", stats.fire_range))
+	stats.damage = int(data.get("damage", stats.damage))
+	stats.fire_cooldown_seconds = float(data.get("fire_cooldown_seconds", stats.fire_cooldown_seconds))
+	stats.cargo_capacity = int(data.get("cargo_capacity", stats.cargo_capacity))
+	stats.logic_capacity = int(data.get("logic_capacity", stats.logic_capacity))
+	return stats
 
 func _vector2i_to_array(value: Vector2i) -> Array:
 	return [value.x, value.y]
@@ -2318,7 +2386,9 @@ func _spawn_debug_enemy(data: Dictionary) -> void:
 	enemy.name = str(data.get("id", IdProvider.next_id(&"debug_enemy")))
 	enemy.global_position = path_points[0]
 	if enemy.has_method("setup_debug_enemy"):
-		enemy.call("setup_debug_enemy", str(data.get("display_name", "调试靶机")), path_points, bool(data.get("loop", true)))
+		var debug_config := EnemyConfigLoaderScript.get_type(enemy_config, "unit_types", &"debug_enemy")
+		debug_config.merge(data, true)
+		enemy.call("setup_debug_enemy", str(data.get("display_name", debug_config.get("display_name", "调试靶机"))), path_points, data.get("loop", true) == true, debug_config)
 	push_debug_event("调试敌军已生成：%s，路径点 %d" % [enemy.name, path_points.size()])
 
 func _spawn_enemy_nest(data: Dictionary) -> void:
@@ -2566,11 +2636,17 @@ func _on_enemy_nest_guard_spawn_requested(nest: Node, guard_type: StringName) ->
 	if guard == null:
 		return
 	guard.name = IdProvider.next_id(&"scavenger_hound")
-	guard.global_position = nest.call("get_spawn_position")
+	var guard_slot_index := -1
+	if nest.has_method("reserve_guard_slot"):
+		guard_slot_index = int(nest.call("reserve_guard_slot"))
+	guard.global_position = nest.call("get_spawn_position", guard_slot_index)
 	guard.call("setup_scavenger_hound", guard_config, nest)
 	if guard.has_signal("robot_lost") and not guard.is_connected("robot_lost", Callable(self, "_on_enemy_hound_lost")):
 		guard.connect("robot_lost", Callable(self, "_on_enemy_hound_lost"))
-	nest.call("register_guard", guard)
+	if nest.has_method("register_guard_at_slot"):
+		nest.call("register_guard_at_slot", guard, guard_slot_index)
+	else:
+		nest.call("register_guard", guard)
 	push_debug_event("敌巢补充守军：%s" % guard.name)
 
 func _on_enemy_hound_lost(hound: Node, reason: StringName) -> void:
@@ -2943,8 +3019,6 @@ func _on_forge_robot_production_completed(forge: Node, blueprint: UnitBlueprint)
 			forge.get("rally_point_position"),
 			bool(forge.get("has_rally_point"))
 		)
-	if robot.has_method("apply_campaign_upgrades"):
-		robot.call("apply_campaign_upgrades", _get_active_unit_upgrade_ids())
 	if robot.has_signal("robot_lost") and not robot.is_connected("robot_lost", Callable(self, "_on_robot_lost_for_blueprint_cleanup")):
 		robot.connect("robot_lost", Callable(self, "_on_robot_lost_for_blueprint_cleanup"))
 	if forge.has_method("register_robot"):
@@ -2963,7 +3037,7 @@ func _record_robot_produced(forge: Node, robot: Node, blueprint: UnitBlueprint) 
 			"blueprint_snapshot_id": blueprint.get_snapshot_key(),
 			"blueprint_rules": _get_blueprint_rule_summaries(blueprint),
 			"blueprint_templates": _get_blueprint_template_summaries(blueprint),
-			"active_upgrades": _string_name_array(_get_active_unit_upgrade_ids()),
+			"active_upgrades": _string_name_array(blueprint.upgrade_ids),
 			"rally_point": _format_vector2_payload(forge.get("rally_point_position")),
 			"has_rally_point": bool(forge.get("has_rally_point")),
 		})
@@ -3750,7 +3824,7 @@ func _node_display_name(node: Node) -> String:
 func _on_blueprint_library_requested() -> void:
 	_refresh_blueprint_library_ui()
 
-func _on_blueprint_save_requested(source_blueprint_id: StringName, display_name: String, tactical_templates: Array, embedded_rules: Array, state_flag_defaults: Dictionary, save_as_new: bool) -> void:
+func _on_blueprint_save_requested(source_blueprint_id: StringName, display_name: String, unit_type_id: StringName, upgrade_ids: Array[StringName], tactical_templates: Array, _embedded_rules: Array, _state_flag_defaults: Dictionary, save_as_new: bool) -> void:
 	if blueprint_library == null:
 		return
 	var source_blueprint := blueprint_library.get_blueprint(source_blueprint_id)
@@ -3770,9 +3844,17 @@ func _on_blueprint_save_requested(source_blueprint_id: StringName, display_name:
 	saved_blueprint.snapshot_id = &""
 	saved_blueprint.source_blueprint_id = &""
 	saved_blueprint.is_snapshot = false
-	saved_blueprint.tactical_templates = tactical_templates.duplicate(true)
-	saved_blueprint.embedded_rules = embedded_rules.duplicate(true)
-	saved_blueprint.state_flag_defaults = state_flag_defaults.duplicate(true)
+	var design_unit_type_id := unit_type_id if not String(unit_type_id).is_empty() else source_blueprint.unit_type_id
+	if not _is_unit_type_unlocked_for_blueprint_editor(design_unit_type_id):
+		design_unit_type_id = source_blueprint.unit_type_id if _is_unit_type_unlocked_for_blueprint_editor(source_blueprint.unit_type_id) else MvpDataDefaults.UNIT_BASIC_RIFLE_ROBOT
+	var design_upgrade_ids := source_blueprint.upgrade_ids if String(unit_type_id).is_empty() else upgrade_ids
+	design_upgrade_ids = _filter_unlocked_blueprint_upgrade_ids(design_upgrade_ids)
+	UnitDesignConfigLoaderScript.apply_design_to_blueprint(saved_blueprint, design_unit_type_id, design_upgrade_ids, MvpDataDefaults.create_recipe_defs())
+	var safe_templates := _filter_blueprint_tactical_templates(tactical_templates, saved_blueprint.unit_type_id)
+	var compiled: Dictionary = TacticalTemplateCompilerScript.compile_templates(safe_templates)
+	saved_blueprint.tactical_templates = safe_templates
+	saved_blueprint.embedded_rules = compiled.get("rules", []).duplicate(true)
+	saved_blueprint.state_flag_defaults = compiled.get("state_flag_defaults", {}).duplicate(true)
 	if save_as_new:
 		blueprint_library.add_blueprint(saved_blueprint)
 		push_debug_event("Blueprint saved as new: %s v%s" % [saved_blueprint.display_name, saved_blueprint.version])
@@ -3780,6 +3862,50 @@ func _on_blueprint_save_requested(source_blueprint_id: StringName, display_name:
 		blueprint_library.save_blueprint(saved_blueprint)
 		push_debug_event("Blueprint updated: %s v%s" % [saved_blueprint.display_name, saved_blueprint.version])
 	_refresh_blueprint_library_ui()
+
+func _is_unit_type_unlocked_for_blueprint_editor(unit_type_id: StringName) -> bool:
+	if campaign_state == null:
+		return true
+	return campaign_state.unlocked_unit_types.has(unit_type_id)
+
+func _filter_unlocked_blueprint_upgrade_ids(upgrade_ids: Array[StringName]) -> Array[StringName]:
+	if campaign_state == null:
+		return upgrade_ids
+	var result: Array[StringName] = []
+	for upgrade_id in upgrade_ids:
+		if campaign_state.unlocked_upgrades.has(upgrade_id):
+			result.append(upgrade_id)
+	return result
+
+func _filter_blueprint_tactical_templates(templates: Array, unit_type_id: StringName) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for template in _dictionary_array_from_variant(templates):
+		var template_id := StringName(str(template.get("id", "")))
+		if not _is_template_unlocked_for_blueprint_editor(template_id):
+			continue
+		if not _is_template_allowed_for_unit_type(template_id, unit_type_id):
+			continue
+		result.append(template.duplicate(true))
+	if result.is_empty():
+		result.append(TacticalTemplateCompilerScript.make_default_attack_instance())
+	return result
+
+func _is_template_unlocked_for_blueprint_editor(template_id: StringName) -> bool:
+	if campaign_state == null:
+		return true
+	return campaign_state.unlocked_templates.has(template_id)
+
+func _is_template_allowed_for_unit_type(template_id: StringName, unit_type_id: StringName) -> bool:
+	if String(template_id) == TacticalTemplateCompilerScript.TEMPLATE_DEFAULT_ATTACK:
+		return true
+	var config := UnitDesignConfigLoaderScript.load_design_config()
+	var unit_type := UnitDesignConfigLoaderScript.get_unit_type(config, unit_type_id)
+	if unit_type.is_empty():
+		return false
+	var tags := _string_list_from_variant(unit_type.get("tags", []))
+	if tags.has("logistics") or tags.has("cargo"):
+		return false
+	return tags.has("combat")
 
 func _on_forge_blueprint_selected(forge: Node, blueprint_id: StringName) -> void:
 	if forge == null or not is_instance_valid(forge) or blueprint_library == null:
@@ -3799,6 +3925,8 @@ func _refresh_blueprint_library_ui() -> void:
 		hud.call("set_blueprint_library", blueprint_library.get_blueprints() if blueprint_library else [])
 	if hud and hud.has_method("set_unlocked_template_ids") and campaign_state:
 		hud.call("set_unlocked_template_ids", campaign_state.unlocked_templates)
+	if hud and hud.has_method("set_blueprint_unlocks") and campaign_state:
+		hud.call("set_blueprint_unlocks", campaign_state.unlocked_unit_types, campaign_state.unlocked_upgrades, campaign_state.unlocked_templates)
 
 func _create_blueprint_snapshot(blueprint: UnitBlueprint) -> UnitBlueprint:
 	if blueprint_library:

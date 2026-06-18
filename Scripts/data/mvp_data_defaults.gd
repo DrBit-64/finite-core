@@ -67,6 +67,10 @@ static func _create_basic_rifle_blueprint_fallback(recipe_defs: Array[RecipeDef]
 	blueprint.display_name = "基础步枪机器人"
 	blueprint.version = 1
 	blueprint.icon_path = "res://Resources/art/blueprints/basic_rifle_robot.svg"
+	blueprint.unit_type_id = UNIT_BASIC_RIFLE_ROBOT
+	blueprint.unit_type_display_name = "基础步枪机器人"
+	blueprint.upgrade_ids = []
+	blueprint.upgrade_display_names = []
 	blueprint.chassis_id = &"light_chassis"
 	blueprint.chassis_display_name = "轻型底盘"
 	blueprint.chassis_icon_path = "res://Resources/art/chassis/light_chassis.svg"

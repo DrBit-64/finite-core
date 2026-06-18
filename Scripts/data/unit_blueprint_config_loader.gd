@@ -2,6 +2,7 @@ extends RefCounted
 class_name UnitBlueprintConfigLoader
 
 const TacticalTemplateCompilerScript := preload("res://Scripts/ai/tactical_template_compiler.gd")
+const UnitDesignConfigLoaderScript := preload("res://Scripts/data/unit_design_config_loader.gd")
 
 static func load_unit_blueprint(path: String, unit_id: StringName, recipe_defs: Array[RecipeDef], fallback: UnitBlueprint = null) -> UnitBlueprint:
 	var blueprints := load_unit_blueprints(path, recipe_defs)
@@ -40,6 +41,10 @@ static func _make_blueprint(data: Dictionary, recipe_defs: Array[RecipeDef]) -> 
 	blueprint.display_name = str(data.get("display_name", blueprint.id))
 	blueprint.version = int(data.get("version", 1))
 	blueprint.icon_path = str(data.get("icon_path", ""))
+	blueprint.unit_type_id = StringName(str(data.get("unit_type_id", data.get("id", blueprint.unit_type_id))))
+	blueprint.unit_type_display_name = str(data.get("unit_type_display_name", blueprint.unit_type_display_name))
+	blueprint.upgrade_ids = _string_name_array(data.get("upgrade_ids", []))
+	blueprint.upgrade_display_names = _string_array(data.get("upgrade_display_names", []))
 	blueprint.chassis_id = StringName(str(data.get("chassis_id", blueprint.chassis_id)))
 	blueprint.chassis_display_name = str(data.get("chassis_display_name", blueprint.chassis_display_name))
 	blueprint.chassis_icon_path = str(data.get("chassis_icon_path", ""))
@@ -62,6 +67,7 @@ static func _make_blueprint(data: Dictionary, recipe_defs: Array[RecipeDef]) -> 
 		blueprint.production_recipe_id = recipe.id
 		blueprint.production_cost = recipe.inputs.duplicate(true)
 		blueprint.production_time_seconds = recipe.duration_seconds
+	UnitDesignConfigLoaderScript.apply_design_to_blueprint(blueprint, blueprint.unit_type_id, blueprint.upgrade_ids, recipe_defs)
 	return blueprint
 
 static func _make_stats(data: Variant) -> UnitStats:
@@ -75,6 +81,8 @@ static func _make_stats(data: Variant) -> UnitStats:
 	stats.fire_range = float(data.get("fire_range", stats.fire_range))
 	stats.damage = int(data.get("damage", stats.damage))
 	stats.fire_cooldown_seconds = float(data.get("fire_cooldown_seconds", stats.fire_cooldown_seconds))
+	stats.cargo_capacity = int(data.get("cargo_capacity", stats.cargo_capacity))
+	stats.logic_capacity = int(data.get("logic_capacity", stats.logic_capacity))
 	return stats
 
 static func _find_recipe(recipe_defs: Array[RecipeDef], recipe_id: StringName, target_id: StringName) -> RecipeDef:

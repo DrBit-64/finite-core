@@ -8,3 +8,5 @@ class_name UnitStats
 @export var fire_range: float = 140.0
 @export var damage: int = 8
 @export var fire_cooldown_seconds: float = 0.8
+@export var cargo_capacity: int = 0
+@export var logic_capacity: int = 3

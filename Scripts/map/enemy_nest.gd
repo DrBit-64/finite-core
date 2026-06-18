@@ -15,6 +15,8 @@ var time_alive_seconds: float = 0.0
 var replenish_seconds_remaining: float = 30.0
 
 var _guards: Array[Node] = []
+var _guard_slots: Dictionary = {}
+var _reserved_guard_slots: Dictionary = {}
 
 func setup_nest(id: StringName, type_id: StringName, config: Dictionary, origin: Vector2i, next_cell_size: int) -> void:
 	nest_id = id
@@ -41,11 +43,28 @@ func spawn_initial_guards() -> void:
 		guard_spawn_requested.emit(self, guard_unit_type)
 
 func register_guard(guard: Node) -> void:
+	register_guard_at_slot(guard, -1)
+
+func register_guard_at_slot(guard: Node, slot_index: int = -1) -> void:
 	if guard == null or _guards.has(guard):
 		return
+	var selected_slot := slot_index
+	if selected_slot < 0:
+		selected_slot = _find_guard_slot_for_node(guard)
+	selected_slot = clampi(selected_slot, 0, maxi(0, max_guard_count - 1))
 	_guards.append(guard)
+	_guard_slots[int(guard.get_instance_id())] = selected_slot
+	_reserved_guard_slots.erase(selected_slot)
+	guard.set_meta("guard_slot_index", selected_slot)
+	if guard is Node2D:
+		var home_position := get_spawn_position(selected_slot)
+		(guard as Node2D).global_position = home_position
+		if guard.has_method("set"):
+			guard.set("guard_home_position", home_position)
 
 func unregister_guard(guard: Node) -> void:
+	if guard != null:
+		_guard_slots.erase(int(guard.get_instance_id()))
 	_guards.erase(guard)
 
 func get_guard_count() -> int:
@@ -54,13 +73,20 @@ func get_guard_count() -> int:
 
 func get_spawn_position(index: int = -1) -> Vector2:
 	var offsets := [
-		Vector2(-86.0, -56.0),
-		Vector2(86.0, -56.0),
-		Vector2(-86.0, 56.0),
-		Vector2(86.0, 56.0),
+		Vector2(0.0, -92.0),
+		Vector2(80.0, -46.0),
+		Vector2(80.0, 46.0),
+		Vector2(0.0, 92.0),
+		Vector2(-80.0, 46.0),
+		Vector2(-80.0, -46.0),
 	]
-	var selected_index := get_guard_count() if index < 0 else index
+	var selected_index := _first_available_guard_slot(false) if index < 0 else index
 	return get_target_position() + offsets[selected_index % offsets.size()]
+
+func reserve_guard_slot() -> int:
+	var slot_index := _first_available_guard_slot(true)
+	_reserved_guard_slots[slot_index] = true
+	return slot_index
 
 func get_inspector_lines() -> Array[String]:
 	var lines := super.get_inspector_lines()
@@ -93,9 +119,59 @@ func _prune_guards() -> void:
 		if guard == null or not is_instance_valid(guard):
 			_guards.remove_at(index)
 		elif guard.has_method("is_alive") and not bool(guard.call("is_alive")):
+			_guard_slots.erase(int(guard.get_instance_id()))
 			_guards.remove_at(index)
 		elif guard is CanvasItem and not (guard as CanvasItem).visible:
+			_guard_slots.erase(int(guard.get_instance_id()))
 			_guards.remove_at(index)
+	_rebuild_guard_slot_table()
+
+func _first_available_guard_slot(include_reserved: bool) -> int:
+	_prune_guards()
+	var occupied := {}
+	for slot_value in _guard_slots.values():
+		occupied[int(slot_value)] = true
+	if include_reserved:
+		for slot_value in _reserved_guard_slots.keys():
+			occupied[int(slot_value)] = true
+	var slot_count := maxi(1, max_guard_count)
+	for slot_index in range(slot_count):
+		if not occupied.has(slot_index):
+			return slot_index
+	return get_guard_count() % slot_count
+
+func _find_guard_slot_for_node(guard: Node) -> int:
+	if guard != null and guard.has_meta("guard_slot_index"):
+		return int(guard.get_meta("guard_slot_index"))
+	if guard is Node2D:
+		return _nearest_available_guard_slot((guard as Node2D).global_position)
+	return _first_available_guard_slot(true)
+
+func _nearest_available_guard_slot(position: Vector2) -> int:
+	_prune_guards()
+	var occupied := {}
+	for slot_value in _guard_slots.values():
+		occupied[int(slot_value)] = true
+	var best_slot := _first_available_guard_slot(true)
+	var best_distance := INF
+	for slot_index in range(maxi(1, max_guard_count)):
+		if occupied.has(slot_index):
+			continue
+		var distance := position.distance_squared_to(get_spawn_position(slot_index))
+		if distance < best_distance:
+			best_distance = distance
+			best_slot = slot_index
+	return best_slot
+
+func _rebuild_guard_slot_table() -> void:
+	var next_slots := {}
+	for guard in _guards:
+		if guard == null or not is_instance_valid(guard):
+			continue
+		var guard_key := int(guard.get_instance_id())
+		if _guard_slots.has(guard_key):
+			next_slots[guard_key] = int(_guard_slots[guard_key])
+	_guard_slots = next_slots
 
 func _vector2i(value: Variant, fallback: Vector2i) -> Vector2i:
 	if typeof(value) != TYPE_ARRAY or value.size() < 2:

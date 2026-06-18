@@ -138,13 +138,23 @@ func check_condition(target: Node2D, cond: Variant) -> bool:
 				return false
 			var less_radius := float(_rule_get(cond, "radius", 90.0))
 			var less_required := int(_rule_get(cond, "value", 1))
-			return int(robot.call("count_allies_near_rally_point", less_radius)) < less_required
+			if _sync_rally_squad_ready(less_radius):
+				return false
+			var less_count := int(robot.call("count_rally_release_candidates", less_radius)) if robot.has_method("count_rally_release_candidates") else int(robot.call("count_allies_near_rally_point", less_radius))
+			return less_count < less_required
 		"allies_near_rally_at_least":
 			if not robot.has_method("count_allies_near_rally_point"):
 				return false
 			var at_least_radius := float(_rule_get(cond, "radius", 90.0))
 			var at_least_required := int(_rule_get(cond, "value", 1))
-			return int(robot.call("count_allies_near_rally_point", at_least_radius)) >= at_least_required
+			if _sync_rally_squad_ready(at_least_radius):
+				return true
+			if robot.has_method("try_mark_rally_squad_ready"):
+				return bool(robot.call("try_mark_rally_squad_ready", at_least_radius, at_least_required))
+			var rally_ready := int(robot.call("count_allies_near_rally_point", at_least_radius)) >= at_least_required
+			if rally_ready and robot.has_method("mark_rally_squad_ready"):
+				robot.call("mark_rally_squad_ready", at_least_radius)
+			return rally_ready
 	match cond_type:
 		AI_CONDITION_SCRIPT.Type.DISTANCE_LESS:
 			if target == null:
@@ -167,6 +177,15 @@ func check_condition(target: Node2D, cond: Variant) -> bool:
 				return false
 			return target.is_in_group(cond_param)
 	return false
+
+func _sync_rally_squad_ready(radius: float) -> bool:
+	if robot == null or not robot.has_method("is_rally_squad_ready"):
+		return false
+	if not bool(robot.call("is_rally_squad_ready", radius)):
+		return false
+	if robot.has_method("sync_rally_squad_ready"):
+		robot.call("sync_rally_squad_ready", radius)
+	return true
 
 func execute_action(act: Variant, target: Node2D, rule: Variant = null) -> bool:
 	if robot == null:

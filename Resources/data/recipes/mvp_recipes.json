@@ -154,6 +154,21 @@
       "outputs": {
         "battlefield_hauler": 1
       }
+    },
+    {
+      "id": "forge_kinetic_chainsaw_robot",
+      "display_name": "生产近战链锯机器人",
+      "type": "unit",
+      "target_id": "kinetic_chainsaw_robot",
+      "duration_seconds": 13.0,
+      "inputs": {
+        "iron_plate": 8,
+        "copper_wire": 4,
+        "construction_mass": 7
+      },
+      "outputs": {
+        "kinetic_chainsaw_robot": 1
+      }
     }
   ]
 }
