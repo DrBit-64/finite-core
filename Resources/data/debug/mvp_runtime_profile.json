@@ -2,7 +2,7 @@
   "schema_version": 1,
   "description": "Runtime profile for MVP development. Toggle debug starting inventory here instead of changing scenes or scripts.",
   "use_debug_starting_inventory": true,
-  "spawn_debug_wandering_enemy": false,
+  "spawn_debug_wandering_enemy": true,
   "unlock_all_technologies": true,
   "balance_starting_inventory_path": "res://Resources/data/balance/mvp_starting_inventory.json",
   "debug_starting_inventory_path": "res://Resources/data/debug/mvp_debug_starting_inventory.json"

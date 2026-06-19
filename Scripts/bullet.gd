@@ -62,12 +62,6 @@ func _on_body_entered(body: Node2D) -> void:
 		body.call("take_damage_from", damage, source_payload)
 	elif body.has_method("take_damage"):
 		body.take_damage(damage)
-	var audio_manager := get_node_or_null("/root/AudioManager")
-	if audio_manager:
-		if audio_manager.has_method("play_weapon_hit_cue"):
-			audio_manager.call("play_weapon_hit_cue", StringName(str(source_payload.get("weapon_id", "default"))))
-		elif audio_manager.has_method("play_cue"):
-			audio_manager.call("play_cue", &"unit_hit")
 	_return_to_pool()
 
 func _on_life_timer_timeout() -> void:

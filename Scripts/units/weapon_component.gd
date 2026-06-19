@@ -89,6 +89,7 @@ func _fire_laser(owner_team: String, origin: Vector2, target_position: Vector2, 
 		target.call("take_damage_from", damage, payload)
 	elif target.has_method("take_damage"):
 		target.call("take_damage", damage)
+	_play_weapon_fire_audio(payload)
 	_last_laser_tick_time = now
 	_last_fire_time = now
 	fire_state = &"fired"
@@ -105,6 +106,12 @@ func _clear_active_laser_beam() -> void:
 	if _active_laser_beam != null and is_instance_valid(_active_laser_beam):
 		_active_laser_beam.queue_free()
 	_active_laser_beam = null
+
+func _play_weapon_fire_audio(payload: Dictionary) -> void:
+	var audio_manager := get_node_or_null("/root/AudioManager")
+	if audio_manager == null or not audio_manager.has_method("play_weapon_fire_cue"):
+		return
+	audio_manager.call("play_weapon_fire_cue", StringName(str(payload.get("weapon_id", "default"))))
 
 func _make_source_payload(owner_team: String) -> Dictionary:
 	var source_unit := get_parent()

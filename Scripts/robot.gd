@@ -966,8 +966,13 @@ func take_damage(amount: int) -> void:
 		health_component.take_damage(amount)
 
 func take_damage_from(amount: int, source_payload: Dictionary = {}) -> void:
+	if _is_dead:
+		return
 	_last_damage_source_payload = source_payload.duplicate(true)
-	take_damage(_apply_damage_profile(amount, source_payload))
+	var multiplier := _damage_multiplier_for_profile(source_payload)
+	var final_damage := maxi(1, roundi(float(amount) * multiplier))
+	take_damage(final_damage)
+	_play_damage_impact_audio(source_payload, multiplier)
 
 func get_last_damage_source_payload() -> Dictionary:
 	return _last_damage_source_payload.duplicate(true)
@@ -1040,6 +1045,9 @@ func _get_resume_heat_threshold() -> float:
 	return _get_overheat_threshold() * 0.45
 
 func _apply_damage_profile(amount: int, source_payload: Dictionary) -> int:
+	return maxi(1, roundi(float(amount) * _damage_multiplier_for_profile(source_payload)))
+
+func _damage_multiplier_for_profile(source_payload: Dictionary) -> float:
 	var source_damage_type := StringName(str(source_payload.get("damage_type", "kinetic")))
 	var multiplier := 1.0
 	if armor_type == &"armored":
@@ -1056,7 +1064,24 @@ func _apply_damage_profile(amount: int, source_payload: Dictionary) -> int:
 				multiplier = 0.75
 			&"thermal":
 				multiplier = 1.25
-	return maxi(1, roundi(float(amount) * multiplier))
+	return multiplier
+
+func _damage_effectiveness_from_multiplier(multiplier: float) -> StringName:
+	if multiplier <= 0.80:
+		return &"weak"
+	if multiplier >= 1.20:
+		return &"strong"
+	return &"normal"
+
+func _play_damage_impact_audio(source_payload: Dictionary, multiplier: float) -> void:
+	var audio_manager := get_node_or_null("/root/AudioManager")
+	if audio_manager == null or not audio_manager.has_method("play_damage_impact_cue"):
+		return
+	audio_manager.call(
+		"play_damage_impact_cue",
+		_damage_effectiveness_from_multiplier(multiplier),
+		StringName(str(source_payload.get("weapon_id", "default")))
+	)
 
 func die(reason: StringName = &"destroyed") -> void:
 	if _is_dead:
@@ -1321,7 +1346,9 @@ func _tick_melee_hound() -> void:
 	if now - _last_melee_attack_seconds < melee_cooldown_seconds:
 		return
 	_last_melee_attack_seconds = now
-	if enemy.has_method("take_damage"):
+	if enemy.has_method("take_damage_from"):
+		enemy.call("take_damage_from", melee_damage, _make_weapon_source_payload())
+	elif enemy.has_method("take_damage"):
 		enemy.call("take_damage", melee_damage)
 	record_brain_trigger(&"hound_melee_attack", "撕咬目标")
 

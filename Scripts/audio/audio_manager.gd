@@ -17,6 +17,8 @@ var _cue_volumes: Dictionary = {}
 var _cue_cooldowns: Dictionary = {}
 var _last_cue_time: Dictionary = {}
 var _weapon_hit_cues: Dictionary = {}
+var _weapon_fire_cues: Dictionary = {}
+var _impact_effect_cues: Dictionary = {}
 var _sfx_players: Array[AudioStreamPlayer] = []
 var _next_sfx_player: int = 0
 var _music_player: AudioStreamPlayer = null
@@ -78,6 +80,24 @@ func play_weapon_hit_cue(weapon_id: StringName, volume_scale: float = 1.0) -> vo
 	var cue_id := String(_weapon_hit_cues.get(String(weapon_id), _weapon_hit_cues.get("default", "unit_hit")))
 	play_cue(StringName(cue_id), volume_scale)
 
+func play_weapon_fire_cue(weapon_id: StringName, volume_scale: float = 1.0) -> void:
+	var cue_id := String(_weapon_fire_cues.get(String(weapon_id), _weapon_fire_cues.get("default", "")))
+	if cue_id.is_empty():
+		return
+	play_cue(StringName(cue_id), volume_scale)
+
+func play_damage_impact_cue(effectiveness: StringName = &"normal", weapon_id: StringName = &"default", volume_scale: float = 1.0) -> void:
+	var effect_key := String(effectiveness)
+	var weapon_key := String(weapon_id)
+	var cue_id := ""
+	if _impact_effect_cues.has("%s:%s" % [weapon_key, effect_key]):
+		cue_id = String(_impact_effect_cues["%s:%s" % [weapon_key, effect_key]])
+	else:
+		cue_id = String(_impact_effect_cues.get(effect_key, _impact_effect_cues.get("normal", _weapon_hit_cues.get(weapon_key, _weapon_hit_cues.get("default", "unit_hit")))))
+	if cue_id.is_empty():
+		return
+	play_cue(StringName(cue_id), volume_scale)
+
 func set_audio_settings(next_settings: Dictionary) -> void:
 	master_volume = clampf(float(next_settings.get("master_volume", master_volume)), 0.0, 1.0)
 	music_volume = clampf(float(next_settings.get("music_volume", music_volume)), 0.0, 1.0)
@@ -109,6 +129,8 @@ func _load_settings() -> void:
 func _load_cues() -> void:
 	var data := _load_json_dictionary(CUE_CONFIG_PATH)
 	_weapon_hit_cues = data.get("weapon_hit_cues", {}).duplicate(true)
+	_weapon_fire_cues = data.get("weapon_fire_cues", {}).duplicate(true)
+	_impact_effect_cues = data.get("impact_effect_cues", {}).duplicate(true)
 	var cues: Dictionary = data.get("cues", {})
 	for cue_id in cues.keys():
 		var cue: Dictionary = cues[cue_id]

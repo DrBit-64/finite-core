@@ -5,6 +5,15 @@
     "rifle_module": "rifle_hit",
     "default": "unit_hit"
   },
+  "weapon_fire_cues": {},
+  "impact_effect_cues": {
+    "weak": "impact_weak",
+    "normal": "impact_normal",
+    "strong": "impact_strong",
+    "thermal_laser:weak": "laser_impact_weak",
+    "thermal_laser:normal": "laser_impact_normal",
+    "thermal_laser:strong": "laser_impact_strong"
+  },
   "cues": {
     "ui_click": {
       "path": "res://Resources/audio/sfx/ui_click.wav",
@@ -40,6 +49,36 @@
       "path": "res://Resources/audio/sfx/rifle_hit.wav",
       "volume": 0.42,
       "cooldown_seconds": 0.045
+    },
+    "impact_weak": {
+      "path": "res://Resources/audio/sfx/impact_weak.wav",
+      "volume": 0.36,
+      "cooldown_seconds": 0.045
+    },
+    "impact_normal": {
+      "path": "res://Resources/audio/sfx/impact_normal.wav",
+      "volume": 0.42,
+      "cooldown_seconds": 0.045
+    },
+    "impact_strong": {
+      "path": "res://Resources/audio/sfx/impact_strong.wav",
+      "volume": 0.52,
+      "cooldown_seconds": 0.045
+    },
+    "laser_impact_weak": {
+      "path": "res://Resources/audio/sfx/laser_impact_weak.wav",
+      "volume": 0.34,
+      "cooldown_seconds": 0.16
+    },
+    "laser_impact_normal": {
+      "path": "res://Resources/audio/sfx/laser_impact_normal.wav",
+      "volume": 0.40,
+      "cooldown_seconds": 0.16
+    },
+    "laser_impact_strong": {
+      "path": "res://Resources/audio/sfx/laser_impact_strong.wav",
+      "volume": 0.48,
+      "cooldown_seconds": 0.16
     },
     "unit_destroyed": {
       "path": "res://Resources/audio/sfx/unit_destroyed.wav",

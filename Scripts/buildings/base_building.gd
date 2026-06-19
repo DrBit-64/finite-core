@@ -72,9 +72,17 @@ func take_damage(amount: int) -> void:
 		health_component.take_damage(amount)
 
 func take_damage_from(amount: int, source_payload: Dictionary = {}) -> void:
-	take_damage(_apply_damage_profile(amount, source_payload))
+	if _destroyed:
+		return
+	var multiplier := _damage_multiplier_for_profile(source_payload)
+	var final_damage := maxi(1, roundi(float(amount) * multiplier))
+	take_damage(final_damage)
+	_play_damage_impact_audio(source_payload, multiplier)
 
 func _apply_damage_profile(amount: int, source_payload: Dictionary) -> int:
+	return maxi(1, roundi(float(amount) * _damage_multiplier_for_profile(source_payload)))
+
+func _damage_multiplier_for_profile(source_payload: Dictionary) -> float:
 	var source_damage_type := StringName(str(source_payload.get("damage_type", "kinetic")))
 	var multiplier := 1.0
 	if armor_type == &"structure_armor":
@@ -89,7 +97,24 @@ func _apply_damage_profile(amount: int, source_payload: Dictionary) -> int:
 				multiplier = 0.55
 			&"thermal":
 				multiplier = 1.35
-	return maxi(1, roundi(float(amount) * multiplier))
+	return multiplier
+
+func _damage_effectiveness_from_multiplier(multiplier: float) -> StringName:
+	if multiplier <= 0.80:
+		return &"weak"
+	if multiplier >= 1.20:
+		return &"strong"
+	return &"normal"
+
+func _play_damage_impact_audio(source_payload: Dictionary, multiplier: float) -> void:
+	var audio_manager := get_node_or_null("/root/AudioManager")
+	if audio_manager == null or not audio_manager.has_method("play_damage_impact_cue"):
+		return
+	audio_manager.call(
+		"play_damage_impact_cue",
+		_damage_effectiveness_from_multiplier(multiplier),
+		StringName(str(source_payload.get("weapon_id", "default")))
+	)
 
 func get_target_position() -> Vector2:
 	return global_position + Vector2(grid_size.x * cell_size, grid_size.y * cell_size) * 0.5
