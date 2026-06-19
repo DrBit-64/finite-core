@@ -165,14 +165,14 @@
 | `optical_lens` | 光学透镜 | `Resources/art/resources/optical_lens.svg` | `32x32` | `done` |
 | `high_capacity_battery` | 大容量电池 | `Resources/art/resources/high_capacity_battery.svg` | `32x32` | `done` |
 | `cryo_gel` | 冷凝凝胶 | `Resources/art/resources/cryo_gel.svg` | `32x32` | `generate` |
-| `kinetic_ammo_box` | 动能弹药箱 | `Resources/art/resources/kinetic_ammo_box.svg` | `32x32` | `generate` |
+| `kinetic_ammo_box` | 动能弹药箱 | `Resources/art/resources/kinetic_ammo_box.svg` | `32x32` | `done` |
 | `construction_pack` | 结构打印包 | `Resources/art/resources/construction_pack.svg` | `32x32` | `generate` |
 | `high_frequency_oscillator` | 高频振荡器 | `Resources/art/resources/high_frequency_oscillator.svg` | `32x32` | `done` |
 | `energy_conduction_fluid` | 能量传导液 | `Resources/art/resources/energy_conduction_fluid.svg` | `32x32` | `generate` |
 | `transmission_component` | 传动组件 | `Resources/art/resources/transmission_component.svg` | `32x32` | `pending` |
 | `advanced_circuit` | 进阶电路 | `Resources/art/resources/advanced_circuit.svg` | `32x32` | `pending` |
 | `light_weapon_component` | 轻型武器组件 | `Resources/art/resources/light_weapon_component.svg` | `32x32` | `pending` |
-| `repair_material` | 维修材料 | `Resources/art/resources/repair_material.svg` | `32x32` | `generate` |
+| `repair_material` | 维修材料 | `Resources/art/resources/repair_material.svg` | `32x32` | `done` |
 
 ### 2. 建筑
 
@@ -243,9 +243,9 @@
 | `sensor_array` | 传感器阵列 | `Resources/art/resources/sensor_array.svg` | `32x32` | `pending` |
 | `power_winch` | 动力绞盘 | `Resources/art/resources/power_winch.svg` | `32x32` | `pending` |
 | `explosives` | 爆炸物 | `Resources/art/resources/explosives.svg` | `32x32` | `pending` |
-| `wreckage_scrap` | 残骸碎片 | `Resources/art/resources/wreckage_scrap.svg` | `32x32` | `generate` |
-| `heavy_wreckage` | 重型残骸 | `Resources/art/resources/heavy_wreckage.svg` | `48x48` | `generate` |
-| `salvage_marker` | 回收标记 | `Resources/art/map/salvage_marker.svg` | `24x24` | `generate` |
+| `wreckage_scrap` | 残骸碎片 | `Resources/art/resources/wreckage_scrap.svg` | `32x32` | `done` |
+| `heavy_wreckage` | 重型残骸 | `Resources/art/resources/heavy_wreckage.svg` | `48x48` | `done` |
+| `salvage_marker` | 回收标记 | `Resources/art/map/salvage_marker.svg` | `24x24` | `done` |
 
 ### 2. 建筑
 
@@ -261,18 +261,18 @@
 | 稳定 ID | 显示名 | 建议路径 | 尺寸 | 状态 |
 | --- | --- | --- | --- | --- |
 | `anti_gravity_hover_chassis` | 反重力悬浮底盘 | `Resources/art/chassis/anti_gravity_hover_chassis.svg` | `32x32` | `generate` |
-| `armored_salvage_chassis` | 装甲回收底盘 | `Resources/art/chassis/armored_salvage_chassis.svg` | `32x32` | `generate` |
-| `compressed_cargo_bay` | 压缩货舱 | `Resources/art/modules/compressed_cargo_bay.svg` | `32x32` | `generate` |
-| `armored_cargo_shell` | 装甲货壳 | `Resources/art/modules/armored_cargo_shell.svg` | `32x32` | `generate` |
-| `wreckage_tether` | 残骸牵引器 | `Resources/art/modules/wreckage_tether.svg` | `32x32` | `generate` |
-| `salvage_scanner` | 回收扫描器 | `Resources/art/modules/salvage_scanner.svg` | `32x32` | `generate` |
+| `armored_salvage_chassis` | 装甲回收底盘 | `Resources/art/chassis/armored_salvage_chassis.svg` | `32x32` | `done` |
+| `compressed_cargo_bay` | 压缩货舱 | `Resources/art/modules/compressed_cargo_bay.svg` | `32x32` | `done` |
+| `armored_cargo_shell` | 装甲货壳 | `Resources/art/modules/armored_cargo_shell.svg` | `32x32` | `done` |
+| `wreckage_tether` | 残骸牵引器 | `Resources/art/modules/wreckage_tether.svg` | `32x32` | `done` |
+| `salvage_scanner` | 回收扫描器 | `Resources/art/modules/salvage_scanner.svg` | `32x32` | `done` |
 | `emp_emitter` | EMP 发生器 | `Resources/art/modules/emp_emitter.svg` | `32x32` | `generate` |
 | `tactical_target_locker` | 战术目标锁定器 | `Resources/art/modules/tactical_target_locker.svg` | `32x32` | `generate` |
 | `cruise_missile_launcher` | 巡航导弹发射器 | `Resources/art/modules/cruise_missile_launcher.svg` | `32x32` | `generate` |
 | `late_logic_board` | 高级战略逻辑板 | `Resources/art/modules/late_logic_board.svg` | `32x32` | `generate` |
 | `hover_scout` | 前线反重力侦察兵 | `Resources/art/blueprints/hover_scout.svg` | `48x48` | `generate` |
 | `missile_truck` | 后勤导弹发射车 | `Resources/art/blueprints/missile_truck.svg` | `48x48` | `generate` |
-| `armored_salvage_vehicle` | 装甲回收车 | `Resources/art/blueprints/armored_salvage_vehicle.svg` | `48x48` | `generate` |
+| `armored_salvage_vehicle` | 装甲回收车 | `Resources/art/blueprints/armored_salvage_vehicle.svg` | `48x48` | `done` |
 
 ### 4. 敌人与敌巢
 
@@ -287,7 +287,7 @@
 
 | 稳定 ID | 显示名 | 建议路径 | 尺寸 | 状态 |
 | --- | --- | --- | --- | --- |
-| `state_salvage` | 回收 | `Resources/art/ui/state_salvage.svg` | `20x20` | `generate` |
+| `state_salvage` | 回收 | `Resources/art/ui/state_salvage.svg` | `20x20` | `done` |
 | `state_broadcast` | 广播 | `Resources/art/ui/state_broadcast.svg` | `20x20` | `generate` |
 | `state_receive` | 接收 | `Resources/art/ui/state_receive.svg` | `20x20` | `generate` |
 | `state_target_locked` | 目标锁定 | `Resources/art/ui/state_target_locked.svg` | `20x20` | `generate` |
