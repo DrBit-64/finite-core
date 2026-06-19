@@ -160,40 +160,55 @@
   "frontier_zones": [],
   "region_connections": [
 	{
+	  "id": "gate_basin_to_crystal_main",
 	  "from_region_id": "starting_basin",
 	  "to_region_id": "crystal_wasteland",
 	  "connection_type": "main_gate",
 	  "gate_cells": [[72, 58], [73, 58], [74, 59], [75, 60]],
 	  "route_id": "basin_to_crystal_main",
+	  "locked_by_default": true,
+	  "unlock_source_id": "enemy_nest_001",
 	  "revealed_by": "enemy_nest_001_destroyed"
 	},
 	{
+	  "id": "gate_basin_to_crystal_risk_bypass",
 	  "from_region_id": "starting_basin",
 	  "to_region_id": "crystal_wasteland",
 	  "connection_type": "risk_bypass",
 	  "gate_cells": [[70, 78], [72, 80], [74, 82]],
-	  "route_id": "basin_to_crystal_risk_bypass"
+	  "route_id": "basin_to_crystal_risk_bypass",
+	  "locked_by_default": true,
+	  "unlock_source_id": "enemy_nest_001",
+	  "revealed_by": "enemy_nest_001_destroyed"
 	},
 	{
+	  "id": "gate_basin_to_interference_main",
 	  "from_region_id": "starting_basin",
 	  "to_region_id": "interference_highlands",
 	  "connection_type": "main_gate",
 	  "gate_cells": [[60, 44], [62, 40], [64, 36]],
-	  "route_id": "basin_to_interference_main"
+	  "route_id": "basin_to_interference_main",
+	  "locked_by_default": true
 	},
 	{
+	  "id": "gate_basin_to_wreckage_main",
 	  "from_region_id": "starting_basin",
 	  "to_region_id": "wreckage_battlefield",
 	  "connection_type": "main_gate",
 	  "gate_cells": [[44, 62], [40, 62], [36, 62]],
-	  "route_id": "basin_to_wreckage_main"
+	  "route_id": "basin_to_wreckage_main",
+	  "locked_by_default": true,
+	  "unlock_source_id": "armored_scavenger_command_nest_001",
+	  "revealed_by": "armored_scavenger_command_nest_001_destroyed"
 	},
 	{
+	  "id": "gate_basin_to_core_outer_main",
 	  "from_region_id": "starting_basin",
 	  "to_region_id": "brain_core_outer",
 	  "connection_type": "main_gate",
 	  "gate_cells": [[60, 78], [62, 84], [64, 90]],
-	  "route_id": "basin_to_core_outer_main"
+	  "route_id": "basin_to_core_outer_main",
+	  "locked_by_default": true
 	}
   ],
   "water_bodies": [

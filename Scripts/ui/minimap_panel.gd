@@ -259,6 +259,8 @@ func _draw_region_connections(content_rect: Rect2, map_size: Vector2) -> void:
 		var color := Color(0.74, 0.95, 1.0, 0.62)
 		if str(connection.get("connection_type", "")) == "risk_bypass":
 			color = Color(1.0, 0.66, 0.32, 0.62)
+		if str(connection.get("gate_state", "open")) == "locked":
+			color = Color(1.0, 0.54, 0.18, 0.34)
 		_draw_cell_polyline(gate_cells, content_rect, map_size, color, false)
 		for cell_value in gate_cells:
 			var point := _map_point(_vector2_from_value(cell_value) + Vector2(0.5, 0.5), content_rect, map_size)

@@ -22,6 +22,14 @@ func setup_miner(resource_node: Node, inventory: Variant, use_entity_logistics: 
 	target_inventory = inventory
 	requires_logistics_delivery = use_entity_logistics
 	if bound_resource_node:
+		if bound_resource_node.has_method("is_interaction_locked") and bool(bound_resource_node.call("is_interaction_locked")):
+			bound_resource_node = null
+			output_resource_id = &""
+			_update_status_text()
+			_rebuild_mining_recipe()
+			queue_redraw()
+			miner_state_changed.emit()
+			return
 		output_resource_id = bound_resource_node.get("resource_id")
 		if bound_resource_node.has_method("bind_miner"):
 			bound_resource_node.call("bind_miner", self)

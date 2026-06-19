@@ -689,13 +689,45 @@ func _draw_region_signals() -> void:
 		for signal_value in centers:
 			var center_cell := Vector2.ZERO
 			var signal_type := "weak_nest"
+			var size_cells := Vector2.ZERO
 			if typeof(signal_value) == TYPE_DICTIONARY:
 				center_cell = _vector2_from_value(signal_value.get("cell", Vector2.ZERO))
 				signal_type = str(signal_value.get("signal_type", signal_type))
+				size_cells = _vector2_from_value(signal_value.get("size_cells", Vector2.ZERO))
 			else:
 				center_cell = _vector2_from_value(signal_value)
+			if size_cells.x > 0.0 and size_cells.y > 0.0:
+				_draw_nest_footprint_signal(center_cell, size_cells, signal_type)
+				continue
 			var center := center_cell * float(cell_size)
 			_draw_nest_signal(center, signal_type)
+
+func _draw_nest_footprint_signal(center_cell: Vector2, size_cells: Vector2, signal_type: String = "weak_nest") -> void:
+	var signal_color := _signal_color(signal_type)
+	var pixel_size := size_cells * float(cell_size)
+	var rect := Rect2((center_cell - size_cells * 0.5) * float(cell_size), pixel_size)
+	var padded := rect.grow(float(cell_size) * 0.10)
+	draw_rect(padded, Color(signal_color.r, signal_color.g, signal_color.b, 0.10), true)
+	draw_rect(padded, Color(signal_color.r, signal_color.g, signal_color.b, 0.72), false, 2.5)
+	var corner := minf(padded.size.x, padded.size.y) * 0.22
+	var tl := padded.position
+	var tr := padded.position + Vector2(padded.size.x, 0.0)
+	var bl := padded.position + Vector2(0.0, padded.size.y)
+	var br := padded.position + padded.size
+	for pair in [
+		[tl, Vector2.RIGHT, Vector2.DOWN],
+		[tr, Vector2.LEFT, Vector2.DOWN],
+		[bl, Vector2.RIGHT, Vector2.UP],
+		[br, Vector2.LEFT, Vector2.UP],
+	]:
+		var point: Vector2 = pair[0]
+		draw_line(point, point + pair[1] * corner, signal_color, 3.0)
+		draw_line(point, point + pair[2] * corner, signal_color, 3.0)
+	var center := rect.get_center()
+	var radius := minf(pixel_size.x, pixel_size.y) * 0.18
+	draw_arc(center, radius, 0.0, TAU, 36, Color(1.0, 0.78, 0.42, 0.80), 2.0)
+	draw_line(center + Vector2(-radius, 0.0), center + Vector2(radius, 0.0), Color(1.0, 0.78, 0.42, 0.64), 1.5)
+	draw_line(center + Vector2(0.0, -radius), center + Vector2(0.0, radius), Color(1.0, 0.78, 0.42, 0.64), 1.5)
 
 func _draw_nest_signal(center: Vector2, signal_type: String = "weak_nest") -> void:
 	var radius := float(cell_size) * 0.32

@@ -20,6 +20,7 @@ const DebugEnemyScene := preload("res://Scenes/units/debug_enemy_unit.tscn")
 const ScavengerHoundScene := preload("res://Scenes/units/scavenger_hound.tscn")
 const EnemyNestScene := preload("res://Scenes/map/enemy_nest.tscn")
 const MapConfigLoaderScript := preload("res://Scripts/map/map_config_loader.gd")
+const RegionGateOverlayScript := preload("res://Scripts/map/region_gate_overlay.gd")
 const StartingInventoryConfigLoaderScript := preload("res://Scripts/data/starting_inventory_config_loader.gd")
 const RuntimeConfigLoaderScript := preload("res://Scripts/data/runtime_config_loader.gd")
 const BlueprintLibraryScript := preload("res://Scripts/blueprints/blueprint_library.gd")
@@ -116,8 +117,14 @@ var map_region_definitions: Array = []
 var map_region_blocks: Dictionary = {}
 var map_region_routes: Array = []
 var map_region_connections: Array = []
+var map_region_gate_states: Dictionary = {}
+var map_locked_gate_cells: Dictionary = {}
+var map_region_gate_tile_cache: Dictionary = {}
+var map_region_gate_cluster_cells_by_gate_id: Dictionary = {}
 var map_water_bodies: Array = []
 var map_frontline_supply_points: Array = []
+var map_pending_enemy_patrols: Array = []
+var map_pending_enemy_nests: Array = []
 var map_painted_region_cells_cache: Array = []
 var map_semantic_cells_by_tag_cache: Dictionary = {}
 var map_minimap_static_snapshot: Dictionary = {}
@@ -131,6 +138,7 @@ var _navigation_grid: AStarGrid2D = null
 var _navigation_dirty: bool = true
 var _logistics_visual_layer: Node2D = null
 var _logistics_task_lines: Dictionary = {}
+var _region_gate_overlay: Node2D = null
 
 func _ready() -> void:
 	add_to_group("stage_path_provider")
@@ -649,6 +657,7 @@ func get_campaign_save_snapshot() -> Dictionary:
 		"enemy_buildings": _make_enemy_building_save_snapshots(),
 		"units": _make_unit_save_snapshots(),
 		"map_regions": map_region_states.duplicate(true),
+		"map_region_gates": map_region_gate_states.duplicate(true),
 		"runtime_profile_path": runtime_profile_path,
 		"stage15_blueprint_schema_reserve": {
 			"unit_type_id": true,
@@ -858,9 +867,20 @@ func _apply_campaign_save_snapshot(snapshot: Dictionary) -> void:
 	_clear_world_unit_selection()
 	RobotUnit.clear_shared_rally_readiness()
 	_apply_campaign_state_snapshot(snapshot.get("campaign", {}))
+	if snapshot.has("map_region_gates"):
+		map_region_gate_states = snapshot.get("map_region_gates", {}).duplicate(true)
+		_refresh_region_gate_runtime_state()
+	else:
+		_sync_gate_states_from_campaign()
 	_restore_blueprint_library(snapshot.get("blueprints", []))
 	_clear_dynamic_units_for_load()
 	_clear_dynamic_buildings_for_load()
+	if snapshot.has("map_region_gates"):
+		_activate_all_unlocked_region_content()
+		_refresh_resource_gate_states()
+	else:
+		_activate_all_unlocked_region_content()
+		_refresh_resource_gate_states()
 	var building_entries: Array = snapshot.get("buildings", [])
 	for entry_value in building_entries:
 		if typeof(entry_value) != TYPE_DICTIONARY:
@@ -1333,6 +1353,12 @@ func get_navigation_path_points_to_node(origin_world: Vector2, target_node: Node
 		points.append(grid_map.call("grid_to_world", id_path[index]))
 	return points
 
+func has_navigation_path_to_world(origin_world: Vector2, target_world: Vector2) -> bool:
+	return not _get_navigation_id_path_for_world(origin_world, target_world).is_empty()
+
+func has_navigation_path_to_node(origin_world: Vector2, target_node: Node) -> bool:
+	return not _get_navigation_id_path_for_node(origin_world, target_node).is_empty()
+
 func _get_navigation_id_path_for_world(origin_world: Vector2, target_world: Vector2) -> Array[Vector2i]:
 	if grid_map == null:
 		return []
@@ -1484,6 +1510,8 @@ func _is_navigation_cell_blocked(cell: Vector2i) -> bool:
 	if grid_map == null:
 		return true
 	if grid_map.call("is_cell_in_bounds", cell) != true:
+		return true
+	if map_locked_gate_cells.has(cell):
 		return true
 	if grid_map.has_method("is_cell_blocked_by_semantic_tile") and grid_map.call("is_cell_blocked_by_semantic_tile", cell) == true:
 		return true
@@ -1662,6 +1690,8 @@ func _get_place_block_reason(building_def: BuildingDef, origin: Vector2i) -> Str
 		return "地图未就绪"
 	if not bool(grid_map.call("is_rect_in_bounds", origin, building_def.grid_size)):
 		return "超出地图边界"
+	if _is_rect_in_locked_region(origin, building_def.grid_size):
+		return "区域尚未解锁"
 	if grid_map.has_method("is_rect_blocked_by_semantic_tile") and bool(grid_map.call("is_rect_blocked_by_semantic_tile", origin, building_def.grid_size)):
 		return "地形阻挡"
 	if not grid_occupancy.can_place(origin, building_def.grid_size):
@@ -1678,6 +1708,8 @@ func _get_place_block_reason(building_def: BuildingDef, origin: Vector2i) -> Str
 	if _is_miner_def(building_def):
 		if resource_node == null:
 			return "采矿机必须覆盖矿点"
+		if resource_node.has_method("is_interaction_locked") and bool(resource_node.call("is_interaction_locked")):
+			return "资源所在区域尚未解锁"
 		if _is_water_resource_node(resource_node):
 			return "水源需要放置水泵"
 		if bool(resource_node.call("is_bound")):
@@ -1700,6 +1732,14 @@ func _is_in_main_base_service_radius(origin: Vector2i, size: Vector2i) -> bool:
 	var building_center := Vector2(origin) + Vector2(size) * 0.5
 	var base_center := Vector2(main_base.get("grid_origin")) + Vector2(main_base.get("grid_size")) * 0.5
 	return building_center.distance_to(base_center) <= float(main_base.get("service_radius_cells"))
+
+func _is_rect_in_locked_region(origin: Vector2i, size: Vector2i) -> bool:
+	for x in range(origin.x, origin.x + size.x):
+		for y in range(origin.y, origin.y + size.y):
+			var region_id := _get_region_id_for_cell_from_config(Vector2i(x, y))
+			if not _is_region_id_unlocked(region_id):
+				return true
+	return false
 
 func _is_water_pump_candidate_cell(cell: Vector2i) -> bool:
 	for water_value in map_water_bodies:
@@ -1837,6 +1877,7 @@ func _build_minimap_snapshot() -> Dictionary:
 	snapshot["enemy_nests"] = _get_minimap_enemy_nests()
 	snapshot["main_base"] = _get_minimap_main_base()
 	snapshot["supply_points"] = _get_minimap_supply_points()
+	snapshot["region_connections"] = _get_minimap_region_connections()
 	snapshot["region_signals"] = _get_minimap_region_signals()
 	snapshot["water_flow_target_cell"] = _get_minimap_water_flow_target_cell()
 	snapshot["camera_cell"] = _get_minimap_camera_cell()
@@ -1849,7 +1890,7 @@ func _build_minimap_static_snapshot(map_size: Vector2i) -> Dictionary:
 		"static_version": map_static_cache_version,
 		"regions": map_region_definitions,
 		"region_cells": _get_minimap_region_cells(),
-		"region_connections": map_region_connections,
+		"region_connections": _get_minimap_region_connections(),
 		"water_bodies": map_water_bodies,
 		"water_cells": _get_minimap_semantic_cells("water"),
 		"pump_candidate_cells": _get_minimap_semantic_cells("pump_candidate"),
@@ -1872,6 +1913,17 @@ func _get_minimap_region_cells() -> Array:
 			"display_name": str(region_cell.get("display_name", "")),
 			"minimap_color": region_cell.get("minimap_color", []),
 		})
+	return result
+
+func _get_minimap_region_connections() -> Array:
+	var result: Array = []
+	for connection_value in map_region_connections:
+		if typeof(connection_value) != TYPE_DICTIONARY:
+			continue
+		var connection: Dictionary = connection_value.duplicate(true)
+		var gate_id := str(connection.get("id", ""))
+		connection["gate_state"] = str(map_region_gate_states.get(gate_id, "open"))
+		result.append(connection)
 	return result
 
 func _get_minimap_semantic_cells(tag: String) -> Array:
@@ -2385,9 +2437,307 @@ func _apply_camera_start_from_config(map_config: Dictionary) -> void:
 		main_camera.global_position = grid_map.call("grid_to_world", camera_start_cell)
 		_clamp_camera_to_map_bounds()
 
+func _initialize_region_gate_runtime(map_config: Dictionary) -> void:
+	map_region_definitions = map_config.get("regions", []).duplicate(true)
+	map_region_routes = map_config.get("region_routes", []).duplicate(true)
+	map_region_connections = _normalize_region_connections(map_config.get("region_connections", []))
+	map_region_gate_states.clear()
+	map_locked_gate_cells.clear()
+	map_pending_enemy_patrols.clear()
+	map_pending_enemy_nests.clear()
+	for connection_value in map_region_connections:
+		if typeof(connection_value) != TYPE_DICTIONARY:
+			continue
+		var connection: Dictionary = connection_value
+		var gate_id := str(connection.get("id", ""))
+		if gate_id.is_empty():
+			continue
+		var locked_by_default := bool(connection.get("locked_by_default", false))
+		var unlock_source := _get_connection_unlock_source(connection)
+		if not unlock_source.is_empty():
+			locked_by_default = true
+		var state := "locked" if locked_by_default else "open"
+		if not unlock_source.is_empty() and _is_nest_defeated_in_campaign(StringName(unlock_source)):
+			state = "open"
+		map_region_gate_states[gate_id] = state
+	_rebuild_locked_gate_cells()
+	_ensure_region_gate_overlay()
+
+func _normalize_region_connections(raw_connections: Array) -> Array:
+	var result: Array = []
+	var index := 0
+	for connection_value in raw_connections:
+		if typeof(connection_value) != TYPE_DICTIONARY:
+			continue
+		var connection: Dictionary = connection_value.duplicate(true)
+		if str(connection.get("id", "")).is_empty():
+			var route_id := str(connection.get("route_id", ""))
+			if route_id.is_empty():
+				route_id = "connection_%02d" % index
+			connection["id"] = route_id
+		if not connection.has("locked_by_default"):
+			connection["locked_by_default"] = not _get_connection_unlock_source(connection).is_empty()
+		result.append(connection)
+		index += 1
+	return result
+
+func _get_connection_unlock_source(connection: Dictionary) -> String:
+	var direct := str(connection.get("unlock_source_id", connection.get("unlocked_by", "")))
+	if not direct.is_empty():
+		return direct
+	var revealed_by := str(connection.get("revealed_by", ""))
+	if revealed_by.ends_with("_destroyed"):
+		return revealed_by.substr(0, revealed_by.length() - "_destroyed".length())
+	return ""
+
+func _is_nest_defeated_in_campaign(nest_id: StringName) -> bool:
+	if campaign_state == null or String(nest_id).is_empty():
+		return false
+	return campaign_state.defeated_nests.has(nest_id)
+
+func _rebuild_locked_gate_cells() -> void:
+	map_locked_gate_cells.clear()
+	for connection_value in map_region_connections:
+		if typeof(connection_value) != TYPE_DICTIONARY:
+			continue
+		var connection: Dictionary = connection_value
+		var gate_id := str(connection.get("id", ""))
+		if str(map_region_gate_states.get(gate_id, "open")) != "locked":
+			continue
+		var cells: Array = map_region_gate_cluster_cells_by_gate_id.get(gate_id, [])
+		if cells.is_empty():
+			cells = connection.get("gate_cells", [])
+		for cell_value in cells:
+			var cell := _cell_from_gate_value(cell_value)
+			if cell.x > -999999:
+				map_locked_gate_cells[cell] = gate_id
+
+func _ensure_region_gate_overlay() -> void:
+	if _region_gate_overlay != null and is_instance_valid(_region_gate_overlay):
+		return
+	if grid_map == null:
+		return
+	_region_gate_overlay = RegionGateOverlayScript.new()
+	_region_gate_overlay.name = "RegionGateOverlay"
+	_region_gate_overlay.z_index = 50
+	grid_map.add_child(_region_gate_overlay)
+
+func _refresh_region_gate_runtime_state() -> void:
+	_prepare_region_gate_tile_mapping()
+	_rebuild_locked_gate_cells()
+	_apply_region_gate_tile_visibility()
+	_mark_navigation_dirty()
+	_refresh_region_gate_overlay()
+
+func _apply_region_gate_tile_visibility() -> void:
+	var gate_layer := _get_region_gate_tile_layer()
+	if gate_layer == null:
+		return
+	for cell_key in map_region_gate_tile_cache.keys():
+		var cell := _parse_region_key(str(cell_key))
+		if map_locked_gate_cells.has(cell):
+			if gate_layer.has_method("erase_cell"):
+				gate_layer.call("erase_cell", cell)
+			continue
+		var cached: Dictionary = map_region_gate_tile_cache[cell_key]
+		if gate_layer.has_method("set_cell"):
+			gate_layer.call(
+				"set_cell",
+				cell,
+				int(cached.get("source_id", -1)),
+				cached.get("atlas_coords", Vector2i.ZERO),
+				int(cached.get("alternative_tile", 0))
+			)
+	if gate_layer.has_method("notify_runtime_tile_data_update"):
+		gate_layer.call("notify_runtime_tile_data_update")
+	if gate_layer.has_method("queue_redraw"):
+		gate_layer.call("queue_redraw")
+	if grid_map != null and grid_map.has_method("invalidate_semantic_cache"):
+		grid_map.call("invalidate_semantic_cache")
+	_rebuild_static_map_cache()
+
+func _prepare_region_gate_tile_mapping() -> void:
+	var gate_layer := _get_region_gate_tile_layer()
+	if gate_layer == null:
+		return
+	_capture_region_gate_tiles(gate_layer)
+	_assign_region_gate_tile_clusters()
+
+func _capture_region_gate_tiles(gate_layer: Node) -> void:
+	if gate_layer == null:
+		return
+	if not gate_layer.has_method("get_used_cells") or not gate_layer.has_method("get_cell_source_id"):
+		return
+	for cell_value in gate_layer.call("get_used_cells"):
+		var cell: Vector2i = cell_value
+		var key := _region_key(cell)
+		if map_region_gate_tile_cache.has(key):
+			continue
+		var source_id := int(gate_layer.call("get_cell_source_id", cell))
+		if source_id < 0:
+			continue
+		var atlas_coords := Vector2i.ZERO
+		if gate_layer.has_method("get_cell_atlas_coords"):
+			atlas_coords = gate_layer.call("get_cell_atlas_coords", cell)
+		var alternative_tile := 0
+		if gate_layer.has_method("get_cell_alternative_tile"):
+			alternative_tile = int(gate_layer.call("get_cell_alternative_tile", cell))
+		map_region_gate_tile_cache[key] = {
+			"source_id": source_id,
+			"atlas_coords": atlas_coords,
+			"alternative_tile": alternative_tile,
+		}
+
+func _assign_region_gate_tile_clusters() -> void:
+	if map_region_gate_tile_cache.is_empty():
+		return
+	var clusters := _build_region_gate_tile_clusters()
+	if clusters.is_empty():
+		return
+	map_region_gate_cluster_cells_by_gate_id.clear()
+	for connection_value in map_region_connections:
+		if typeof(connection_value) != TYPE_DICTIONARY:
+			continue
+		var connection: Dictionary = connection_value
+		var gate_id := str(connection.get("id", ""))
+		if gate_id.is_empty():
+			continue
+		var gate_center := _gate_cells_center(connection.get("gate_cells", []))
+		var best_cluster: Dictionary = {}
+		var best_distance := INF
+		for cluster_value in clusters:
+			var cluster: Dictionary = cluster_value
+			var center: Vector2 = cluster.get("center", Vector2.ZERO)
+			var distance := center.distance_squared_to(gate_center)
+			if distance < best_distance:
+				best_distance = distance
+				best_cluster = cluster
+		if not best_cluster.is_empty():
+			map_region_gate_cluster_cells_by_gate_id[gate_id] = best_cluster.get("cells", [])
+
+func _build_region_gate_tile_clusters() -> Array[Dictionary]:
+	var unvisited := {}
+	for key in map_region_gate_tile_cache.keys():
+		unvisited[str(key)] = true
+	var clusters: Array[Dictionary] = []
+	while not unvisited.is_empty():
+		var start_key := str(unvisited.keys()[0])
+		unvisited.erase(start_key)
+		var queue: Array[String] = [start_key]
+		var cells: Array[Vector2i] = []
+		while not queue.is_empty():
+			var key: String = queue.pop_front()
+			var cell := _parse_region_key(key)
+			cells.append(cell)
+			for dx in range(-1, 2):
+				for dy in range(-1, 2):
+					if dx == 0 and dy == 0:
+						continue
+					var next_cell := cell + Vector2i(dx, dy)
+					var next_key := _region_key(next_cell)
+					if not unvisited.has(next_key):
+						continue
+					unvisited.erase(next_key)
+					queue.append(next_key)
+		clusters.append({
+			"cells": cells,
+			"center": _vector2i_cells_center(cells),
+		})
+	return clusters
+
+func _gate_cells_center(cells: Array) -> Vector2:
+	var parsed: Array[Vector2i] = []
+	for cell_value in cells:
+		var cell := _cell_from_gate_value(cell_value)
+		if cell.x > -999999:
+			parsed.append(cell)
+	return _vector2i_cells_center(parsed)
+
+func _vector2i_cells_center(cells: Array[Vector2i]) -> Vector2:
+	if cells.is_empty():
+		return Vector2.ZERO
+	var total := Vector2.ZERO
+	for cell in cells:
+		total += Vector2(cell)
+	return total / float(cells.size())
+
+func _cell_from_gate_value(value: Variant) -> Vector2i:
+	if value is Vector2i:
+		return value
+	if value is Vector2:
+		return Vector2i(roundi(value.x), roundi(value.y))
+	if typeof(value) == TYPE_ARRAY and value.size() >= 2:
+		return Vector2i(int(value[0]), int(value[1]))
+	return Vector2i(-999999, -999999)
+
+func _get_region_gate_tile_layer() -> Node:
+	if grid_map == null:
+		return null
+	return grid_map.get_node_or_null("TerrainLayer/GateLayer")
+
+func _refresh_region_gate_overlay() -> void:
+	_ensure_region_gate_overlay()
+	if _region_gate_overlay != null and is_instance_valid(_region_gate_overlay) and _region_gate_overlay.has_method("setup"):
+		_region_gate_overlay.call("setup", map_region_connections, map_region_gate_states, _get_grid_cell_size())
+
+func _sync_gate_states_from_campaign() -> void:
+	for connection_value in map_region_connections:
+		if typeof(connection_value) != TYPE_DICTIONARY:
+			continue
+		var connection: Dictionary = connection_value
+		var gate_id := str(connection.get("id", ""))
+		var unlock_source := _get_connection_unlock_source(connection)
+		if gate_id.is_empty() or unlock_source.is_empty():
+			continue
+		if _is_nest_defeated_in_campaign(StringName(unlock_source)):
+			map_region_gate_states[gate_id] = "open"
+	_refresh_region_gate_runtime_state()
+
+func _is_map_content_region_unlocked(data: Dictionary) -> bool:
+	var region_id := _get_map_item_region_id(data)
+	return _is_region_id_unlocked(region_id)
+
+func _is_region_id_unlocked(region_id: String) -> bool:
+	if region_id.is_empty() or region_id == "starting_basin":
+		return true
+	for connection_value in map_region_connections:
+		if typeof(connection_value) != TYPE_DICTIONARY:
+			continue
+		var connection: Dictionary = connection_value
+		if str(connection.get("to_region_id", "")) != region_id:
+			continue
+		var gate_id := str(connection.get("id", ""))
+		if str(map_region_gate_states.get(gate_id, "open")) == "open":
+			return true
+	return false
+
+func _get_map_item_region_id(data: Dictionary) -> String:
+	var explicit := str(data.get("region_id", ""))
+	if not explicit.is_empty():
+		return explicit
+	var cell := MapConfigLoaderScript.get_vector2i(data, "grid_origin", Vector2i(-999999, -999999))
+	if cell.x <= -999999:
+		return ""
+	return _get_region_id_for_cell_from_config(cell)
+
+func _get_region_id_for_cell_from_config(cell: Vector2i) -> String:
+	for region_value in map_region_definitions:
+		if typeof(region_value) != TYPE_DICTIONARY:
+			continue
+		var region: Dictionary = region_value
+		for rect_value in region.get("grid_rects", []):
+			if typeof(rect_value) != TYPE_ARRAY or rect_value.size() < 4:
+				continue
+			var origin := Vector2i(int(rect_value[0]), int(rect_value[1]))
+			var size := Vector2i(int(rect_value[2]), int(rect_value[3]))
+			if cell.x >= origin.x and cell.y >= origin.y and cell.x < origin.x + size.x and cell.y < origin.y + size.y:
+				return str(region.get("region_id", ""))
+	return ""
+
 func _load_fixed_map(map_config: Dictionary = {}) -> void:
 	if map_config.is_empty():
 		map_config = MapConfigLoaderScript.load_map_config(map_config_path)
+	_initialize_region_gate_runtime(map_config)
 	var resource_items: Array = map_config.get("resource_nodes", [])
 	for item in resource_items:
 		if typeof(item) != TYPE_DICTIONARY:
@@ -2398,18 +2748,27 @@ func _load_fixed_map(map_config: Dictionary = {}) -> void:
 		for item in debug_enemy_items:
 			if typeof(item) != TYPE_DICTIONARY:
 				continue
-			_spawn_debug_enemy(item)
+			if _is_map_content_region_unlocked(item):
+				_spawn_debug_enemy(item)
 	var enemy_patrol_items: Array = map_config.get("enemy_patrols", [])
 	for item in enemy_patrol_items:
 		if typeof(item) != TYPE_DICTIONARY:
 			continue
-		_spawn_enemy_patrol(item)
+		if _is_map_content_region_unlocked(item):
+			_spawn_enemy_patrol(item)
+		else:
+			map_pending_enemy_patrols.append(item.duplicate(true))
 	var enemy_nest_items: Array = map_config.get("enemy_nests", [])
 	for item in enemy_nest_items:
 		if typeof(item) != TYPE_DICTIONARY:
 			continue
-		_spawn_enemy_nest(item)
+		if _is_map_content_region_unlocked(item) or _is_nest_defeated_in_campaign(StringName(str(item.get("id", "")))):
+			_spawn_enemy_nest(item)
+		else:
+			map_pending_enemy_nests.append(item.duplicate(true))
 	_initialize_region_fog(map_config)
+	_refresh_resource_gate_states()
+	_refresh_region_gate_runtime_state()
 
 func _spawn_resource_node(data: Dictionary) -> void:
 	var resource_id := StringName(str(data.get("resource_id", "")))
@@ -2423,6 +2782,23 @@ func _spawn_resource_node(data: Dictionary) -> void:
 	node.call("setup", data, resource_def, _get_grid_cell_size())
 	resource_nodes_by_cell[node.get("grid_origin")] = node
 	resource_nodes_by_id[node.get("node_id")] = node
+	_apply_resource_gate_state(node, data)
+
+func _apply_resource_gate_state(node: Node, source_data: Dictionary = {}) -> void:
+	if node == null or not is_instance_valid(node) or not node.has_method("set_interaction_locked"):
+		return
+	var region_id := _get_map_item_region_id(source_data)
+	if region_id.is_empty():
+		var origin: Vector2i = node.get("grid_origin")
+		region_id = _get_region_id_for_cell_from_config(origin)
+	var locked := not _is_region_id_unlocked(region_id)
+	node.call("set_interaction_locked", locked, "区域尚未解锁" if locked else "")
+
+func _refresh_resource_gate_states() -> void:
+	for node in resource_nodes_by_id.values():
+		if node == null or not is_instance_valid(node):
+			continue
+		_apply_resource_gate_state(node)
 
 func _spawn_debug_enemy(data: Dictionary) -> void:
 	var path_points := _get_world_path_points(data.get("grid_path", []))
@@ -2500,7 +2876,7 @@ func _initialize_region_fog(map_config: Dictionary = {}) -> void:
 	map_region_signal_cells.clear()
 	map_region_definitions = map_config.get("regions", []).duplicate(true)
 	map_region_routes = map_config.get("region_routes", []).duplicate(true)
-	map_region_connections = map_config.get("region_connections", []).duplicate(true)
+	map_region_connections = _normalize_region_connections(map_config.get("region_connections", []))
 	map_water_bodies = map_config.get("water_bodies", []).duplicate(true)
 	map_frontline_supply_points = map_config.get("frontline_supply_points", []).duplicate(true)
 	var region_size := FOG_REGION_SIZE_CELLS
@@ -2517,6 +2893,7 @@ func _initialize_region_fog(map_config: Dictionary = {}) -> void:
 		if nest == null or not is_instance_valid(nest):
 			continue
 		_mark_enemy_nest_signal(nest, region_size)
+	_mark_pending_enemy_presence_signals(region_size)
 	_apply_region_fog_to_grid()
 
 func _update_region_after_nest_destroyed(nest: Node) -> void:
@@ -2657,11 +3034,18 @@ func _mark_starting_resource_basin_scanned(region_count: Vector2i, region_size: 
 	var max_region := Vector2i(-999999, -999999)
 	for cell_value in resource_nodes_by_cell.keys():
 		var cell: Vector2i = cell_value
+		var region_id := _get_region_id_for_cell_from_config(cell)
+		if not _is_region_id_unlocked(region_id):
+			continue
 		var region := _region_for_cell(cell, region_size)
 		min_region.x = mini(min_region.x, region.x)
 		min_region.y = mini(min_region.y, region.y)
 		max_region.x = maxi(max_region.x, region.x)
 		max_region.y = maxi(max_region.y, region.y)
+	if min_region.x >= 999999:
+		for region in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1)]:
+			_mark_region_state(region, region_count, "scanned")
+		return
 
 	for x in range(min_region.x, max_region.x + 1):
 		for y in range(min_region.y, max_region.y + 1):
@@ -2676,9 +3060,48 @@ func _mark_enemy_nest_signal(nest: Node, region_size: int) -> void:
 	var centers: Array = map_region_signal_cells.get(key, [])
 	centers.append({
 		"cell": Vector2(origin) + Vector2(size) * 0.5,
-		"signal_type": "weak_nest",
+		"size_cells": [size.x, size.y],
+		"signal_type": str(nest.get("nest_type")),
 	})
 	map_region_signal_cells[key] = centers
+
+func _mark_pending_enemy_presence_signals(region_size: int) -> void:
+	for pending in map_pending_enemy_nests:
+		if typeof(pending) == TYPE_DICTIONARY:
+			_mark_pending_enemy_signal(pending, region_size, "armored_activity")
+	for pending in map_pending_enemy_patrols:
+		if typeof(pending) == TYPE_DICTIONARY:
+			_mark_pending_enemy_signal(pending, region_size, "weak_nest")
+
+func _mark_pending_enemy_signal(data: Dictionary, region_size: int, fallback_signal_type: String) -> void:
+	var origin := MapConfigLoaderScript.get_vector2i(data, "grid_origin", Vector2i(-999999, -999999))
+	if origin.x <= -999999:
+		return
+	var size := _pending_enemy_signal_size(data)
+	var region := _region_for_cell(origin, region_size)
+	var key := _region_key(region)
+	if map_region_states.has(key) and str(map_region_states[key]) == "unknown":
+		map_region_states[key] = "signal"
+	var centers: Array = map_region_signal_cells.get(key, [])
+	var signal_payload := {
+		"cell": [origin.x + float(size.x) * 0.5, origin.y + float(size.y) * 0.5] if size.x > 0 else [origin.x, origin.y],
+		"signal_type": str(data.get("signal_type", fallback_signal_type)),
+		"locked_presence": true,
+	}
+	if size.x > 0 and size.y > 0:
+		signal_payload["size_cells"] = [size.x, size.y]
+		signal_payload["signal_type"] = str(data.get("nest_type", signal_payload["signal_type"]))
+	centers.append(signal_payload)
+	map_region_signal_cells[key] = centers
+
+func _pending_enemy_signal_size(data: Dictionary) -> Vector2i:
+	var nest_type := StringName(str(data.get("nest_type", "")))
+	if String(nest_type).is_empty():
+		return Vector2i.ZERO
+	var nest_config := EnemyConfigLoaderScript.get_type(enemy_config, "nest_types", nest_type)
+	if nest_config.is_empty():
+		return Vector2i(2, 2)
+	return MapConfigLoaderScript.get_vector2i(nest_config, "grid_size", Vector2i(2, 2))
 
 func _mark_region_state(region: Vector2i, region_count: Vector2i, state: String) -> void:
 	if region.x < 0 or region.y < 0 or region.x >= region_count.x or region.y >= region_count.y:
@@ -2743,6 +3166,7 @@ func _on_enemy_hound_lost(hound: Node, reason: StringName) -> void:
 func _on_enemy_nest_destroyed(nest: Node) -> void:
 	_apply_abstract_nest_reward(nest)
 	_update_region_after_nest_destroyed(nest)
+	_unlock_region_gates_for_nest(nest)
 	var event_log := get_node_or_null("/root/CombatEventLog")
 	if event_log and event_log.has_method("record"):
 		event_log.call("record", &"nest_destroyed", {
@@ -2755,6 +3179,83 @@ func _on_enemy_nest_destroyed(nest: Node) -> void:
 	_play_audio_cue(&"enemy_nest_destroyed")
 	push_debug_event("胜利：敌巢已摧毁")
 	_refresh_campaign_hud()
+
+func _unlock_region_gates_for_nest(nest: Node) -> void:
+	if nest == null:
+		return
+	var nest_id := str(nest.get("nest_id"))
+	if nest_id.is_empty():
+		return
+	var unlocked_regions: Array[String] = []
+	var unlocked_gate_ids: Array[String] = []
+	for connection_value in map_region_connections:
+		if typeof(connection_value) != TYPE_DICTIONARY:
+			continue
+		var connection: Dictionary = connection_value
+		var gate_id := str(connection.get("id", ""))
+		if gate_id.is_empty() or str(map_region_gate_states.get(gate_id, "open")) == "open":
+			continue
+		if _get_connection_unlock_source(connection) != nest_id:
+			continue
+		map_region_gate_states[gate_id] = "open"
+		unlocked_gate_ids.append(gate_id)
+		var target_region := str(connection.get("to_region_id", ""))
+		if not target_region.is_empty() and not unlocked_regions.has(target_region):
+			unlocked_regions.append(target_region)
+		if _region_gate_overlay != null and is_instance_valid(_region_gate_overlay) and _region_gate_overlay.has_method("animate_gate"):
+			_region_gate_overlay.call("animate_gate", gate_id)
+	for gate_id in unlocked_gate_ids:
+		push_debug_event("区域通道已开启：%s" % gate_id)
+	if unlocked_gate_ids.is_empty():
+		return
+	_refresh_region_gate_runtime_state()
+	for region_id in unlocked_regions:
+		_activate_region_content(region_id)
+	_mark_regions_discovered_after_gate_unlock(unlocked_regions)
+	_refresh_resource_gate_states()
+	_apply_region_fog_to_grid()
+
+func _activate_region_content(region_id: String) -> void:
+	if region_id.is_empty():
+		return
+	for index in range(map_pending_enemy_patrols.size() - 1, -1, -1):
+		var data: Dictionary = map_pending_enemy_patrols[index]
+		if _get_map_item_region_id(data) != region_id:
+			continue
+		_spawn_enemy_patrol(data)
+		map_pending_enemy_patrols.remove_at(index)
+	for index in range(map_pending_enemy_nests.size() - 1, -1, -1):
+		var data: Dictionary = map_pending_enemy_nests[index]
+		if _get_map_item_region_id(data) != region_id:
+			continue
+		if _is_nest_defeated_in_campaign(StringName(str(data.get("id", "")))):
+			map_pending_enemy_nests.remove_at(index)
+			continue
+		_spawn_enemy_nest(data)
+		map_pending_enemy_nests.remove_at(index)
+
+func _activate_all_unlocked_region_content() -> void:
+	var unlocked_regions: Array[String] = []
+	for region_value in map_region_definitions:
+		if typeof(region_value) != TYPE_DICTIONARY:
+			continue
+		var region: Dictionary = region_value
+		var region_id := str(region.get("region_id", ""))
+		if _is_region_id_unlocked(region_id):
+			unlocked_regions.append(region_id)
+	for region_id in unlocked_regions:
+		_activate_region_content(region_id)
+
+func _mark_regions_discovered_after_gate_unlock(region_ids: Array[String]) -> void:
+	for cell_key in map_region_blocks.keys():
+		var block: Dictionary = map_region_blocks[cell_key]
+		var region_id := str(block.get("region_id", ""))
+		if not region_ids.has(region_id):
+			continue
+		map_region_signal_cells.erase(cell_key)
+		var state := str(map_region_states.get(cell_key, "unknown"))
+		if state == "unknown" or state == "signal":
+			map_region_states[cell_key] = "scanned"
 
 func _apply_abstract_nest_reward(nest: Node) -> void:
 	if campaign_state == null or nest == null:
