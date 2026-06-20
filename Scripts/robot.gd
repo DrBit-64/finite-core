@@ -8,6 +8,13 @@ const TacticalTemplateCompilerScript := preload("res://Scripts/ai/tactical_templ
 const ACTION_ICON_RALLY := preload("res://Resources/art/ui/state_rally.svg")
 const ACTION_ICON_WAIT := preload("res://Resources/art/ui/state_wait.svg")
 const ACTION_ICON_DEFAULT_BRAIN := preload("res://Resources/art/ui/state_default_brain.svg")
+const RALLY_CANDIDATE_CACHE_MSEC := 120
+const SEPARATION_ACTIVE_INTERVAL_MSEC := 140
+const SEPARATION_WAITING_INTERVAL_MSEC := 360
+const SEPARATION_MAX_NEIGHBORS := 8
+
+static var _shared_rally_candidate_cache: Dictionary = {}
+static var _shared_rally_cache_prune_msec: int = 0
 
 @export var display_name: String = "基础步枪机器人"
 @export var max_hp: int = 60
@@ -29,11 +36,12 @@ const ACTION_ICON_DEFAULT_BRAIN := preload("res://Resources/art/ui/state_default
 @export var overheated_resume_threshold: float = 0.0
 @export var minimum_overheat_lock_seconds: float = 1.0
 @export var weapon_enabled: bool = true
-@export_enum("default_combat", "path_patrol", "melee_hound", "logistics", "idle") var brain_mode: String = "default_combat"
+@export_enum("default_combat", "path_patrol", "melee_hound", "ranged_hound", "logistics", "idle") var brain_mode: String = "default_combat"
 @export var default_brain_enabled: bool = true
 @export var preferred_range_ratio: float = 0.85
 @export var range_dead_zone: float = 12.0
 @export var visual_size: Vector2 = Vector2(42, 42)
+@export var projectile_tint: Color = Color.WHITE
 @export var muzzle_distance: float = 24.0
 @export var turn_speed_radians: float = 12.0
 @export var fire_arc_radians: float = 0.16
@@ -114,6 +122,7 @@ var module_sprite: Sprite2D = null
 var _next_separation_update_msec: int = 0
 var _separation_accumulated_delta: float = 0.0
 var _chainsaw_visual_was_active: bool = false
+var _runtime_tag_groups: Array[String] = []
 
 @onready var unit_sprite: Sprite2D = get_node_or_null("UnitSprite")
 @onready var hp_bar: ProgressBar = get_node_or_null("HPBar")
@@ -163,6 +172,8 @@ func _physics_process(delta: float) -> void:
 						movement_component.stop(&"idle")
 		"melee_hound":
 			_tick_melee_hound()
+		"ranged_hound":
+			_tick_ranged_hound()
 		"logistics":
 			pass
 		_:
@@ -210,6 +221,8 @@ func setup_from_blueprint(blueprint: UnitBlueprint, next_rally_point: Vector2 = 
 	cargo_capacity = blueprint.stats.cargo_capacity if blueprint.stats and blueprint.stats.cargo_capacity > 0 else _get_blueprint_cargo_capacity(blueprint)
 	if cargo_capacity > 0:
 		tags = ["cargo", "logistics"]
+		if String(blueprint.unit_type_id).contains("salvage") or String(blueprint.id).contains("salvage"):
+			tags.append("salvage")
 		brain_mode = "logistics"
 		weapon_enabled = false
 		logistics_status_text = "待命"
@@ -268,14 +281,16 @@ func setup_debug_enemy(next_name: String, path_points: Array[Vector2], loop_path
 func setup_scavenger_hound(config: Dictionary, nest: Node = null) -> void:
 	display_name = str(config.get("display_name", "拾荒猎犬"))
 	team = "Team_B"
-	brain_mode = "melee_hound"
+	var attack_mode := str(config.get("attack_mode", "melee"))
+	brain_mode = "ranged_hound" if attack_mode == "ranged" else "melee_hound"
 	blueprint_snapshot_id = &""
 	default_brain_enabled = false
-	weapon_enabled = false
+	weapon_enabled = attack_mode == "ranged"
 	max_hp = int(config.get("max_hp", 90))
 	speed = float(config.get("speed", 135.0))
 	armor_type = StringName(str(config.get("armor_type", "light")))
 	damage_type = StringName(str(config.get("damage_type", "melee")))
+	tags = _string_array_from_variant(config.get("tags", []))
 	lifespan_seconds = 0.0
 	pool_name = str(config.get("pool_name", config.get("id", "scavenger_hound")))
 	icon_path = str(config.get("icon_path", "res://Resources/art/enemies/scavenger_hound.svg"))
@@ -283,6 +298,11 @@ func setup_scavenger_hound(config: Dictionary, nest: Node = null) -> void:
 	melee_damage = int(config.get("melee_damage", 16))
 	melee_range = float(config.get("melee_range", 32.0))
 	melee_cooldown_seconds = float(config.get("melee_cooldown_seconds", 1.0))
+	fire_range = float(config.get("fire_range", melee_range))
+	bullet_damage = int(config.get("damage", melee_damage))
+	fire_cooldown_seconds = float(config.get("fire_cooldown_seconds", melee_cooldown_seconds))
+	projectile_tint = _color_from_config(config.get("projectile_tint", [1.0, 0.42, 0.18, 1.0]), Color(1.0, 0.42, 0.18, 1.0))
+	weapon_audio_id = StringName(str(config.get("weapon_audio_id", "enemy_melee")))
 	guard_aggro_radius = maxf(0.0, float(config.get("guard_aggro_radius", 320.0)))
 	hound_follow_up_radius = maxf(0.0, float(config.get("hound_follow_up_radius", 180.0)))
 	reset_state()
@@ -295,6 +315,28 @@ func _vector2_from_config(value: Variant, fallback: Vector2) -> Vector2:
 	if typeof(value) == TYPE_ARRAY and value.size() >= 2:
 		return Vector2(float(value[0]), float(value[1]))
 	return fallback
+
+func _color_from_config(value: Variant, fallback: Color) -> Color:
+	if value is Color:
+		return value
+	if typeof(value) == TYPE_ARRAY and value.size() >= 3:
+		return Color(
+			float(value[0]),
+			float(value[1]),
+			float(value[2]),
+			float(value[3]) if value.size() >= 4 else 1.0
+		)
+	return fallback
+
+func _string_array_from_variant(value: Variant) -> Array[String]:
+	var result: Array[String] = []
+	if typeof(value) != TYPE_ARRAY:
+		return result
+	for item in value:
+		var text := str(item)
+		if not text.is_empty() and not result.has(text):
+			result.append(text)
+	return result
 
 func set_patrol_path(path_points: Array[Vector2], loop_path: bool = true) -> void:
 	patrol_points = path_points.duplicate()
@@ -345,6 +387,9 @@ func is_alive() -> bool:
 
 func get_display_name() -> String:
 	return display_name
+
+func uses_melee_default_combat() -> bool:
+	return _uses_chainsaw_weapon() or damage_type == &"melee"
 
 func _get_primary_weapon_audio_id(blueprint: UnitBlueprint) -> StringName:
 	for module_id in blueprint.module_ids:
@@ -402,12 +447,15 @@ func get_inspector_lines() -> Array[String]:
 				lines.append("  %s" % flag_line)
 	if not active_upgrade_ids.is_empty():
 		lines.append("Tech upgrades: %s" % ", ".join(_string_name_list(active_upgrade_ids)))
+	if not tags.is_empty():
+		lines.append("Tags: %s" % ", ".join(tags))
 	if is_cargo_robot():
 		lines.append("物流状态：%s" % logistics_status_text)
 		lines.append("货舱：%s / %s" % [get_cargo_used_capacity(), cargo_capacity])
 		lines.append_array(get_logistics_task_summary_lines())
 	lines.append("Stats: HP %s / Speed %.1f" % [max_hp, speed])
 	lines.append("Combat: armor %s / damage %s" % [String(armor_type), String(damage_type)])
+	lines.append("攻击：%s" % _format_attack_profile())
 	if heat_capacity > 0.0:
 		lines.append("热量：%.1f / %.1f" % [current_heat, heat_capacity])
 		lines.append("热控：每次结算 +%.1f / 每秒散热 %.1f" % [heat_per_shot, heat_cooling_per_second])
@@ -437,7 +485,7 @@ func has_enemy_in_range() -> bool:
 	return get_current_enemy() != null
 
 func get_current_enemy() -> Node2D:
-	if brain_mode == "melee_hound":
+	if brain_mode == "melee_hound" or brain_mode == "ranged_hound":
 		return _get_hound_target()
 	return _get_locked_or_nearest_enemy()
 
@@ -458,6 +506,48 @@ func get_lowest_hp_enemy() -> Node2D:
 
 func get_radar_targets() -> Array[Node2D]:
 	return _get_sensed_enemies()
+
+func prioritize_tagged_target_near_current(radius: float = 180.0, tag: StringName = &"backline") -> bool:
+	return switch_to_backline_near_current_target(radius, tag)
+
+func switch_to_backline_near_current_target(radius: float = 180.0, tag: StringName = &"backline") -> bool:
+	var anchor := current_target
+	if not _is_valid_enemy_target(anchor):
+		anchor = _locked_target
+	if not _is_valid_enemy_target(anchor):
+		return false
+	var candidate := find_tagged_enemy_near_target(anchor, tag, radius)
+	if candidate == null:
+		return false
+	if candidate == anchor:
+		return false
+	_lock_target(candidate, target_lock_seconds)
+	current_target = candidate
+	current_distance_to_target = global_position.distance_to(get_target_position(candidate))
+	record_brain_trigger(&"prioritize_tagged_target", "优先 %s 目标：%s" % [String(tag), candidate.name])
+	return true
+
+func find_tagged_enemy_near_target(anchor: Node2D, tag: StringName = &"backline", radius: float = 180.0) -> Node2D:
+	if not _is_valid_enemy_target(anchor) or enemy_sensor == null:
+		return null
+	var center := get_target_position(anchor)
+	var candidates: Array[Node2D] = []
+	if enemy_sensor.has_method("get_enemies_in_radius"):
+		candidates = enemy_sensor.call("get_enemies_in_radius", self, team, center, radius)
+	else:
+		candidates = _get_sensed_enemies()
+	var best: Node2D = null
+	var best_distance := INF
+	for candidate in candidates:
+		if not _is_valid_enemy_target(candidate):
+			continue
+		if not candidate.is_in_group(String(tag)):
+			continue
+		var distance := center.distance_squared_to(get_target_position(candidate))
+		if distance < best_distance:
+			best = candidate
+			best_distance = distance
+	return best
 
 func get_target_position(target: Node2D = self) -> Vector2:
 	var base_position := global_position
@@ -482,14 +572,18 @@ func _apply_separation_micro_offset(delta: float) -> void:
 		_next_separation_update_msec = now + int(get_instance_id() % 83)
 	if now < _next_separation_update_msec:
 		return
-	_next_separation_update_msec = now + 100
+	var separation_interval := SEPARATION_WAITING_INTERVAL_MSEC if _should_throttle_separation() else SEPARATION_ACTIVE_INTERVAL_MSEC
+	_next_separation_update_msec = now + separation_interval
 	delta = minf(_separation_accumulated_delta, 0.2)
 	_separation_accumulated_delta = 0.0
 	var effective_radius := separation_radius
 	var effective_strength := separation_strength
+	if _should_throttle_separation():
+		effective_strength *= 0.45
 	if _is_actively_pursuing_melee_target():
 		effective_radius = minf(effective_radius, 20.0)
 		effective_strength *= 0.15
+	var effective_radius_squared := effective_radius * effective_radius
 	var group_name: String = "team_a" if team == "Team_A" else "team_b"
 	var push: Vector2 = Vector2.ZERO
 	var neighbor_count: int = 0
@@ -500,12 +594,17 @@ func _apply_separation_micro_offset(delta: float) -> void:
 		if not other.is_inside_tree() or not other.is_alive():
 			continue
 		var offset: Vector2 = global_position - other.global_position
-		var distance: float = offset.length()
+		var distance_squared := offset.length_squared()
+		if distance_squared <= 0.000001 or distance_squared >= effective_radius_squared:
+			continue
+		var distance: float = sqrt(distance_squared)
 		if distance <= 0.001 or distance >= effective_radius:
 			continue
 		var weight: float = 1.0 - distance / effective_radius
 		push += offset.normalized() * weight
 		neighbor_count += 1
+		if neighbor_count >= SEPARATION_MAX_NEIGHBORS:
+			break
 	if neighbor_count <= 0 or push.length() <= 0.001:
 		return
 	var step: Vector2 = push.normalized() * minf(
@@ -518,6 +617,15 @@ func _apply_separation_micro_offset(delta: float) -> void:
 			or not path_provider.has_method("is_navigation_world_position_walkable") \
 			or bool(path_provider.call("is_navigation_world_position_walkable", proposed_position)):
 		global_position = proposed_position
+
+func _should_throttle_separation() -> bool:
+	if movement_component != null:
+		var intent := StringName(str(movement_component.get("movement_intent")))
+		if intent == &"idle" or intent == &"hold" or intent == &"arrived":
+			return true
+	if current_action == "等待队友" or current_action == "闲置" or current_action == "巢穴周围警戒":
+		return true
+	return false
 
 func _is_actively_pursuing_melee_target() -> bool:
 	if current_target == null or not is_instance_valid(current_target):
@@ -727,7 +835,7 @@ func count_rally_release_candidates(radius: float = 90.0) -> int:
 	return _collect_rally_release_candidates(radius).size()
 
 static func clear_shared_rally_readiness() -> void:
-	pass
+	_shared_rally_candidate_cache.clear()
 
 func _get_rally_ready_key(radius: float) -> String:
 	var cell := 24.0
@@ -743,25 +851,56 @@ func _collect_rally_release_candidates(radius: float) -> Array[RobotUnit]:
 	if get_tree() == null:
 		return candidates
 	var ready_key := _get_rally_ready_key(radius)
+	var now := Time.get_ticks_msec()
+	var cached: Dictionary = _shared_rally_candidate_cache.get(ready_key, {})
+	if not cached.is_empty() and now - int(cached.get("time", 0)) <= RALLY_CANDIDATE_CACHE_MSEC:
+		var cached_candidates: Array = cached.get("candidates", [])
+		var valid_cached := _filter_cached_rally_release_candidates(cached_candidates, radius, ready_key)
+		if valid_cached.size() == cached_candidates.size():
+			return valid_cached
 	var release_radius := radius + 24.0
 	for unit in get_tree().get_nodes_in_group("combat_unit"):
 		if unit == null or not is_instance_valid(unit) or not (unit is RobotUnit):
 			continue
 		var other := unit as RobotUnit
-		if not other.is_inside_tree() or not other.is_alive():
+		if _is_rally_release_candidate_for_key(other, radius, release_radius, ready_key):
+			candidates.append(other)
+	_sort_rally_release_candidates(candidates)
+	_shared_rally_candidate_cache[ready_key] = {
+		"time": now,
+		"candidates": candidates.duplicate(),
+	}
+	_prune_shared_rally_candidate_cache(now)
+	return candidates
+
+func _filter_cached_rally_release_candidates(cached_candidates: Array, radius: float, ready_key: String) -> Array[RobotUnit]:
+	var result: Array[RobotUnit] = []
+	var release_radius := radius + 24.0
+	for candidate_value in cached_candidates:
+		if candidate_value == null or not is_instance_valid(candidate_value) or not (candidate_value is RobotUnit):
 			continue
-		if other.get_state_flag(&"squad_ready"):
-			continue
-		if not other.has_rally_point or other.team != team:
-			continue
-		if other._get_rally_ready_key(radius) != ready_key:
-			continue
-		var distance := other.distance_to_rally_point()
-		if distance > release_radius:
-			continue
-		if distance > radius and not other.get_state_flag(&"rallied"):
-			continue
-		candidates.append(other)
+		var other := candidate_value as RobotUnit
+		if _is_rally_release_candidate_for_key(other, radius, release_radius, ready_key):
+			result.append(other)
+	return result
+
+func _is_rally_release_candidate_for_key(other: RobotUnit, radius: float, release_radius: float, ready_key: String) -> bool:
+	if other == null or not other.is_inside_tree() or not other.is_alive():
+		return false
+	if other.get_state_flag(&"squad_ready"):
+		return false
+	if not other.has_rally_point or other.team != team:
+		return false
+	if other._get_rally_ready_key(radius) != ready_key:
+		return false
+	var distance := other.distance_to_rally_point()
+	if distance > release_radius:
+		return false
+	if distance > radius and not other.get_state_flag(&"rallied"):
+		return false
+	return true
+
+func _sort_rally_release_candidates(candidates: Array[RobotUnit]) -> void:
 	candidates.sort_custom(func(a: RobotUnit, b: RobotUnit) -> bool:
 		var a_time := a._rallied_at_msec if a._rallied_at_msec > 0 else 0x7FFFFFFF
 		var b_time := b._rallied_at_msec if b._rallied_at_msec > 0 else 0x7FFFFFFF
@@ -769,7 +908,16 @@ func _collect_rally_release_candidates(radius: float) -> Array[RobotUnit]:
 			return int(a.get_instance_id()) < int(b.get_instance_id())
 		return a_time < b_time
 	)
-	return candidates
+
+func _prune_shared_rally_candidate_cache(now_msec: int) -> void:
+	if _shared_rally_candidate_cache.size() <= 64 and now_msec - _shared_rally_cache_prune_msec < 1000:
+		return
+	_shared_rally_cache_prune_msec = now_msec
+	var ttl := RALLY_CANDIDATE_CACHE_MSEC * 4
+	for key in _shared_rally_candidate_cache.keys():
+		var cached: Dictionary = _shared_rally_candidate_cache.get(key, {})
+		if cached.is_empty() or now_msec - int(cached.get("time", 0)) > ttl:
+			_shared_rally_candidate_cache.erase(key)
 
 func _set_squad_ready_flag() -> void:
 	if get_state_flag(&"squad_ready"):
@@ -790,6 +938,8 @@ func set_state_flag(flag_id: StringName, value: bool, reason: String = "") -> vo
 		elif not value:
 			_rallied_at_msec = 0
 	state_flags.call("set_flag", flag_id, value)
+	if flag_id == &"rallied" or flag_id == &"squad_ready":
+		clear_shared_rally_readiness()
 	if not reason.is_empty():
 		record_brain_trigger(StringName("flag_%s_%s" % [String(flag_id), value]), reason)
 
@@ -953,6 +1103,7 @@ func _make_weapon_source_payload() -> Dictionary:
 		"robot_id": str(name),
 		"weapon_id": String(weapon_audio_id),
 		"damage_type": String(damage_type),
+		"projectile_tint": projectile_tint,
 		"blueprint_id": String(blueprint_id),
 		"blueprint_version": blueprint_version,
 		"blueprint_snapshot_id": String(blueprint_snapshot_id),
@@ -1131,9 +1282,14 @@ func _sync_runtime_groups() -> void:
 	else:
 		add_to_group("team_b")
 		remove_from_group("team_a")
+	for old_tag in _runtime_tag_groups:
+		if not tags.has(old_tag):
+			remove_from_group(old_tag)
+	_runtime_tag_groups.clear()
 	for tag in tags:
 		if not tag.is_empty():
 			add_to_group(tag)
+			_runtime_tag_groups.append(tag)
 	_register_combat_target()
 
 func _configure_team_collision() -> void:
@@ -1156,7 +1312,10 @@ func _get_locked_or_nearest_enemy() -> Node2D:
 	return _lock_target(enemies[0], target_lock_seconds)
 
 func _get_hound_target() -> Node2D:
+	var valid_source_nest := _get_valid_source_nest()
 	if _is_valid_enemy_target(_locked_target):
+		if valid_source_nest != null and valid_source_nest.has_method("notify_guard_engaged"):
+			valid_source_nest.call("notify_guard_engaged", _locked_target)
 		return _locked_target
 	_clear_locked_target()
 	if enemy_sensor == null:
@@ -1165,19 +1324,27 @@ func _get_hound_target() -> Node2D:
 	var enemies: Array[Node2D] = []
 	if _hound_has_engaged and enemy_sensor.has_method("get_follow_up_targets"):
 		enemies = enemy_sensor.get_follow_up_targets(self, team, hound_follow_up_radius)
+	if enemies.is_empty() and valid_source_nest != null and valid_source_nest.has_method("get_shared_alert_target"):
+		var shared_target: Variant = valid_source_nest.call("get_shared_alert_target")
+		if _is_valid_enemy_target(shared_target):
+			enemies.append(shared_target as Node2D)
 	if enemies.is_empty() and enemy_sensor.has_method("get_initial_targets"):
-		var valid_source_nest: Node = null
-		if source_nest != null and is_instance_valid(source_nest):
-			valid_source_nest = source_nest
-		else:
-			source_nest = null
 		enemies = enemy_sensor.get_initial_targets(self, team, valid_source_nest, guard_aggro_radius)
 	if enemies.is_empty():
 		_hound_has_engaged = false
 		return null
 
 	_hound_has_engaged = true
-	return _lock_target(enemies[0], 0.0)
+	var target := _lock_target(enemies[0], 0.0)
+	if target != null and valid_source_nest != null and valid_source_nest.has_method("notify_guard_engaged"):
+		valid_source_nest.call("notify_guard_engaged", target)
+	return target
+
+func _get_valid_source_nest() -> Node:
+	if source_nest != null and is_instance_valid(source_nest):
+		return source_nest
+	source_nest = null
+	return null
 
 func _lock_target(target: Node2D, duration_seconds: float) -> Node2D:
 	if not _is_valid_enemy_target(target):
@@ -1191,10 +1358,10 @@ func _clear_locked_target() -> void:
 	_locked_target = null
 	_target_lock_until_msec = 0
 
-func _is_valid_enemy_target(target: Node2D) -> bool:
-	if enemy_sensor == null or target == null or not is_instance_valid(target):
+func _is_valid_enemy_target(target: Variant) -> bool:
+	if enemy_sensor == null or target == null or not is_instance_valid(target) or not (target is Node2D):
 		return false
-	return bool(enemy_sensor.is_valid_enemy(self, team, target))
+	return bool(enemy_sensor.is_valid_enemy(self, team, target as Node2D))
 
 func _get_projectile_parent() -> Node:
 	var map := get_parent()
@@ -1352,6 +1519,35 @@ func _tick_melee_hound() -> void:
 		enemy.call("take_damage", melee_damage)
 	record_brain_trigger(&"hound_melee_attack", "撕咬目标")
 
+func _tick_ranged_hound() -> void:
+	var enemy := get_current_enemy()
+	current_target = enemy
+	if enemy == null:
+		if movement_component and global_position.distance_to(guard_home_position) > movement_component.arrival_tolerance:
+			move_towards(guard_home_position)
+			current_action = "返回守卫位置"
+			return
+		current_action = "巢穴周围警戒"
+		current_fire_state = "无目标"
+		current_distance_to_target = -1.0
+		if movement_component:
+			movement_component.stop(&"idle")
+		return
+
+	var target_position := get_target_position(enemy)
+	current_distance_to_target = global_position.distance_to(target_position)
+	if current_distance_to_target > fire_range:
+		move_towards(target_position, enemy)
+		current_action = "接近射击位置"
+		current_fire_state = "目标超出射程"
+		return
+
+	if movement_component:
+		movement_component.stop(&"hold_range")
+	current_action = "远程射击"
+	fire_weapon(enemy)
+	record_brain_trigger(&"hound_ranged_attack", "远程射击")
+
 func _on_health_changed(current_hp: int, current_max_hp: int, delta: int) -> void:
 	hp = current_hp
 	max_hp = current_max_hp
@@ -1436,10 +1632,39 @@ func _format_brain_mode() -> String:
 			return "路径移动脑干"
 		"melee_hound":
 			return "拾荒猎犬近战脑干"
+		"ranged_hound":
+			return "敌军远程脑干"
 		"logistics":
 			return "物流调度脑干"
 		_:
 			return "闲置"
+
+func _format_attack_profile() -> String:
+	if not weapon_enabled and brain_mode != "melee_hound":
+		return "无武器"
+	var attack_mode := "远程弹体"
+	var range_value := fire_range
+	var damage_value := bullet_damage
+	var cooldown_value := fire_cooldown_seconds
+	if damage_type == &"thermal":
+		attack_mode = "热能激光"
+	elif _uses_chainsaw_weapon():
+		attack_mode = "链锯近战"
+	elif brain_mode == "melee_hound":
+		attack_mode = "近战"
+		range_value = melee_range
+		damage_value = melee_damage
+		cooldown_value = melee_cooldown_seconds
+	elif brain_mode == "ranged_hound":
+		attack_mode = "敌军远程弹体"
+	var attacks_per_second := 0.0 if cooldown_value <= 0.0 else 1.0 / cooldown_value
+	return "%s / 攻击力 %d / 间隔 %.2fs / 攻速 %.2f/s / 射程 %.0f" % [
+		attack_mode,
+		damage_value,
+		cooldown_value,
+		attacks_per_second,
+		range_value,
+	]
 
 func _format_movement_intent() -> String:
 	if movement_component == null:
@@ -1602,6 +1827,8 @@ func _format_logistics_task_type(task_type: String) -> String:
 			return "补给点回运"
 		"direct_to_base":
 			return "远程直送主基地"
+		"salvage_return":
+			return "战场回收"
 		"recover_cargo":
 			return "回收残余货物"
 		"dropoff":

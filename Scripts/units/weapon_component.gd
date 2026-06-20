@@ -122,6 +122,7 @@ func _make_source_payload(owner_team: String) -> Dictionary:
 		"robot_id": str(source_unit.name),
 		"weapon_id": String(source_unit.get("weapon_audio_id")) if source_unit.get("weapon_audio_id") != null else "default",
 		"damage_type": String(source_unit.get("damage_type")) if source_unit.get("damage_type") != null else "kinetic",
+		"projectile_tint": source_unit.get("projectile_tint") if source_unit.get("projectile_tint") != null else Color.WHITE,
 		"blueprint_id": String(source_unit.get("blueprint_id")) if source_unit.get("blueprint_id") != null else "",
 		"blueprint_version": int(source_unit.get("blueprint_version")) if source_unit.get("blueprint_version") != null else 0,
 		"blueprint_snapshot_id": String(source_unit.get("blueprint_snapshot_id")) if source_unit.get("blueprint_snapshot_id") != null else "",

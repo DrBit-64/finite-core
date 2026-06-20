@@ -7,6 +7,11 @@ const TEMPLATE_RALLY_THEN_ATTACK := "rally_then_attack"
 const TEMPLATE_TARGET_NEAREST := "target_nearest"
 const TEMPLATE_REACTIVE_OVERRIDE := "reactive_override"
 const TEMPLATE_WEAPON_HEAT_CONTROL := "weapon_heat_control"
+const TEMPLATE_PRIORITIZE_TAGGED_TARGET := "prioritize_tagged_target"
+const TEMPLATE_TARGET_BACKLINE_NEAR_CURRENT := "target_backline_near_current"
+const TEMPLATE_SALVAGE_AND_RETURN := "salvage_and_return"
+const TEMPLATE_SUPPLY_RUN := "supply_run"
+const TEMPLATE_HAZARD_AVOIDANCE := "hazard_avoidance"
 
 const DEFAULT_ARRIVAL_DISTANCE := 20.0
 const DEFAULT_RALLY_RADIUS := 90.0
@@ -54,10 +59,47 @@ static func get_template_defs() -> Array[Dictionary]:
 			"parameters": [],
 		},
 		{
+			"id": TEMPLATE_PRIORITIZE_TAGGED_TARGET,
+			"display_name": "目标选择：优先特定目标",
+			"intent": "若当前目标附近存在带指定标签的敌人，则临时改锁该目标；不会全图追逐远处单位。",
+			"parameters": [
+				{"id": "search_radius", "display_name": "搜索半径", "type": "float", "default": 180.0},
+				{"id": "tag", "display_name": "目标标签", "type": "tag", "default": "backline"},
+			],
+		},
+		{
 			"id": TEMPLATE_REACTIVE_OVERRIDE,
 			"display_name": "紧急覆盖通道",
 			"intent": "预留高优先级中断入口，用于后续撤退、护盾、弹药不足等反应式规则。阶段 10 只显示，不生成行为。",
 			"parameters": [],
+		},
+		{
+			"id": TEMPLATE_SALVAGE_AND_RETURN,
+			"display_name": "回收并返航",
+			"intent": "扫描高价值残骸，拾取或牵引后在满载、低血或高风险时返回基地。阶段 17 由物流调度器执行。",
+			"parameters": [
+				{"id": "scan_radius", "display_name": "扫描半径", "type": "float", "default": 520.0},
+				{"id": "min_value", "display_name": "最低价值", "type": "int", "default": 1},
+				{"id": "return_hp_percent", "display_name": "返航血量%", "type": "float", "default": 0.45},
+			],
+		},
+		{
+			"id": TEMPLATE_SUPPLY_RUN,
+			"display_name": "前线补给",
+			"intent": "给前线补给点、维修点或生产建筑配送关键物资。阶段 17 先复用现有远程物流调度。",
+			"parameters": [
+				{"id": "min_load_percent", "display_name": "最低装载%", "type": "float", "default": 0.70},
+			],
+		},
+		{
+			"id": TEMPLATE_HAZARD_AVOIDANCE,
+			"display_name": "危险规避",
+			"intent": "附近敌人过多或自身血量过低时撤退；携带关键物时优先返航。阶段 17 由物流调度器执行。",
+			"parameters": [
+				{"id": "enemy_radius", "display_name": "危险半径", "type": "float", "default": 260.0},
+				{"id": "enemy_count", "display_name": "敌人数量", "type": "int", "default": 2},
+				{"id": "return_hp_percent", "display_name": "返航血量%", "type": "float", "default": 0.45},
+			],
 		},
 	]
 
@@ -133,6 +175,8 @@ static func compile_templates(templates: Array) -> Dictionary:
 				rules.append_array(_compile_rally_then_attack(template))
 				state_defaults["rallied"] = false
 				state_defaults["squad_ready"] = false
+			TEMPLATE_PRIORITIZE_TAGGED_TARGET, TEMPLATE_TARGET_BACKLINE_NEAR_CURRENT:
+				rules.append_array(_compile_prioritize_tagged_target(template))
 	return {
 		"rules": rules,
 		"state_flag_defaults": state_defaults,
@@ -148,6 +192,11 @@ static func describe_template(template: Dictionary) -> String:
 			return "先到集结点；%.0f px 内友军达到 %d 个后，交给默认脑干进攻。" % [
 				float(params.get("rally_radius", DEFAULT_RALLY_RADIUS)),
 				int(params.get("required_allies", DEFAULT_REQUIRED_ALLIES)),
+			]
+		TEMPLATE_PRIORITIZE_TAGGED_TARGET, TEMPLATE_TARGET_BACKLINE_NEAR_CURRENT:
+			return "当前目标 %.0f px 内若有 `%s` 标签单位，则临时切换目标。" % [
+				float(params.get("search_radius", 180.0)),
+				str(params.get("tag", "backline")),
 			]
 	return str(template_def.get("intent", "使用默认战术行为。"))
 
@@ -203,6 +252,21 @@ static func _compile_rally_then_attack(template: Dictionary) -> Array:
 		_rule("default_after_rally", "默认脑干接管", template, "默认脑干接管", [
 			{"type": "self_flag_is", "flag": "squad_ready", "value": true}
 		], "default_combat"),
+	]
+
+static func _compile_prioritize_tagged_target(template: Dictionary) -> Array:
+	var params: Dictionary = template.get("params", {})
+	var search_radius := maxf(1.0, float(params.get("search_radius", 180.0)))
+	var tag := str(params.get("tag", "backline"))
+	if tag.is_empty():
+		tag = "backline"
+	return [
+		_rule("prioritize_tagged_target", "优先特定目标", template, "目标选择", [
+			{"type": "has_enemy"}
+		], "prioritize_tagged_target", {
+			"search_radius": search_radius,
+			"tag": tag,
+		}),
 	]
 
 static func _compile_weapon_heat_control(template: Dictionary) -> Array:

@@ -27,6 +27,9 @@ func tick(robot) -> void:
 	if robot.has_method("get_target_position"):
 		target_position = robot.get_target_position(enemy)
 	robot.current_distance_to_target = robot.global_position.distance_to(target_position)
+	if robot.has_method("uses_melee_default_combat") and bool(robot.call("uses_melee_default_combat")):
+		_tick_melee_default(robot, enemy, target_position)
+		return
 	var fire_range: float = robot.fire_range
 	var desired_distance := fire_range * preferred_range_ratio
 	var lower_bound := maxf(24.0, desired_distance - range_dead_zone)
@@ -54,4 +57,24 @@ func tick(robot) -> void:
 	robot.record_brain_trigger(
 		StringName("default_combat_%s_%s" % [robot.current_action, robot.current_fire_state]),
 		"默认脑干：%s / %s" % [robot.current_action, robot.current_fire_state]
+	)
+
+func _tick_melee_default(robot, enemy: Node2D, target_position: Vector2) -> void:
+	var attack_range := maxf(12.0, float(robot.get("fire_range")))
+	if robot.get("melee_range") != null:
+		attack_range = maxf(attack_range, float(robot.get("melee_range")))
+	if robot.movement_component:
+		if robot.current_distance_to_target > attack_range:
+			robot.move_towards(target_position, enemy)
+			robot.current_action = "贴近敌人"
+		else:
+			robot.movement_component.stop(&"hold_range")
+			robot.current_action = "贴身攻击"
+	if robot.current_distance_to_target <= float(robot.get("fire_range")):
+		robot.fire_weapon(enemy)
+	else:
+		robot.current_fire_state = "目标超出近战范围"
+	robot.record_brain_trigger(
+		StringName("default_melee_%s_%s" % [robot.current_action, robot.current_fire_state]),
+		"默认近战脑干：%s / %s" % [robot.current_action, robot.current_fire_state]
 	)

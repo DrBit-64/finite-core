@@ -62,6 +62,29 @@ func _ready() -> void:
 	nest._process(0.25)
 	_expect(nest.replenish_seconds_remaining < countdown_before, "守军不足时补员倒计时应开始递减")
 
+	var shared_nest := EnemyNestScene.instantiate()
+	add_child(shared_nest)
+	shared_nest.setup_nest(&"shared_alert_test_nest", &"wreckage_command_nest", {
+		"display_name": "shared alert test nest",
+		"grid_size": [3, 3],
+		"max_hp": 300,
+		"initial_guard_count": 0,
+		"max_guard_count": 6,
+		"guard_replenish_seconds": 30.0,
+		"shared_aggro_radius": 260.0,
+		"shared_aggro_seconds": 10.0,
+	}, Vector2i(8, 8), 64)
+	var front_guard := _spawn_test_guard(shared_nest, 1, 70.0, 80.0)
+	var rear_guard := _spawn_test_guard(shared_nest, 4, 70.0, 80.0)
+	var local_intruder := _spawn_player_robot(front_guard.global_position + Vector2(45.0, 0.0))
+	_expect(local_intruder.global_position.distance_to(shared_nest.get_target_position()) > 70.0, "shared alert intruder should start outside nest-center aggro")
+	_expect(rear_guard.global_position.distance_to(local_intruder.global_position) > 70.0, "rear guard should start outside its own local aggro")
+	_expect(front_guard.get_current_enemy() == local_intruder, "front guard should acquire an intruder inside its local aggro")
+	_expect(rear_guard.get_current_enemy() == local_intruder, "rear guard should join via nest shared alert")
+	front_guard.die(&"test_destroyed")
+	rear_guard.die(&"test_destroyed")
+	local_intruder.die(&"test_destroyed")
+
 	print("STAGE7_GUARD_LIFECYCLE_OK")
 	get_tree().quit()
 
@@ -70,6 +93,24 @@ func _spawn_player_robot(world_position: Vector2) -> Node2D:
 	add_child(robot)
 	robot.global_position = world_position
 	return robot
+
+func _spawn_test_guard(nest: Node, slot_index: int, aggro_radius: float, follow_up_radius: float) -> Node2D:
+	var guard := ScavengerHoundScene.instantiate()
+	add_child(guard)
+	guard.global_position = nest.get_spawn_position(slot_index)
+	guard.setup_scavenger_hound({
+		"display_name": "shared alert test guard",
+		"max_hp": 90,
+		"speed": 135.0,
+		"melee_damage": 16,
+		"melee_range": 32.0,
+		"melee_cooldown_seconds": 1.0,
+		"guard_aggro_radius": aggro_radius,
+		"hound_follow_up_radius": follow_up_radius,
+	}, nest)
+	if nest.has_method("register_guard_at_slot"):
+		nest.call("register_guard_at_slot", guard, slot_index)
+	return guard
 
 func _expect(condition: bool, message: String) -> void:
 	if condition:

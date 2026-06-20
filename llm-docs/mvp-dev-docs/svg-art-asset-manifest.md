@@ -279,8 +279,9 @@
 | 稳定 ID | 显示名 | 建议路径 | 尺寸 | 状态 |
 | --- | --- | --- | --- | --- |
 | `jammer_construct` | 信号干扰塔 | `Resources/art/enemies/jammer_construct.svg` | `64x64` | `generate` |
-| `heavy_guard` | 重甲护卫 | `Resources/art/enemies/heavy_guard.svg` | `48x48` | `generate` |
-| `ranged_enemy` | 远程单位 | `Resources/art/enemies/ranged_enemy.svg` | `48x48` | `generate` |
+| `heavy_guard` | 重甲护卫 | `Resources/art/enemies/heavy_guard.svg` | `48x48` | `done` |
+| `ranged_enemy` | 远程单位 | `Resources/art/enemies/ranged_enemy.svg` | `48x48` | `done` |
+| `salvage_regenerator_nest` | 再生残骸巢 | `Resources/art/enemies/salvage_regenerator_nest.svg` | `96x96` | `done` |
 | `interference_nest` | 干扰型敌巢 | `Resources/art/enemies/interference_nest.svg` | `96x96` | `generate` |
 
 ### 5. UI、状态与战斗反馈

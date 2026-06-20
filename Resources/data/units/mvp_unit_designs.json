@@ -136,6 +136,47 @@
       }
     },
     {
+      "id": "armored_salvage_vehicle",
+      "display_name": "装甲回收车",
+      "description": "阶段 17 的战场回收专用单位。能进入危险区域拾取残骸并满载返航。",
+      "tags": ["logistics", "cargo", "salvage", "armored"],
+      "icon_path": "res://Resources/art/blueprints/armored_salvage_vehicle.svg",
+      "chassis_id": "armored_salvage_chassis",
+      "chassis_display_name": "装甲回收底盘",
+      "chassis_icon_path": "res://Resources/art/chassis/armored_salvage_chassis.svg",
+      "module_ids": ["salvage_scanner", "wreckage_tether", "compressed_cargo_bay"],
+      "module_display_names": ["回收扫描器", "残骸牵引模块", "压缩货舱"],
+      "module_icon_paths": [
+        "res://Resources/art/modules/salvage_scanner.svg",
+        "res://Resources/art/modules/wreckage_tether.svg",
+        "res://Resources/art/modules/compressed_cargo_bay.svg"
+      ],
+      "production_recipe_id": "forge_armored_salvage_vehicle",
+      "production_time_seconds": 18.0,
+      "upgrade_point_limit": 3,
+      "default_brain_enabled": false,
+      "base_cost": {
+        "reinforced_steel_plate": 10,
+        "optical_lens": 2,
+        "high_capacity_battery": 2,
+        "high_frequency_oscillator": 1,
+        "construction_mass": 14
+      },
+      "stats": {
+        "max_hp": 220,
+        "speed": 82.0,
+        "lifespan_seconds": 0.0,
+        "target_lock_seconds": 0.0,
+        "fire_range": 0.0,
+        "damage": 0,
+        "damage_type": "none",
+        "armor_type": "armored",
+        "fire_cooldown_seconds": 1.0,
+        "cargo_capacity": 48,
+        "logic_capacity": 3
+      }
+    },
+    {
       "id": "thermal_laser_robot",
       "display_name": "热能激光机器人",
       "description": "使用热能激光模块压制装甲目标。输出稳定但需要热量管理。",

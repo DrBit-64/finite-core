@@ -6,6 +6,40 @@ signal save_requested(source_blueprint_id: StringName, display_name: String, uni
 const TacticalTemplateCompilerScript := preload("res://Scripts/ai/tactical_template_compiler.gd")
 const UnitDesignConfigLoaderScript := preload("res://Scripts/data/unit_design_config_loader.gd")
 
+class TemplateDragRow:
+	extends HBoxContainer
+
+	signal reorder_requested(source_index: int, target_index: int, insert_after: bool)
+
+	var template_index: int = -1
+
+	func _get_drag_data(_at_position: Vector2) -> Variant:
+		var preview := PanelContainer.new()
+		var label := Label.new()
+		label.text = "移动模板"
+		label.add_theme_font_size_override("font_size", 12)
+		label.add_theme_color_override("font_color", Color(0.90, 0.96, 1.0, 1.0))
+		preview.add_child(label)
+		set_drag_preview(preview)
+		return {
+			"type": "blueprint_template_row",
+			"source_index": template_index,
+		}
+
+	func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
+		if typeof(data) != TYPE_DICTIONARY:
+			return false
+		if str(data.get("type", "")) != "blueprint_template_row":
+			return false
+		var source_index := int(data.get("source_index", -1))
+		return source_index >= 0 and source_index != template_index
+
+	func _drop_data(at_position: Vector2, data: Variant) -> void:
+		if not _can_drop_data(at_position, data):
+			return
+		var source_index := int(data.get("source_index", -1))
+		reorder_requested.emit(source_index, template_index, at_position.y > size.y * 0.5)
+
 var _blueprints: Array[UnitBlueprint] = []
 var _selected_source_id: StringName = &""
 var _selected_unit_type_id: StringName = &"basic_rifle_robot"
@@ -20,6 +54,7 @@ var _unlocked_unit_type_ids: Array[StringName] = []
 var _unlocked_upgrade_ids: Array[StringName] = []
 var _unlock_filter_configured: bool = false
 var _selected_template_option_id: String = TacticalTemplateCompilerScript.TEMPLATE_DEFAULT_ATTACK
+var _available_enemy_target_tags: Array[String] = ["frontline", "backline"]
 
 var _blueprint_list: VBoxContainer
 var _source_option: OptionButton
@@ -74,6 +109,20 @@ func set_blueprint_unlocks(unit_type_ids: Array[StringName], upgrade_ids: Array[
 		_rebuild_template_options()
 		_sanitize_draft_templates_for_unit()
 		_recompile_and_rebuild()
+
+func set_available_enemy_target_tags(tags: Array[String]) -> void:
+	var next_tags: Array[String] = []
+	for tag in tags:
+		if not tag.is_empty() and not next_tags.has(tag):
+			next_tags.append(tag)
+	if next_tags.is_empty():
+		next_tags = ["frontline", "backline"]
+	next_tags.sort()
+	if next_tags == _available_enemy_target_tags:
+		return
+	_available_enemy_target_tags = next_tags
+	if is_inside_tree():
+		_rebuild_param_list()
 
 func _build_layout() -> void:
 	var margin := MarginContainer.new()
@@ -544,7 +593,11 @@ func _is_template_allowed_for_unit(template_id: StringName, unit_type_id: String
 		return false
 	var tags := _string_array_from_variant(unit_type.get("tags", []))
 	if tags.has("logistics") or tags.has("cargo"):
-		return false
+		return String(template_id) in [
+			TacticalTemplateCompilerScript.TEMPLATE_SALVAGE_AND_RETURN,
+			TacticalTemplateCompilerScript.TEMPLATE_SUPPLY_RUN,
+			TacticalTemplateCompilerScript.TEMPLATE_HAZARD_AVOIDANCE,
+		]
 	return tags.has("combat")
 
 func _sanitize_draft_templates_for_unit() -> void:
@@ -696,9 +749,12 @@ func _rebuild_template_list() -> void:
 		_template_list.add_child(_make_template_row(i, _draft_templates[i]))
 
 func _make_template_row(index: int, template: Dictionary) -> Control:
-	var row := HBoxContainer.new()
+	var row := TemplateDragRow.new()
+	row.template_index = index
+	row.tooltip_text = "拖拽模板可调整底层规则优先级"
 	row.add_theme_constant_override("separation", 6)
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.reorder_requested.connect(_on_template_reorder_requested)
 	var select_button := Button.new()
 	select_button.text = str(template.get("display_name", template.get("id", "模板")))
 	select_button.custom_minimum_size = Vector2(116, 28)
@@ -718,6 +774,25 @@ func _make_template_row(index: int, template: Dictionary) -> Control:
 	remove_button.pressed.connect(_on_remove_template_pressed.bind(index), CONNECT_DEFERRED)
 	row.add_child(remove_button)
 	return row
+
+func _on_template_reorder_requested(source_index: int, target_index: int, insert_after: bool) -> void:
+	if source_index < 0 or source_index >= _draft_templates.size():
+		return
+	if target_index < 0 or target_index >= _draft_templates.size():
+		return
+	if source_index == target_index:
+		return
+	var template := _draft_templates[source_index]
+	_draft_templates.remove_at(source_index)
+	var insert_index := target_index
+	if source_index < target_index:
+		insert_index -= 1
+	if insert_after:
+		insert_index += 1
+	insert_index = clampi(insert_index, 0, _draft_templates.size())
+	_draft_templates.insert(insert_index, template)
+	_selected_template_index = insert_index
+	_recompile_and_rebuild()
 
 func _on_remove_template_pressed(index: int) -> void:
 	if index < 0 or index >= _draft_templates.size():
@@ -752,6 +827,22 @@ func _make_param_row(parameter: Dictionary, value: Variant) -> Control:
 	var label := _make_label(str(parameter.get("display_name", parameter.get("id", "参数"))), 12, Color(0.86, 0.92, 0.98, 1.0))
 	label.custom_minimum_size = Vector2(88, 28)
 	row.add_child(label)
+	var param_id := str(parameter.get("id", ""))
+	if str(parameter.get("type", "")) == "tag":
+		var option := OptionButton.new()
+		option.custom_minimum_size = Vector2(150, 28)
+		var options := _get_tag_parameter_options(str(value))
+		var selected_index := 0
+		for option_tag in options:
+			option.add_item(option_tag)
+			option.set_item_metadata(option.item_count - 1, option_tag)
+			if option_tag == str(value):
+				selected_index = option.item_count - 1
+		if option.item_count > 0:
+			option.select(selected_index)
+		option.item_selected.connect(_on_template_param_option_selected.bind(param_id, option))
+		row.add_child(option)
+		return row
 	var spin := SpinBox.new()
 	spin.custom_minimum_size = Vector2(110, 28)
 	spin.min_value = 1.0
@@ -760,9 +851,36 @@ func _make_param_row(parameter: Dictionary, value: Variant) -> Control:
 	spin.value = float(value)
 	if str(parameter.get("type", "")) == "float":
 		spin.step = 5.0
-	spin.value_changed.connect(_on_template_param_changed.bind(str(parameter.get("id", ""))))
+	spin.value_changed.connect(_on_template_param_changed.bind(param_id))
 	row.add_child(spin)
 	return row
+
+func _get_tag_parameter_options(current_value: String) -> Array[String]:
+	var options := _available_enemy_target_tags.duplicate()
+	if not current_value.is_empty() and not options.has(current_value):
+		options.append(current_value)
+	if options.is_empty():
+		options = ["frontline", "backline"]
+	options.sort()
+	return options
+
+func _on_template_param_option_selected(index: int, param_id: String, option: OptionButton) -> void:
+	if option == null or index < 0 or index >= option.item_count:
+		return
+	_on_template_param_string_changed(str(option.get_item_metadata(index)), param_id)
+
+func _on_template_param_string_changed(value: String, param_id: String) -> void:
+	if _selected_template_index < 0 or _selected_template_index >= _draft_templates.size():
+		return
+	var template := _draft_templates[_selected_template_index]
+	var params: Dictionary = template.get("params", {})
+	params[param_id] = value
+	template["params"] = params
+	_draft_templates[_selected_template_index] = TacticalTemplateCompilerScript.make_instance(str(template.get("id", "")), params)
+	_recompile_draft()
+	_update_design_summary()
+	_rebuild_template_list()
+	_rebuild_rule_preview()
 
 func _on_template_param_changed(value: float, param_id: String) -> void:
 	if _selected_template_index < 0 or _selected_template_index >= _draft_templates.size():

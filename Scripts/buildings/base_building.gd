@@ -79,6 +79,15 @@ func take_damage_from(amount: int, source_payload: Dictionary = {}) -> void:
 	take_damage(final_damage)
 	_play_damage_impact_audio(source_payload, multiplier)
 
+func destroy(reason: StringName = &"destroyed") -> void:
+	if _destroyed:
+		return
+	_ensure_combat_nodes()
+	if health_component:
+		health_component.kill(reason)
+	else:
+		_on_health_died(reason)
+
 func _apply_damage_profile(amount: int, source_payload: Dictionary) -> int:
 	return maxi(1, roundi(float(amount) * _damage_multiplier_for_profile(source_payload)))
 

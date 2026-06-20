@@ -50,6 +50,35 @@
       "embedded_rules": []
     },
     {
+      "id": "armored_salvage_vehicle",
+      "display_name": "装甲回收车",
+      "version": 1,
+      "unit_type_id": "armored_salvage_vehicle",
+      "upgrade_ids": [],
+      "production_recipe_id": "forge_armored_salvage_vehicle",
+      "default_brain_enabled": false,
+      "tactical_templates": [
+        {
+          "id": "salvage_and_return",
+          "params": {
+            "scan_radius": 520.0,
+            "min_value": 1,
+            "return_hp_percent": 0.45
+          }
+        },
+        {
+          "id": "hazard_avoidance",
+          "params": {
+            "enemy_radius": 260.0,
+            "enemy_count": 2,
+            "return_hp_percent": 0.45
+          }
+        }
+      ],
+      "state_flag_defaults": {},
+      "embedded_rules": []
+    },
+    {
       "id": "thermal_laser_robot",
       "display_name": "热能激光机器人",
       "version": 1,

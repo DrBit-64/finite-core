@@ -139,6 +139,30 @@
       "unlocks": {
         "upgrades": ["cooling_fins_1"]
       }
+    },
+    {
+      "id": "stage3_battlefield_salvage",
+      "display_name": "阶段3：战场回收闭环",
+      "description": "解锁装甲回收车、残骸牵引与回收扫描模板，让残骸战场的战利品需要被带回后才进入生产链。",
+      "stage": 3,
+      "duration_seconds": 14.0,
+      "key_item_requirements": ["high_frequency_oscillator"],
+      "prerequisites": ["stage2_oscillator_cooling"],
+      "costs": {
+        "construction_mass": 150,
+        "reinforced_steel_plate": 12,
+        "optical_lens": 4,
+        "high_capacity_battery": 3
+      },
+      "unlocks": {
+        "resources": ["wreckage_scrap", "heavy_wreckage", "salvage_data_core"],
+        "unit_types": ["armored_salvage_vehicle"],
+        "chassis": ["armored_salvage_chassis"],
+        "modules": ["salvage_scanner", "wreckage_tether", "compressed_cargo_bay", "armored_cargo_shell"],
+        "templates": ["salvage_and_return", "supply_run", "hazard_avoidance", "prioritize_tagged_target"],
+        "conditions": ["salvage_available", "nearby_enemy_count", "cargo_full", "hp_below_percent"],
+        "actions": ["pickup_salvage", "return_to_base", "avoid_hazard"]
+      }
     }
   ]
 }

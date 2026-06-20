@@ -7,6 +7,7 @@
       "icon_path": "res://Resources/art/enemies/scavenger_hound.svg",
       "max_hp": 90,
       "speed": 135.0,
+      "tags": ["frontline"],
       "visual_size": [32, 32],
       "melee_damage": 16,
       "melee_range": 32.0,
@@ -20,6 +21,7 @@
       "icon_path": "res://Resources/art/enemies/armored_rhino.svg",
       "max_hp": 125,
       "speed": 108.0,
+      "tags": ["frontline"],
       "visual_size": [44, 44],
       "armor_type": "armored",
       "damage_type": "melee",
@@ -36,6 +38,7 @@
       "icon_path": "res://Resources/art/enemies/armored_rhino.svg",
       "max_hp": 185,
       "speed": 112.0,
+      "tags": ["frontline"],
       "visual_size": [48, 48],
       "armor_type": "armored",
       "damage_type": "melee",
@@ -52,6 +55,7 @@
       "icon_path": "res://Resources/art/enemies/armored_charger.svg",
       "max_hp": 260,
       "speed": 118.0,
+      "tags": ["frontline"],
       "visual_size": [54, 54],
       "armor_type": "armored",
       "damage_type": "melee",
@@ -68,8 +72,55 @@
       "icon_path": "res://Resources/art/units/debug_enemy_unit.svg",
       "max_hp": 2000,
       "speed": 54.0,
+      "tags": ["frontline"],
       "visual_size": [46, 46],
       "lifespan_seconds": 0.0
+    },
+    {
+      "id": "heavy_guard",
+      "display_name": "重甲残骸守卫",
+      "icon_path": "res://Resources/art/enemies/heavy_guard.svg",
+      "max_hp": 420,
+      "speed": 130.0,
+      "tags": ["frontline"],
+      "visual_size": [56, 56],
+      "armor_type": "armored",
+      "damage_type": "melee",
+      "melee_damage": 22,
+      "melee_range": 36.0,
+      "melee_cooldown_seconds": 1.35,
+      "guard_aggro_radius": 260.0,
+      "hound_follow_up_radius": 150.0,
+      "pool_name": "heavy_guard",
+      "drops": [
+        {"resource_id": "heavy_wreckage", "amount": 4, "value": 24, "salvage_type": "heavy_wreckage", "requires_tether": true, "strategic_reward": true}
+      ]
+    },
+    {
+      "id": "ranged_enemy",
+      "display_name": "残骸场射手",
+      "icon_path": "res://Resources/art/enemies/ranged_enemy.svg",
+      "max_hp": 110,
+      "speed": 92.0,
+      "tags": ["backline"],
+      "visual_size": [42, 42],
+      "armor_type": "light",
+      "damage_type": "kinetic",
+      "attack_mode": "ranged",
+      "damage": 26,
+      "fire_range": 170.0,
+      "fire_cooldown_seconds": 1.05,
+      "projectile_tint": [1.0, 0.42, 0.18, 1.0],
+      "weapon_audio_id": "enemy_melee",
+      "melee_damage": 26,
+      "melee_range": 170.0,
+      "melee_cooldown_seconds": 1.05,
+      "guard_aggro_radius": 300.0,
+      "hound_follow_up_radius": 180.0,
+      "pool_name": "ranged_enemy",
+      "drops": [
+        {"resource_id": "wreckage_scrap", "amount": 8, "value": 12, "salvage_type": "enemy_wreckage"}
+      ]
     }
   ],
   "nest_types": [
@@ -130,6 +181,58 @@
         "technology_item": "high_frequency_oscillator",
         "reveals_signal": "next_region_hint"
       }
+    },
+    {
+      "id": "wreckage_command_nest",
+      "display_name": "残骸战场指挥巢",
+      "icon_path": "res://Resources/art/enemies/salvage_regenerator_nest.svg",
+      "grid_size": [3, 3],
+      "max_hp": 980,
+      "armor_type": "structure_armor",
+      "guard_unit_type": "heavy_guard",
+      "guard_roster": [
+        "heavy_guard", "heavy_guard", "heavy_guard", "heavy_guard", "heavy_guard", "heavy_guard",
+        "ranged_enemy", "ranged_enemy", "ranged_enemy", "ranged_enemy", "ranged_enemy", "ranged_enemy"
+      ],
+      "initial_guard_count": 12,
+      "max_guard_count": 12,
+      "guard_replenish_seconds": 30.0,
+      "guard_replenish_count": 2,
+      "shared_aggro_radius": 760.0,
+      "shared_aggro_seconds": 10.0,
+      "reward": {
+        "technology_item": "salvage_data_core",
+        "requires_salvage_return": true,
+        "salvage_drop": {
+          "id": "wreckage_command_nest_data_core_drop",
+          "resource_id": "salvage_data_core",
+          "key_item_id": "salvage_data_core",
+          "display_name": "残骸数据核心",
+          "amount": 1,
+          "value": 120,
+          "salvage_type": "key_drop",
+          "strategic_reward": true,
+          "requires_tether": false
+        }
+      }
+    },
+    {
+      "id": "salvage_regenerator_nest",
+      "display_name": "残骸再生巢",
+      "icon_path": "res://Resources/art/enemies/salvage_regenerator_nest.svg",
+      "grid_size": [3, 3],
+      "max_hp": 99999,
+      "armor_type": "structure_armor",
+      "guard_unit_type": "heavy_guard",
+      "guard_roster": ["heavy_guard", "heavy_guard", "ranged_enemy", "ranged_enemy"],
+      "initial_guard_count": 4,
+      "max_guard_count": 4,
+      "guard_replenish_seconds": 18.0,
+      "full_roster_replenish": true,
+      "invulnerable": true,
+      "combat_target_enabled": false,
+      "mainline_objective": false,
+      "reward": {}
     }
   ]
 }

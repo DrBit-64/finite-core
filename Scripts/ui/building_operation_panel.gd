@@ -4,6 +4,7 @@ class_name BuildingOperationPanel
 signal processor_recipe_selected(processor: Node, recipe_id: StringName)
 signal processor_pause_toggled(processor: Node)
 signal building_demolish_requested(building: Node)
+signal debug_kill_requested(target: Node)
 signal forge_rally_point_requested(forge: Node)
 signal forge_blueprint_picker_requested(forge: Node, blueprints: Array[UnitBlueprint])
 signal technology_panel_requested
@@ -23,6 +24,7 @@ var _forge: Node = null
 var _cargo_robot: Node = null
 var _storage_node: Node = null
 var _generic_building: Node = null
+var _debug_target: Node = null
 var _recipes: Array[RecipeDef] = []
 var _blueprints: Array[UnitBlueprint] = []
 
@@ -46,6 +48,7 @@ var _cargo_inventory_list: VBoxContainer = null
 var _cargo_task_list: VBoxContainer = null
 var _storage_capacity_label: Label = null
 var _storage_inventory_list: VBoxContainer = null
+var _debug_kill_button: Button = null
 var _guidance_forge_blueprint_picker: bool = false
 
 func _init() -> void:
@@ -80,6 +83,7 @@ func show_processor_panel(processor: Node, recipes: Array[RecipeDef], resource_d
 		_cargo_robot = null
 		_storage_node = null
 		_generic_building = null
+		_debug_target = null
 		_recipes = recipes.duplicate()
 		_blueprints.clear()
 		_rebuild_processor_panel(processor, recipes)
@@ -99,6 +103,7 @@ func show_producer_panel(producer: Node, resource_defs: Array[ResourceDef], scre
 		_cargo_robot = null
 		_storage_node = null
 		_generic_building = null
+		_debug_target = null
 		_recipes.clear()
 		_blueprints.clear()
 		_rebuild_miner_panel(producer)
@@ -115,6 +120,7 @@ func show_forge_panel(forge: Node, blueprint: UnitBlueprint, blueprints: Array[U
 		_cargo_robot = null
 		_storage_node = null
 		_generic_building = null
+		_debug_target = null
 		_recipes.clear()
 		_blueprints = blueprints.duplicate()
 		_rebuild_forge_panel(forge)
@@ -131,6 +137,7 @@ func show_research_terminal_panel(terminal: Node, technology_defs: Array, resour
 		_cargo_robot = null
 		_storage_node = null
 		_generic_building = null
+		_debug_target = null
 		_recipes.clear()
 		_blueprints.clear()
 		_rebuild_research_terminal_panel(terminal)
@@ -148,6 +155,7 @@ func show_cargo_robot_panel(robot: Node, resource_defs: Array[ResourceDef], scre
 		_cargo_robot = robot
 		_storage_node = null
 		_generic_building = null
+		_debug_target = null
 		_recipes.clear()
 		_blueprints.clear()
 		_rebuild_cargo_robot_panel(robot)
@@ -165,6 +173,7 @@ func show_inventory_storage_panel(storage_node: Node, resource_defs: Array[Resou
 		_cargo_robot = null
 		_storage_node = storage_node
 		_generic_building = null
+		_debug_target = null
 		_recipes.clear()
 		_blueprints.clear()
 		_rebuild_inventory_storage_panel(storage_node)
@@ -184,11 +193,18 @@ func show_basic_building_panel(building: Node, screen_position: Vector2) -> void
 		_cargo_robot = null
 		_storage_node = null
 		_generic_building = building
+		_debug_target = null
 		_recipes.clear()
 		_blueprints.clear()
 		_rebuild_basic_building_panel(building)
 	_update_basic_building_panel(building)
 	_position_panel(screen_position)
+
+func show_debug_enemy_panel(enemy: Node, screen_position: Vector2) -> void:
+	_show_debug_kill_panel(enemy, "敌方单位", screen_position)
+
+func show_debug_enemy_nest_panel(nest: Node, screen_position: Vector2) -> void:
+	_show_debug_kill_panel(nest, "敌巢建筑", screen_position)
 
 func hide_panel() -> void:
 	visible = false
@@ -199,6 +215,7 @@ func hide_panel() -> void:
 	_cargo_robot = null
 	_storage_node = null
 	_generic_building = null
+	_debug_target = null
 	_blueprints.clear()
 
 func set_guidance_highlights(highlights: Dictionary) -> void:
@@ -473,6 +490,53 @@ func _rebuild_basic_building_panel(building: Node) -> void:
 	_list.add_child(_alive_label)
 	size = get_combined_minimum_size()
 
+func _show_debug_kill_panel(target: Node, kind_text: String, screen_position: Vector2) -> void:
+	visible = true
+	var next_mode := &"debug_enemy_nest" if kind_text == "敌巢建筑" else &"debug_enemy"
+	if _mode != next_mode or _debug_target != target:
+		_mode = next_mode
+		_processor = null
+		_miner = null
+		_forge = null
+		_cargo_robot = null
+		_storage_node = null
+		_generic_building = null
+		_debug_target = target
+		_recipes.clear()
+		_blueprints.clear()
+		_rebuild_debug_kill_panel(target, kind_text)
+	_update_debug_kill_panel(target, kind_text)
+	_position_panel(screen_position)
+
+func _rebuild_debug_kill_panel(target: Node, kind_text: String) -> void:
+	_clear_content()
+	_list.add_child(_make_label(_get_node_display_name(target), Color(0.96, 0.98, 1.0, 1.0), 15))
+	_status_label = _make_label("类型：%s" % kind_text, Color(0.90, 0.94, 0.98, 1.0), 13)
+	_list.add_child(_status_label)
+	_alive_label = _make_label("", Color(0.90, 0.94, 0.98, 1.0), 13)
+	_list.add_child(_alive_label)
+	_debug_kill_button = Button.new()
+	_debug_kill_button.text = "击毁"
+	_debug_kill_button.icon = _load_ui_icon(ACTION_DEMOLISH_ICON_PATH)
+	_debug_kill_button.expand_icon = true
+	_debug_kill_button.tooltip_text = "Debug：走正常死亡流程击毁该目标"
+	_debug_kill_button.custom_minimum_size = Vector2(96, 30)
+	_debug_kill_button.pressed.connect(_on_debug_kill_button_pressed.bind(target), CONNECT_DEFERRED)
+	_list.add_child(_debug_kill_button)
+	size = get_combined_minimum_size()
+
+func _update_debug_kill_panel(target: Node, kind_text: String) -> void:
+	if _status_label:
+		_status_label.text = "类型：%s" % kind_text
+	if _alive_label:
+		var alive := bool(target.call("is_alive")) if target != null and target.has_method("is_alive") else true
+		var hp_value := int(target.get("hp")) if target != null and target.get("hp") != null else 0
+		var max_hp_value := int(target.get("max_hp")) if target != null and target.get("max_hp") != null else 0
+		_alive_label.text = "状态：%s  生命：%s / %s" % ["存活" if alive else "已摧毁", hp_value, max_hp_value]
+	if _debug_kill_button:
+		_debug_kill_button.disabled = target == null or not is_instance_valid(target) or (target.has_method("is_alive") and not bool(target.call("is_alive")))
+	size = get_combined_minimum_size()
+
 func _update_basic_building_panel(building: Node) -> void:
 	if _status_label:
 		var alive := bool(building.call("is_alive")) if building.has_method("is_alive") else true
@@ -495,6 +559,13 @@ func _make_panel_header(building: Node) -> HBoxContainer:
 	demolish_button.pressed.connect(_on_demolish_button_pressed.bind(building), CONNECT_DEFERRED)
 	row.add_child(demolish_button)
 	return row
+
+func _get_node_display_name(node: Node) -> String:
+	if node == null:
+		return "未知目标"
+	if node.has_method("get_display_name"):
+		return str(node.call("get_display_name"))
+	return node.name
 
 func _make_progress_bar(width: float) -> ProgressBar:
 	var progress_bar := ProgressBar.new()
@@ -652,6 +723,7 @@ func _clear_content() -> void:
 	_cargo_task_list = null
 	_storage_capacity_label = null
 	_storage_inventory_list = null
+	_debug_kill_button = null
 
 func _position_panel(screen_position: Vector2) -> void:
 	var popup_offset := Vector2(24, -16)
@@ -738,6 +810,9 @@ func _on_processor_pause_button_pressed(processor: Node) -> void:
 
 func _on_demolish_button_pressed(building: Node) -> void:
 	building_demolish_requested.emit(building)
+
+func _on_debug_kill_button_pressed(target: Node) -> void:
+	debug_kill_requested.emit(target)
 
 func _on_forge_rally_button_pressed(forge: Node) -> void:
 	forge_rally_point_requested.emit(forge)

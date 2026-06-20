@@ -4,6 +4,7 @@ class_name RuleBlockUI
 signal move_up_requested(block: RuleBlockUI)
 signal move_down_requested(block: RuleBlockUI)
 signal remove_requested(block: RuleBlockUI)
+signal reorder_requested(source: RuleBlockUI, target: RuleBlockUI, insert_after: bool)
 
 const AI_RULE_SCRIPT := preload("res://Scripts/ai_rule.gd")
 const CONDITION_ROW_SCENE := preload("res://Scenes/ui/condition_row_ui.tscn")
@@ -18,6 +19,7 @@ const CONDITION_ROW_SCENE := preload("res://Scenes/ui/condition_row_ui.tscn")
 @onready var add_condition_button: Button = $Footer/BtnAddCondition
 
 func _ready() -> void:
+	tooltip_text = "拖拽规则块可调整触发优先级"
 	_populate_header_options()
 	btn_up.pressed.connect(func() -> void: move_up_requested.emit(self))
 	btn_down.pressed.connect(func() -> void: move_down_requested.emit(self))
@@ -100,3 +102,30 @@ func _select_option_by_id(option: OptionButton, id: int) -> void:
 		if option.get_item_id(i) == id:
 			option.select(i)
 			return
+
+func _get_drag_data(_at_position: Vector2) -> Variant:
+	var preview := PanelContainer.new()
+	var label := Label.new()
+	label.text = "移动规则"
+	label.add_theme_font_size_override("font_size", 12)
+	label.add_theme_color_override("font_color", Color(0.90, 0.96, 1.0, 1.0))
+	preview.add_child(label)
+	set_drag_preview(preview)
+	return {
+		"type": "logic_rule_block",
+		"source": self,
+	}
+
+func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
+	if typeof(data) != TYPE_DICTIONARY:
+		return false
+	if str(data.get("type", "")) != "logic_rule_block":
+		return false
+	var source := data.get("source") as RuleBlockUI
+	return source != null and source != self and source.get_parent() == get_parent()
+
+func _drop_data(at_position: Vector2, data: Variant) -> void:
+	if not _can_drop_data(at_position, data):
+		return
+	var source := data.get("source") as RuleBlockUI
+	reorder_requested.emit(source, self, at_position.y > size.y * 0.5)

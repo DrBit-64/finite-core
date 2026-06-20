@@ -59,11 +59,19 @@ func evaluate_logic() -> bool:
 			var rule_name := str(_rule_get(rule, "name", _rule_get(rule, "id", "未命名规则")))
 			var handled := execute_action(_rule_get(rule, "action", AI_RULE_SCRIPT.Action.STOP_ACTION), target, rule)
 			_activate_rule(rule, rule_name, handled)
+			if _should_continue_after_nonblocking_action(rule, handled):
+				continue
 			_last_logic_handled = handled
 			return handled
 	_active_rule_id = ""
 	_last_logic_handled = false
 	return false
+
+func _should_continue_after_nonblocking_action(rule: Variant, handled: bool) -> bool:
+	if handled:
+		return false
+	var action_text := str(_rule_get(rule, "action", "")).to_lower()
+	return action_text == "prioritize_tagged_target" or action_text == "switch_to_backline_near_target"
 
 func _resolve_subject_target(subject: Variant) -> Node2D:
 	if robot == null:
@@ -238,6 +246,14 @@ func execute_action(act: Variant, target: Node2D, rule: Variant = null) -> bool:
 			if robot.has_method("hold_fire_for_heat"):
 				robot.call("hold_fire_for_heat")
 				return true
+		"prioritize_tagged_target", "switch_to_backline_near_target":
+			var radius := float(_rule_get(rule, "search_radius", 180.0))
+			var tag := StringName(str(_rule_get(rule, "tag", "backline")))
+			if robot.has_method("prioritize_tagged_target_near_current"):
+				robot.call("prioritize_tagged_target_near_current", radius, tag)
+			elif robot.has_method("switch_to_backline_near_current_target"):
+				robot.call("switch_to_backline_near_current_target", radius, tag)
+			return false
 		"wait":
 			if robot.has_method("stop_and_idle"):
 				robot.call("stop_and_idle")

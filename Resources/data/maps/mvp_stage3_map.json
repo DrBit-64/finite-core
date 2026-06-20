@@ -308,6 +308,68 @@
 	  "amount": 12000
 	}
   ],
+  "salvage_pickups": [
+	{
+	  "id": "wreckage_edge_scrap_001",
+	  "resource_id": "wreckage_scrap",
+	  "display_name": "边缘散落残骸",
+	  "grid_origin": [36, 61],
+	  "grid_size": [1, 1],
+	  "amount": 12,
+	  "value": 8,
+	  "salvage_type": "scrap",
+	  "region_id": "wreckage_battlefield"
+	},
+	{
+	  "id": "wreckage_edge_scrap_002",
+	  "resource_id": "wreckage_scrap",
+	  "display_name": "废弃装甲碎片",
+	  "grid_origin": [32, 66],
+	  "grid_size": [1, 1],
+	  "amount": 16,
+	  "value": 10,
+	  "salvage_type": "scrap",
+	  "region_id": "wreckage_battlefield"
+	},
+	{
+	  "id": "wreckage_mid_heavy_001",
+	  "resource_id": "heavy_wreckage",
+	  "display_name": "半埋重型残骸",
+	  "grid_origin": [24, 62],
+	  "grid_size": [1, 1],
+	  "amount": 10,
+	  "value": 32,
+	  "salvage_type": "heavy_wreckage",
+	  "requires_tether": true,
+	  "strategic_reward": true,
+	  "region_id": "wreckage_battlefield"
+	},
+	{
+	  "id": "wreckage_mid_scrap_001",
+	  "resource_id": "wreckage_scrap",
+	  "display_name": "战场残骸堆",
+	  "grid_origin": [22, 72],
+	  "grid_size": [1, 1],
+	  "amount": 24,
+	  "value": 18,
+	  "salvage_type": "enemy_wreckage",
+	  "region_id": "wreckage_battlefield"
+	},
+	{
+	  "id": "wreckage_deep_core_001",
+	  "resource_id": "salvage_data_core",
+	  "display_name": "残骸数据核心",
+	  "grid_origin": [12, 76],
+	  "grid_size": [1, 1],
+	  "amount": 1,
+	  "value": 80,
+	  "salvage_type": "key_drop",
+	  "requires_tether": true,
+	  "strategic_reward": true,
+	  "turn_in_target": "research_terminal",
+	  "region_id": "wreckage_battlefield"
+	}
+  ],
   "enemy_patrols": [
 	{
 	  "id": "crystal_entrance_armored_patrol_001",
@@ -323,6 +385,36 @@
 	  "id": "crystal_entrance_armored_patrol_003",
 	  "unit_type": "armored_scout",
 	  "grid_origin": [88, 65]
+	},
+	{
+	  "id": "wreckage_edge_heavy_guard_001",
+	  "unit_type": "heavy_guard",
+	  "grid_origin": [27, 60],
+	  "region_id": "wreckage_battlefield"
+	},
+	{
+	  "id": "wreckage_mid_heavy_guard_001",
+	  "unit_type": "heavy_guard",
+	  "grid_origin": [19, 68],
+	  "region_id": "wreckage_battlefield"
+	},
+	{
+	  "id": "wreckage_mid_ranged_enemy_001",
+	  "unit_type": "ranged_enemy",
+	  "grid_origin": [17, 66],
+	  "region_id": "wreckage_battlefield"
+	},
+	{
+	  "id": "wreckage_deep_heavy_guard_001",
+	  "unit_type": "heavy_guard",
+	  "grid_origin": [10, 78],
+	  "region_id": "wreckage_battlefield"
+	},
+	{
+	  "id": "wreckage_deep_ranged_enemy_001",
+	  "unit_type": "ranged_enemy",
+	  "grid_origin": [8, 76],
+	  "region_id": "wreckage_battlefield"
 	}
   ],
   "debug_enemies": [
@@ -348,6 +440,18 @@
 	  "id": "armored_scavenger_command_nest_001",
 	  "nest_type": "armored_scavenger_command_nest",
 	  "grid_origin": [108, 68]
+	},
+	{
+	  "id": "wreckage_command_nest_001",
+	  "nest_type": "wreckage_command_nest",
+	  "grid_origin": [18, 70],
+	  "region_id": "wreckage_battlefield"
+	},
+	{
+	  "id": "wreckage_regenerator_nest_001",
+	  "nest_type": "salvage_regenerator_nest",
+	  "grid_origin": [3, 90],
+	  "region_id": "wreckage_battlefield"
 	}
   ]
 }

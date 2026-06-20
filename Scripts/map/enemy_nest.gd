@@ -10,13 +10,23 @@ var guard_unit_type: StringName = &""
 var initial_guard_count: int = 6
 var max_guard_count: int = 6
 var guard_replenish_seconds: float = 30.0
+var guard_replenish_count: int = 1
+var shared_aggro_radius: float = 520.0
+var shared_aggro_seconds: float = 8.0
 var reward: Dictionary = {}
 var time_alive_seconds: float = 0.0
 var replenish_seconds_remaining: float = 30.0
+var guard_roster: Array[StringName] = []
+var full_roster_replenish: bool = false
+var invulnerable: bool = false
+var combat_target_enabled: bool = true
+var mainline_objective: bool = true
 
 var _guards: Array[Node] = []
 var _guard_slots: Dictionary = {}
 var _reserved_guard_slots: Dictionary = {}
+var _shared_alert_target: Node2D = null
+var _shared_alert_until_msec: int = 0
 
 func setup_nest(id: StringName, type_id: StringName, config: Dictionary, origin: Vector2i, next_cell_size: int) -> void:
 	nest_id = id
@@ -25,9 +35,18 @@ func setup_nest(id: StringName, type_id: StringName, config: Dictionary, origin:
 	initial_guard_count = maxi(0, int(config.get("initial_guard_count", 6)))
 	max_guard_count = maxi(0, int(config.get("max_guard_count", 6)))
 	guard_replenish_seconds = maxf(0.1, float(config.get("guard_replenish_seconds", 30.0)))
+	guard_replenish_count = maxi(1, int(config.get("guard_replenish_count", 1)))
+	shared_aggro_radius = maxf(0.0, float(config.get("shared_aggro_radius", 520.0)))
+	shared_aggro_seconds = maxf(0.0, float(config.get("shared_aggro_seconds", 8.0)))
+	guard_roster = _string_name_array(config.get("guard_roster", []))
+	full_roster_replenish = bool(config.get("full_roster_replenish", false))
+	invulnerable = bool(config.get("invulnerable", false))
+	combat_target_enabled = bool(config.get("combat_target_enabled", true))
+	mainline_objective = bool(config.get("mainline_objective", true))
 	replenish_seconds_remaining = guard_replenish_seconds
 	reward = config.get("reward", {}).duplicate(true)
 	time_alive_seconds = 0.0
+	_clear_shared_alert()
 	team = "Team_B"
 	armor_type = StringName(str(config.get("armor_type", "structure")))
 
@@ -38,10 +57,13 @@ func setup_nest(id: StringName, type_id: StringName, config: Dictionary, origin:
 	def.grid_size = _vector2i(config.get("grid_size", [2, 2]), Vector2i(2, 2))
 	def.max_hp = maxi(1, int(config.get("max_hp", 180)))
 	setup(def, origin, next_cell_size)
+	if not combat_target_enabled:
+		remove_from_group("combat_target")
+		_unregister_combat_target()
 
 func spawn_initial_guards() -> void:
-	for _index in range(initial_guard_count):
-		guard_spawn_requested.emit(self, guard_unit_type)
+	for index in range(initial_guard_count):
+		guard_spawn_requested.emit(self, _get_guard_type_for_slot(index))
 
 func register_guard(guard: Node) -> void:
 	register_guard_at_slot(guard, -1)
@@ -71,6 +93,31 @@ func unregister_guard(guard: Node) -> void:
 func get_guard_count() -> int:
 	_prune_guards()
 	return _guards.size()
+
+func notify_guard_engaged(target: Node2D) -> void:
+	if not is_alive() or target == null or not is_instance_valid(target):
+		return
+	if target.has_method("is_alive") and not bool(target.call("is_alive")):
+		return
+	_shared_alert_target = target
+	_shared_alert_until_msec = Time.get_ticks_msec() + roundi(shared_aggro_seconds * 1000.0)
+
+func get_shared_alert_target() -> Node2D:
+	if _shared_alert_target == null or not is_instance_valid(_shared_alert_target):
+		_clear_shared_alert()
+		return null
+	if Time.get_ticks_msec() > _shared_alert_until_msec:
+		_clear_shared_alert()
+		return null
+	if _shared_alert_target.has_method("is_alive") and not bool(_shared_alert_target.call("is_alive")):
+		_clear_shared_alert()
+		return null
+	if shared_aggro_radius > 0.0:
+		var distance := get_target_position().distance_to(_shared_alert_target.global_position)
+		if distance > shared_aggro_radius:
+			_clear_shared_alert()
+			return null
+	return _shared_alert_target
 
 func get_spawn_position(index: int = -1) -> Vector2:
 	var offsets := [
@@ -113,10 +160,35 @@ func _process(delta: float) -> void:
 	if replenish_seconds_remaining > 0.0:
 		return
 	replenish_seconds_remaining = guard_replenish_seconds
-	guard_spawn_requested.emit(self, guard_unit_type)
+	if full_roster_replenish:
+		var occupied := _get_occupied_guard_slots()
+		for slot_index in range(max_guard_count):
+			if occupied.has(slot_index):
+				continue
+			guard_spawn_requested.emit(self, _get_guard_type_for_slot(slot_index))
+	else:
+		for _i in range(guard_replenish_count):
+			if get_guard_count() >= max_guard_count:
+				break
+			var slot_index := _first_available_guard_slot(true)
+			guard_spawn_requested.emit(self, _get_guard_type_for_slot(slot_index))
 
 func _on_building_destroyed(_reason: StringName) -> void:
+	_clear_shared_alert()
 	nest_destroyed.emit(self)
+
+func take_damage(_amount: int) -> void:
+	if invulnerable:
+		return
+	super.take_damage(_amount)
+
+func take_damage_from(amount: int, source_payload: Dictionary = {}) -> void:
+	if invulnerable:
+		return
+	super.take_damage_from(amount, source_payload)
+
+func is_mainline_objective() -> bool:
+	return mainline_objective
 
 func _prune_guards() -> void:
 	for index in range(_guards.size() - 1, -1, -1):
@@ -177,6 +249,32 @@ func _rebuild_guard_slot_table() -> void:
 		if _guard_slots.has(guard_key):
 			next_slots[guard_key] = int(_guard_slots[guard_key])
 	_guard_slots = next_slots
+
+func _get_occupied_guard_slots() -> Dictionary:
+	_prune_guards()
+	var occupied := {}
+	for slot_value in _guard_slots.values():
+		occupied[int(slot_value)] = true
+	for slot_value in _reserved_guard_slots.keys():
+		occupied[int(slot_value)] = true
+	return occupied
+
+func _get_guard_type_for_slot(slot_index: int) -> StringName:
+	if guard_roster.is_empty():
+		return guard_unit_type
+	return guard_roster[clampi(slot_index, 0, guard_roster.size() - 1)]
+
+func _clear_shared_alert() -> void:
+	_shared_alert_target = null
+	_shared_alert_until_msec = 0
+
+func _string_name_array(value: Variant) -> Array[StringName]:
+	var result: Array[StringName] = []
+	if typeof(value) != TYPE_ARRAY:
+		return result
+	for item in value:
+		result.append(StringName(str(item)))
+	return result
 
 func _vector2i(value: Variant, fallback: Vector2i) -> Vector2i:
 	if typeof(value) != TYPE_ARRAY or value.size() < 2:

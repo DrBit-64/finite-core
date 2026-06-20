@@ -258,6 +258,23 @@
       "outputs": {
         "thermal_laser_robot": 1
       }
+    },
+    {
+      "id": "forge_armored_salvage_vehicle",
+      "display_name": "生产装甲回收车",
+      "type": "unit",
+      "target_id": "armored_salvage_vehicle",
+      "duration_seconds": 18.0,
+      "inputs": {
+        "reinforced_steel_plate": 10,
+        "optical_lens": 2,
+        "high_capacity_battery": 2,
+        "high_frequency_oscillator": 1,
+        "construction_mass": 14
+      },
+      "outputs": {
+        "armored_salvage_vehicle": 1
+      }
     }
   ]
 }

@@ -19,6 +19,8 @@ func _ready() -> void:
 
 func reset_state() -> void:
 	_alive = true
+	if projectile_sprite:
+		projectile_sprite.modulate = Color.WHITE
 	if life_timer:
 		life_timer.stop()
 		life_timer.wait_time = life_time
@@ -35,6 +37,16 @@ func setup(spawn_team: String, spawn_damage: int, dir: Vector2, next_source_payl
 		direction = dir.normalized()
 	if projectile_sprite:
 		projectile_sprite.rotation = direction.angle()
+		var tint: Variant = source_payload.get("projectile_tint", Color.WHITE)
+		if tint is Color:
+			projectile_sprite.modulate = tint
+		elif typeof(tint) == TYPE_ARRAY and tint.size() >= 3:
+			projectile_sprite.modulate = Color(
+				float(tint[0]),
+				float(tint[1]),
+				float(tint[2]),
+				float(tint[3]) if tint.size() >= 4 else 1.0
+			)
 	_configure_collision_mask_by_team()
 
 func _configure_collision_mask_by_team() -> void:
@@ -72,6 +84,8 @@ func _return_to_pool() -> void:
 		return
 	_alive = false
 	source_payload.clear()
+	if projectile_sprite:
+		projectile_sprite.modulate = Color.WHITE
 	if life_timer:
 		life_timer.stop()
 	ObjectPool.return_instance(self, pool_name)

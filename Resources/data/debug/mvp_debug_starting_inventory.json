@@ -14,6 +14,9 @@
     "reinforced_steel_plate": 500,
     "optical_lens": 500,
     "high_capacity_battery": 500,
-    "high_frequency_oscillator": 500
+    "high_frequency_oscillator": 500,
+    "wreckage_scrap": 500,
+    "heavy_wreckage": 500,
+    "salvage_data_core": 500
   }
 }

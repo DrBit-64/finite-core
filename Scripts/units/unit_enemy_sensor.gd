@@ -3,21 +3,73 @@ class_name UnitEnemySensor
 
 const CombatTargetRegistryScript := preload("res://Scripts/map/combat_target_registry.gd")
 
+const ENEMY_LIST_CACHE_MSEC := 180
+
 @export var require_reachable_targets: bool = true
 @export var reachability_cache_msec: int = 250
+@export var max_reachability_candidates: int = 8
 
 var _reachability_cache: Dictionary = {}
+var _enemy_list_cache: Dictionary = {}
 
 func get_enemies(unit_owner: Node2D, owner_team: String) -> Array[Node2D]:
+	if unit_owner == null:
+		return []
+	var cached := _get_cached_enemy_list(unit_owner, owner_team)
+	if not cached.is_empty() or _has_fresh_empty_enemy_cache(unit_owner, owner_team):
+		return cached
 	var enemies: Array[Node2D] = []
 	var registry := CombatTargetRegistryScript.find_for(unit_owner)
 	if registry != null:
 		enemies = registry.get_enemy_targets(owner_team)
 	else:
 		enemies = _get_group_enemies(unit_owner, owner_team)
+	_sort_nearest_first(enemies, unit_owner)
 	enemies = _filter_reachable_enemies(enemies, unit_owner)
 	_sort_nearest_first(enemies, unit_owner)
+	_store_enemy_list_cache(unit_owner, owner_team, enemies)
 	return enemies
+
+func _get_cached_enemy_list(unit_owner: Node2D, owner_team: String) -> Array[Node2D]:
+	var cached: Dictionary = _enemy_list_cache.get(_enemy_list_cache_key(unit_owner, owner_team), {})
+	if cached.is_empty():
+		return []
+	var now := Time.get_ticks_msec()
+	if now - int(cached.get("time", 0)) > ENEMY_LIST_CACHE_MSEC:
+		return []
+	var result: Array[Node2D] = []
+	for candidate in cached.get("enemies", []):
+		if is_valid_enemy(unit_owner, owner_team, candidate):
+			result.append(candidate as Node2D)
+	return result
+
+func _has_fresh_empty_enemy_cache(unit_owner: Node2D, owner_team: String) -> bool:
+	var cached: Dictionary = _enemy_list_cache.get(_enemy_list_cache_key(unit_owner, owner_team), {})
+	if cached.is_empty():
+		return false
+	if int(cached.get("count", 0)) != 0:
+		return false
+	return Time.get_ticks_msec() - int(cached.get("time", 0)) <= ENEMY_LIST_CACHE_MSEC
+
+func _store_enemy_list_cache(unit_owner: Node2D, owner_team: String, enemies: Array[Node2D]) -> void:
+	var stored: Array = []
+	for enemy in enemies:
+		if enemy != null and is_instance_valid(enemy):
+			stored.append(enemy)
+	_enemy_list_cache[_enemy_list_cache_key(unit_owner, owner_team)] = {
+		"time": Time.get_ticks_msec(),
+		"count": stored.size(),
+		"enemies": stored,
+	}
+	if _enemy_list_cache.size() > 16:
+		_enemy_list_cache.clear()
+
+func _enemy_list_cache_key(unit_owner: Node2D, owner_team: String) -> String:
+	var cell := Vector2i(
+		floori(unit_owner.global_position.x / 64.0),
+		floori(unit_owner.global_position.y / 64.0)
+	)
+	return "%s:%s:%s" % [owner_team, cell.x, cell.y]
 
 func get_enemies_in_radius(unit_owner: Node2D, owner_team: String, center: Vector2, radius: float) -> Array[Node2D]:
 	var enemies: Array[Node2D] = []
@@ -68,7 +120,11 @@ func _filter_reachable_enemies(enemies: Array[Node2D], unit_owner: Node2D) -> Ar
 	if path_provider == null:
 		return enemies
 	var owner_cell := _get_navigation_cell(path_provider, unit_owner.global_position)
+	var checked := 0
 	for enemy in enemies:
+		if checked >= max_reachability_candidates:
+			break
+		checked += 1
 		if _is_target_reachable(unit_owner, enemy, path_provider, owner_cell):
 			result.append(enemy)
 	return result

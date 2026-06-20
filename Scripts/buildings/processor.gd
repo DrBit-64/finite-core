@@ -9,6 +9,7 @@ const STATE_WAITING_BASE := &"waiting_base"
 const STATE_WAITING_INPUTS := &"waiting_inputs"
 const STATE_RUNNING := &"running"
 const STATE_PAUSED := &"paused"
+const WAITING_INPUT_POLL_SECONDS := 0.25
 
 var selected_recipe: RecipeDef = null
 var available_recipes: Array[RecipeDef] = []
@@ -20,6 +21,7 @@ var state_id: StringName = STATE_NO_RECIPE
 var progress_seconds: float = 0.0
 var is_paused: bool = false
 var _status_marker: Node2D = null
+var _waiting_input_poll_seconds: float = WAITING_INPUT_POLL_SECONDS
 
 func setup_processor(recipes: Array[RecipeDef], inventory: Variant) -> void:
 	_ensure_status_marker()
@@ -32,6 +34,7 @@ func set_recipe(recipe_id: StringName) -> void:
 		if recipe.id == recipe_id:
 			selected_recipe = recipe
 			progress_seconds = 0.0
+			_waiting_input_poll_seconds = WAITING_INPUT_POLL_SECONDS
 			_update_status()
 			processor_state_changed.emit()
 			return
@@ -61,7 +64,12 @@ func _process(delta: float) -> void:
 		_advance_production(delta)
 		return
 
-	var cache_changed := _pull_missing_inputs_from_inventory()
+	var cache_changed := false
+	if not _cache_can_afford(input_cache, selected_recipe.inputs):
+		_waiting_input_poll_seconds += delta
+		if _waiting_input_poll_seconds >= WAITING_INPUT_POLL_SECONDS:
+			_waiting_input_poll_seconds = 0.0
+			cache_changed = _pull_missing_inputs_from_inventory()
 	if not _cache_can_afford(input_cache, selected_recipe.inputs):
 		progress_seconds = 0.0
 		_set_status("等待原料", STATE_WAITING_INPUTS)
@@ -70,6 +78,7 @@ func _process(delta: float) -> void:
 		return
 
 	if progress_seconds <= 0.0:
+		_waiting_input_poll_seconds = 0.0
 		_spend_from_cache(input_cache, selected_recipe.inputs)
 		processor_state_changed.emit()
 
@@ -82,6 +91,7 @@ func _advance_production(delta: float) -> void:
 		return
 
 	progress_seconds = 0.0
+	_waiting_input_poll_seconds = WAITING_INPUT_POLL_SECONDS
 	_add_to_cache(output_cache, selected_recipe.outputs)
 	_flush_output_cache_to_inventory()
 	processor_state_changed.emit()

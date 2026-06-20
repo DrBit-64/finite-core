@@ -6,6 +6,8 @@ const ICON_WAIT := preload("res://Resources/art/ui/state_wait.svg")
 const ICON_DEFAULT_BRAIN := preload("res://Resources/art/ui/state_default_brain.svg")
 const ICON_TECH_UNLOCKED := preload("res://Resources/art/ui/technology_unlocked.svg")
 const ICON_BUILDING_DAMAGED := preload("res://Resources/art/ui/building_damaged.svg")
+const REFRESH_THROTTLE_MSEC := 220
+const TYPE_FILTER_REFRESH_MSEC := 800
 
 @export var max_visible_events: int = 20
 @export var default_window_seconds: float = 300.0
@@ -27,6 +29,8 @@ var _selected_window_seconds: float = 300.0
 var _selected_event_type: String = ""
 var _refresh_queued: bool = false
 var _refresh_type_filter_queued: bool = false
+var _next_refresh_msec: int = 0
+var _next_type_filter_refresh_msec: int = 0
 
 func _ready() -> void:
 	if title_label:
@@ -75,16 +79,27 @@ func _on_event_recorded(event: Dictionary) -> void:
 
 func _queue_refresh(refresh_type_filter: bool = false) -> void:
 	_refresh_type_filter_queued = _refresh_type_filter_queued or refresh_type_filter
+	if _is_collapsed or not visible:
+		return
 	if _refresh_queued:
 		return
+	var now := Time.get_ticks_msec()
+	if now < _next_refresh_msec:
+		return
+	_next_refresh_msec = now + REFRESH_THROTTLE_MSEC
 	_refresh_queued = true
 	call_deferred("_flush_refresh")
 
 func _flush_refresh() -> void:
 	_refresh_queued = false
+	if _is_collapsed or not visible:
+		return
 	if _refresh_type_filter_queued:
-		_refresh_type_filter_queued = false
-		_refresh_type_filter()
+		var now := Time.get_ticks_msec()
+		if now >= _next_type_filter_refresh_msec:
+			_next_type_filter_refresh_msec = now + TYPE_FILTER_REFRESH_MSEC
+			_refresh_type_filter_queued = false
+			_refresh_type_filter()
 	_refresh()
 
 func _build_filter_controls() -> void:
@@ -148,6 +163,9 @@ func _toggle_collapsed() -> void:
 	if _collapse_button:
 		_collapse_button.text = "展开" if _is_collapsed else "折叠"
 	size.y = 52.0 if _is_collapsed else _expanded_height
+	if not _is_collapsed:
+		_refresh_type_filter()
+		_refresh()
 
 func _add_window_option(label: String, seconds: float) -> void:
 	var index := _window_option.item_count

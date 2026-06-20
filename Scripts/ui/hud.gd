@@ -5,6 +5,7 @@ signal build_mode_requested(building_id: StringName)
 signal processor_recipe_selected(processor: Node, recipe_id: StringName)
 signal processor_pause_toggled(processor: Node)
 signal building_demolish_requested(building: Node)
+signal debug_kill_requested(target: Node)
 signal forge_rally_point_requested(forge: Node)
 signal blueprint_library_requested
 signal blueprint_save_requested(source_blueprint_id: StringName, display_name: String, unit_type_id: StringName, upgrade_ids: Array[StringName], tactical_templates: Array, embedded_rules: Array, state_flag_defaults: Dictionary, save_as_new: bool)
@@ -56,6 +57,7 @@ var _research_terminal_status: Dictionary = {}
 var _unlocked_template_ids: Array[StringName] = []
 var _unlocked_unit_type_ids: Array[StringName] = []
 var _unlocked_upgrade_ids: Array[StringName] = []
+var _available_enemy_target_tags: Array[String] = ["frontline", "backline"]
 var _blueprint_panel: PanelContainer = null
 var _blueprint_list: VBoxContainer = null
 var _blueprint_source_option: OptionButton = null
@@ -244,6 +246,14 @@ func show_basic_building_panel(building: Node, screen_position: Vector2) -> void
 	_ensure_operation_panel()
 	_building_operation_panel.show_basic_building_panel(building, screen_position)
 
+func show_debug_enemy_panel(enemy: Node, screen_position: Vector2) -> void:
+	_ensure_operation_panel()
+	_building_operation_panel.show_debug_enemy_panel(enemy, screen_position)
+
+func show_debug_enemy_nest_panel(nest: Node, screen_position: Vector2) -> void:
+	_ensure_operation_panel()
+	_building_operation_panel.show_debug_enemy_nest_panel(nest, screen_position)
+
 func hide_operation_panel() -> void:
 	if _building_operation_panel:
 		_building_operation_panel.hide_panel()
@@ -324,6 +334,13 @@ func set_blueprint_unlocks(unit_type_ids: Array[StringName], upgrade_ids: Array[
 	_unlocked_template_ids = template_ids.duplicate()
 	if _blueprint_overlay and _blueprint_overlay.has_method("set_blueprint_unlocks"):
 		_blueprint_overlay.call("set_blueprint_unlocks", _unlocked_unit_type_ids, _unlocked_upgrade_ids, _unlocked_template_ids)
+
+func set_available_enemy_target_tags(tags: Array[String]) -> void:
+	if tags == _available_enemy_target_tags:
+		return
+	_available_enemy_target_tags = tags.duplicate()
+	if _blueprint_overlay and _blueprint_overlay.has_method("set_available_enemy_target_tags"):
+		_blueprint_overlay.call("set_available_enemy_target_tags", _available_enemy_target_tags)
 
 func set_campaign_data(
 	state: Variant,
@@ -694,6 +711,8 @@ func _on_blueprint_button_pressed() -> void:
 		_blueprint_overlay.call("set_blueprint_unlocks", _unlocked_unit_type_ids, _unlocked_upgrade_ids, _unlocked_template_ids)
 	elif _blueprint_overlay.has_method("set_unlocked_template_ids"):
 		_blueprint_overlay.call("set_unlocked_template_ids", _unlocked_template_ids)
+	if _blueprint_overlay.has_method("set_available_enemy_target_tags"):
+		_blueprint_overlay.call("set_available_enemy_target_tags", _available_enemy_target_tags)
 	_blueprint_overlay.visible = not _blueprint_overlay.visible
 
 func _on_statistics_button_pressed() -> void:
@@ -1341,6 +1360,7 @@ func _ensure_operation_panel() -> void:
 	_building_operation_panel.processor_recipe_selected.connect(_on_operation_processor_recipe_selected)
 	_building_operation_panel.processor_pause_toggled.connect(_on_operation_processor_pause_toggled)
 	_building_operation_panel.building_demolish_requested.connect(_on_operation_building_demolish_requested)
+	_building_operation_panel.debug_kill_requested.connect(_on_operation_debug_kill_requested)
 	_building_operation_panel.forge_rally_point_requested.connect(_on_operation_forge_rally_point_requested)
 	_building_operation_panel.forge_blueprint_picker_requested.connect(_on_operation_forge_blueprint_picker_requested)
 	_building_operation_panel.technology_panel_requested.connect(_on_operation_technology_panel_requested)
@@ -1357,6 +1377,9 @@ func _on_operation_processor_pause_toggled(processor: Node) -> void:
 
 func _on_operation_building_demolish_requested(building: Node) -> void:
 	building_demolish_requested.emit(building)
+
+func _on_operation_debug_kill_requested(target: Node) -> void:
+	debug_kill_requested.emit(target)
 
 func _on_operation_forge_rally_point_requested(forge: Node) -> void:
 	forge_rally_point_requested.emit(forge)

@@ -39,6 +39,7 @@ func _add_rule_block(rule: AIRule) -> void:
 	block.move_up_requested.connect(_on_block_move_up)
 	block.move_down_requested.connect(_on_block_move_down)
 	block.remove_requested.connect(_on_block_remove)
+	block.reorder_requested.connect(_on_block_reorder_requested)
 	if rule:
 		block.set_from_rule(rule)
 
@@ -59,6 +60,19 @@ func _on_block_remove(block: RuleBlockUI) -> void:
 	block.queue_free()
 	if rules_container.get_child_count() == 0:
 		_add_rule_block(null)
+
+func _on_block_reorder_requested(source: RuleBlockUI, target: RuleBlockUI, insert_after: bool) -> void:
+	if source == null or target == null:
+		return
+	if source == target or source.get_parent() != rules_container or target.get_parent() != rules_container:
+		return
+	var final_order := rules_container.get_children()
+	final_order.erase(source)
+	var target_index := final_order.find(target)
+	if target_index < 0:
+		return
+	var insert_index := target_index + (1 if insert_after else 0)
+	rules_container.move_child(source, clampi(insert_index, 0, rules_container.get_child_count() - 1))
 
 func export_rules() -> Array[AIRule]:
 	var rules: Array[AIRule] = []
