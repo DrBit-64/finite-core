@@ -45,6 +45,24 @@ const STAGE14_BASE_TARGET_STOCK := 36
 const RESOURCE_HUD_REFRESH_INTERVAL := 0.20
 const RESOURCE_EVENT_FLUSH_INTERVAL := 1.00
 const NAVIGATION_REACHABILITY_CACHE_MSEC := 300
+const RECIPE_UPGRADE_MAX_LEVEL := 5
+const RECIPE_UPGRADE_OUTPUT_MULTIPLIER := 1.5
+const RECIPE_UPGRADE_INPUT_MULTIPLIER := 1.3
+const RECIPE_UPGRADE_NEXT_COST_MULTIPLIER := 1.5
+const RECIPE_UPGRADE_BASE_RESOURCE_AMOUNT := 100
+const RECIPE_UPGRADE_RESOURCE_ORDER := [
+	MvpDataDefaults.RES_CONSTRUCTION_MASS,
+	MvpDataDefaults.RES_IRON_ORE,
+	MvpDataDefaults.RES_COPPER_ORE,
+	MvpDataDefaults.RES_IRON_PLATE,
+	MvpDataDefaults.RES_COPPER_WIRE,
+	MvpDataDefaults.RES_WATER,
+	MvpDataDefaults.RES_CRYSTAL_ORE,
+	MvpDataDefaults.RES_COAL,
+	MvpDataDefaults.RES_REINFORCED_STEEL_PLATE,
+	MvpDataDefaults.RES_OPTICAL_LENS,
+	MvpDataDefaults.RES_HIGH_CAPACITY_BATTERY,
+]
 const MINIMAP_SEMANTIC_TAGS := [
 	"water",
 	"pump_candidate",
@@ -388,6 +406,8 @@ func _configure_hud() -> void:
 		hud.connect("forge_blueprint_selected", Callable(self, "_on_forge_blueprint_selected"))
 	if hud.has_signal("technology_research_requested"):
 		hud.connect("technology_research_requested", Callable(self, "_on_technology_research_requested"))
+	if hud.has_signal("recipe_upgrade_requested"):
+		hud.connect("recipe_upgrade_requested", Callable(self, "_on_recipe_upgrade_requested"))
 	if hud.has_signal("new_game_requested"):
 		hud.connect("new_game_requested", Callable(self, "_on_new_game_requested"))
 	if hud.has_signal("restart_requested"):
@@ -480,7 +500,7 @@ func _refresh_campaign_hud() -> void:
 	var amounts: Dictionary = inventory.get_all() if inventory else {}
 	var terminal_status := _get_research_terminal_status()
 	if hud.has_method("set_campaign_data"):
-		hud.call("set_campaign_data", campaign_state, technology_defs, resource_defs, amounts, terminal_status)
+		hud.call("set_campaign_data", campaign_state, technology_defs, resource_defs, amounts, terminal_status, _get_recipe_upgrade_hud_data())
 	if hud.has_method("set_unlocked_template_ids"):
 		hud.call("set_unlocked_template_ids", campaign_state.unlocked_templates)
 	if hud.has_method("set_blueprint_unlocks"):
@@ -557,6 +577,210 @@ func _on_technology_research_requested(technology_id: StringName) -> void:
 	if hud and hud.has_method("show_bottom_prompt"):
 		hud.call("show_bottom_prompt", "研究失败：资源不足或研究终端忙碌", 2.0, &"warning")
 	_refresh_campaign_hud()
+
+func _on_recipe_upgrade_requested(resource_id: StringName) -> void:
+	if String(resource_id).is_empty() or campaign_state == null:
+		return
+	var current_level := _get_recipe_upgrade_level(resource_id)
+	var unlocked_max_level := _get_recipe_upgrade_unlocked_max_level()
+	if current_level >= RECIPE_UPGRADE_MAX_LEVEL:
+		_play_audio_cue(&"build_failed")
+		return
+	if current_level >= unlocked_max_level:
+		_play_audio_cue(&"build_failed")
+		if hud and hud.has_method("show_bottom_prompt"):
+			hud.call("show_bottom_prompt", "需要推进区域战果后才能继续升级。", 2.0, &"warning")
+		_refresh_campaign_hud()
+		return
+	var inventory = _get_main_base_inventory()
+	var cost := _get_recipe_upgrade_cost(resource_id, current_level)
+	if inventory == null or not inventory.spend_resources(cost, "增产升级 %s Lv%d" % [_get_resource_display_name(resource_id), current_level + 1]):
+		_play_audio_cue(&"build_failed")
+		if hud and hud.has_method("show_bottom_prompt"):
+			hud.call("show_bottom_prompt", "增产升级失败：材料不足。", 2.0, &"warning")
+		_refresh_campaign_hud()
+		return
+	campaign_state.call("set_recipe_upgrade_level", resource_id, current_level + 1)
+	_refresh_recipe_upgrade_effects()
+	_play_audio_cue(&"technology_unlocked")
+	push_debug_event("增产升级完成：%s Lv%d" % [_get_resource_display_name(resource_id), current_level + 1])
+	if hud and hud.has_method("show_bottom_prompt"):
+		hud.call("show_bottom_prompt", "增产升级完成：%s Lv%d" % [_get_resource_display_name(resource_id), current_level + 1], 2.0, &"success")
+	_refresh_resource_hud()
+	_refresh_campaign_hud()
+	call_deferred("_refresh_operation_panel")
+
+func _get_recipe_upgrade_hud_data() -> Dictionary:
+	var entries: Array = []
+	var unlocked_max_level := _get_recipe_upgrade_unlocked_max_level()
+	var inventory = _get_main_base_inventory()
+	for resource_id_value in RECIPE_UPGRADE_RESOURCE_ORDER:
+		var resource_id := StringName(resource_id_value)
+		if not _is_recipe_upgrade_resource_visible(resource_id):
+			continue
+		var level := _get_recipe_upgrade_level(resource_id)
+		var cost := _get_recipe_upgrade_cost(resource_id, level)
+		var can_upgrade: bool = (
+			level < RECIPE_UPGRADE_MAX_LEVEL
+			and level < unlocked_max_level
+			and inventory != null
+			and inventory.can_afford(cost)
+		)
+		var resource_def := _find_resource_def(resource_id)
+		entries.append({
+			"resource_id": String(resource_id),
+			"display_name": _get_resource_display_name(resource_id),
+			"icon_path": resource_def.icon_path if resource_def != null else "",
+			"description": _get_recipe_upgrade_description(resource_id),
+			"level": level,
+			"max_level": RECIPE_UPGRADE_MAX_LEVEL,
+			"unlocked_max_level": unlocked_max_level,
+			"can_upgrade": can_upgrade,
+			"status_text": _get_recipe_upgrade_status_text(level, unlocked_max_level, cost, inventory),
+			"cost": cost,
+			"current_recipe": _get_recipe_upgrade_preview(resource_id, level),
+			"next_recipe": _get_recipe_upgrade_preview(resource_id, mini(level + 1, RECIPE_UPGRADE_MAX_LEVEL)),
+		})
+	return {"resources": entries}
+
+func _is_recipe_upgrade_resource_visible(resource_id: StringName) -> bool:
+	if campaign_state == null:
+		return true
+	if resource_id == MvpDataDefaults.RES_CONSTRUCTION_MASS:
+		return true
+	return campaign_state.unlocked_resources.has(resource_id)
+
+func _get_recipe_upgrade_status_text(level: int, unlocked_max_level: int, cost: Dictionary, inventory: Variant) -> String:
+	if level >= RECIPE_UPGRADE_MAX_LEVEL:
+		return "已满级"
+	if level >= unlocked_max_level:
+		return "未解锁：继续攻占区域目标"
+	if inventory == null:
+		return "需要主基地库存"
+	if not inventory.can_afford(cost):
+		return "材料不足"
+	return "可升级"
+
+func _get_recipe_upgrade_description(resource_id: StringName) -> String:
+	if resource_id == MvpDataDefaults.RES_CONSTRUCTION_MASS:
+		return "重校主基地的自构筑循环，提高建设质料的被动产出。"
+	if resource_id == MvpDataDefaults.RES_WATER:
+		return "优化泵组节律，提高水泵的抽取效率。"
+	if resource_id == MvpDataDefaults.RES_IRON_ORE or resource_id == MvpDataDefaults.RES_COPPER_ORE or resource_id == MvpDataDefaults.RES_CRYSTAL_ORE or resource_id == MvpDataDefaults.RES_COAL:
+		return "改写采矿机的采样与破碎参数，提高该矿物的采集产出。"
+	return "重排加工厂的作业窗口，提高该资源配方的产出；有成本配方会同步提高原料消耗。"
+
+func _get_recipe_upgrade_unlocked_max_level() -> int:
+	if campaign_state == null:
+		return 0
+	var level := 0
+	if campaign_state.defeated_nests.has(&"enemy_nest_001") or campaign_state.key_items.has(KEY_ITEM_INITIAL_SENSOR_COIL):
+		level = 2
+	if campaign_state.defeated_nests.has(&"crystal_resource_outpost_001"):
+		level = maxi(level, 3)
+	if campaign_state.defeated_nests.has(&"armored_scavenger_command_nest_001") or campaign_state.key_items.has(MvpDataDefaults.RES_HIGH_FREQUENCY_OSCILLATOR):
+		level = maxi(level, 4)
+	if campaign_state.defeated_nests.has(&"wreckage_command_nest_001") or campaign_state.key_items.has(MvpDataDefaults.RES_SALVAGE_DATA_CORE):
+		level = maxi(level, 5)
+	return level
+
+func _get_recipe_upgrade_cost(resource_id: StringName, current_level: int) -> Dictionary:
+	if current_level >= RECIPE_UPGRADE_MAX_LEVEL:
+		return {}
+	var level_multiplier := pow(RECIPE_UPGRADE_NEXT_COST_MULTIPLIER, clampi(current_level, 0, RECIPE_UPGRADE_MAX_LEVEL))
+	var base_cost := _get_recipe_upgrade_base_cost(resource_id)
+	var result := {}
+	for cost_id in base_cost.keys():
+		var amount := ceili(float(base_cost[cost_id]) * level_multiplier)
+		if amount > 0:
+			result[StringName(str(cost_id))] = amount
+	return result
+
+func _get_recipe_upgrade_base_cost(resource_id: StringName) -> Dictionary:
+	var ingredients := _get_recipe_upgrade_cost_ingredients(resource_id)
+	var result := {}
+	result[MvpDataDefaults.RES_CONSTRUCTION_MASS] = RECIPE_UPGRADE_BASE_RESOURCE_AMOUNT
+	for ingredient_id in ingredients:
+		if ingredient_id == MvpDataDefaults.RES_CONSTRUCTION_MASS:
+			continue
+		result[ingredient_id] = RECIPE_UPGRADE_BASE_RESOURCE_AMOUNT
+	return result
+
+func _get_recipe_upgrade_cost_ingredients(resource_id: StringName) -> Array[StringName]:
+	match resource_id:
+		MvpDataDefaults.RES_CONSTRUCTION_MASS:
+			return [MvpDataDefaults.RES_IRON_PLATE, MvpDataDefaults.RES_COPPER_WIRE]
+		MvpDataDefaults.RES_IRON_ORE:
+			return [MvpDataDefaults.RES_IRON_PLATE]
+		MvpDataDefaults.RES_COPPER_ORE:
+			return [MvpDataDefaults.RES_COPPER_WIRE]
+		MvpDataDefaults.RES_IRON_PLATE:
+			return [MvpDataDefaults.RES_IRON_ORE]
+		MvpDataDefaults.RES_COPPER_WIRE:
+			return [MvpDataDefaults.RES_COPPER_ORE]
+		MvpDataDefaults.RES_WATER:
+			return [MvpDataDefaults.RES_IRON_PLATE, MvpDataDefaults.RES_COPPER_WIRE]
+		MvpDataDefaults.RES_CRYSTAL_ORE:
+			return [MvpDataDefaults.RES_IRON_PLATE, MvpDataDefaults.RES_COPPER_WIRE, MvpDataDefaults.RES_WATER]
+		MvpDataDefaults.RES_COAL:
+			return [MvpDataDefaults.RES_IRON_PLATE, MvpDataDefaults.RES_COPPER_WIRE, MvpDataDefaults.RES_WATER]
+		MvpDataDefaults.RES_REINFORCED_STEEL_PLATE:
+			return [MvpDataDefaults.RES_IRON_PLATE, MvpDataDefaults.RES_COAL, MvpDataDefaults.RES_WATER]
+		MvpDataDefaults.RES_OPTICAL_LENS:
+			return [MvpDataDefaults.RES_CRYSTAL_ORE, MvpDataDefaults.RES_WATER, MvpDataDefaults.RES_COPPER_WIRE]
+		MvpDataDefaults.RES_HIGH_CAPACITY_BATTERY:
+			return [MvpDataDefaults.RES_CRYSTAL_ORE, MvpDataDefaults.RES_COPPER_WIRE, MvpDataDefaults.RES_OPTICAL_LENS, MvpDataDefaults.RES_WATER]
+		_:
+			return _get_recipe_upgrade_recipe_ingredients(resource_id)
+
+func _get_recipe_upgrade_recipe_ingredients(resource_id: StringName) -> Array[StringName]:
+	var result: Array[StringName] = []
+	var recipe := _find_base_resource_recipe(resource_id)
+	if recipe == null:
+		return [MvpDataDefaults.RES_IRON_PLATE]
+	for input_id in recipe.inputs.keys():
+		var id := StringName(str(input_id))
+		if not result.has(id) and id != MvpDataDefaults.RES_CONSTRUCTION_MASS:
+			result.append(id)
+		if result.size() >= 4:
+			break
+	if result.is_empty():
+		result.append(MvpDataDefaults.RES_IRON_PLATE)
+	return result
+
+func _find_base_resource_recipe(resource_id: StringName) -> RecipeDef:
+	for recipe in recipe_defs:
+		if recipe.recipe_type == &"resource" and recipe.target_id == resource_id:
+			return recipe
+	return null
+
+func _get_recipe_upgrade_preview(resource_id: StringName, level: int) -> Dictionary:
+	level = clampi(level, 0, RECIPE_UPGRADE_MAX_LEVEL)
+	var recipe := _find_base_resource_recipe(resource_id)
+	if recipe != null:
+		var effective := _make_effective_resource_recipe(recipe, level)
+		return {
+			"inputs": effective.inputs,
+			"outputs": effective.outputs,
+			"duration_seconds": effective.duration_seconds,
+		}
+	var per_minute := _get_base_passive_output_per_minute(resource_id)
+	return {
+		"inputs": {},
+		"outputs": {resource_id: ceili(float(per_minute) * _get_recipe_output_multiplier(level))},
+		"duration_seconds": 60.0,
+	}
+
+func _get_base_passive_output_per_minute(resource_id: StringName) -> int:
+	if resource_id == MvpDataDefaults.RES_CONSTRUCTION_MASS:
+		return 45
+	if resource_id == MvpDataDefaults.RES_WATER:
+		return 24
+	return 30
+
+func _get_resource_display_name(resource_id: StringName) -> String:
+	var resource_def := _find_resource_def(resource_id)
+	return resource_def.display_name if resource_def != null else String(resource_id)
 
 func _find_technology_def(technology_id: StringName) -> Variant:
 	for technology in technology_defs:
@@ -1286,6 +1510,7 @@ func _apply_campaign_state_snapshot(data: Dictionary) -> void:
 	campaign_state.unlocked_conditions = _string_name_list_from_variant(data.get("unlocked_conditions", []))
 	campaign_state.unlocked_actions = _string_name_list_from_variant(data.get("unlocked_actions", []))
 	campaign_state.unlocked_upgrades = _string_name_list_from_variant(data.get("unlocked_upgrades", []))
+	campaign_state.recipe_upgrade_levels = _string_name_key_dictionary(data.get("recipe_upgrade_levels", {}))
 
 func _restore_blueprint_library(entries: Array) -> void:
 	blueprint_library = BlueprintLibraryScript.new()
@@ -2633,6 +2858,7 @@ func _setup_main_base_after_placement(base_node: Node) -> void:
 		inventory.inventory_changed.connect(_on_inventory_changed)
 	if main_base.has_method("seed_inventory"):
 		main_base.call("seed_inventory", starting_inventory)
+	_apply_main_base_recipe_upgrade()
 	_refresh_resource_hud()
 	_refresh_build_options()
 	var origin: Vector2i = main_base.get("grid_origin")
@@ -3733,6 +3959,7 @@ func _configure_building_runtime(building: Node, building_def: BuildingDef, orig
 	if _is_miner_def(building_def) and building.has_method("setup_miner"):
 		var use_entity_logistics := stage14_remote_logistics_enabled and not _is_in_main_base_service_radius(origin, building_def.grid_size)
 		building.call("setup_miner", _get_resource_node_at(origin), inventory, use_entity_logistics)
+		_apply_producer_recipe_upgrade(building)
 		if building.has_signal("miner_state_changed"):
 			building.connect("miner_state_changed", Callable(self, "_on_miner_state_changed").bind(building))
 	elif _is_processor_def(building_def) and building.has_method("setup_processor"):
@@ -3756,6 +3983,7 @@ func _configure_building_runtime(building: Node, building_def: BuildingDef, orig
 	elif _is_water_pump_def(building_def) and building.has_method("setup_water_pump"):
 		var use_entity_logistics := stage14_remote_logistics_enabled and not _is_in_main_base_service_radius(origin, building_def.grid_size)
 		building.call("setup_water_pump", inventory, use_entity_logistics)
+		_apply_producer_recipe_upgrade(building)
 		if building.has_signal("water_pump_state_changed"):
 			building.connect("water_pump_state_changed", Callable(self, "_on_water_pump_state_changed").bind(building))
 
@@ -3763,7 +3991,7 @@ func _get_resource_recipes() -> Array[RecipeDef]:
 	var result: Array[RecipeDef] = []
 	for recipe in recipe_defs:
 		if recipe.recipe_type == &"resource" and _is_resource_recipe_unlocked(recipe):
-			result.append(recipe)
+			result.append(_make_effective_resource_recipe(recipe))
 	return result
 
 func _get_resource_recipes_for_processor(building_def: BuildingDef) -> Array[RecipeDef]:
@@ -3784,6 +4012,96 @@ func _get_resource_recipes_for_processor(building_def: BuildingDef) -> Array[Rec
 		if allowed_recipe_ids.has(recipe.id):
 			result.append(recipe)
 	return result
+
+func _make_effective_resource_recipe(recipe: RecipeDef, forced_level: int = -1) -> RecipeDef:
+	if recipe == null:
+		return null
+	var effective := RecipeDef.new()
+	effective.id = recipe.id
+	effective.display_name = recipe.display_name
+	effective.recipe_type = recipe.recipe_type
+	effective.target_id = recipe.target_id
+	effective.duration_seconds = recipe.duration_seconds
+	effective.source_path = recipe.source_path
+	var level := forced_level
+	if level < 0:
+		level = _get_recipe_upgrade_level(recipe.target_id)
+	effective.inputs = _scale_recipe_amounts(recipe.inputs, _get_recipe_input_multiplier(level), true)
+	effective.outputs = _scale_recipe_amounts(recipe.outputs, _get_recipe_output_multiplier(level), true)
+	return effective
+
+func _scale_recipe_amounts(amounts: Dictionary, multiplier: float, ceil_costs: bool) -> Dictionary:
+	var result := {}
+	for resource_id in amounts.keys():
+		var base_amount := int(amounts[resource_id])
+		var scaled := ceili(float(base_amount) * multiplier) if ceil_costs else floori(float(base_amount) * multiplier)
+		result[StringName(str(resource_id))] = maxi(base_amount, scaled)
+	return result
+
+func _get_recipe_upgrade_level(resource_id: StringName) -> int:
+	if campaign_state == null or not campaign_state.has_method("get_recipe_upgrade_level"):
+		return 0
+	return int(campaign_state.call("get_recipe_upgrade_level", resource_id))
+
+func _get_recipe_output_multiplier(level: int) -> float:
+	return pow(RECIPE_UPGRADE_OUTPUT_MULTIPLIER, clampi(level, 0, RECIPE_UPGRADE_MAX_LEVEL))
+
+func _get_recipe_input_multiplier(level: int) -> float:
+	return pow(RECIPE_UPGRADE_INPUT_MULTIPLIER, clampi(level, 0, RECIPE_UPGRADE_MAX_LEVEL))
+
+func _refresh_recipe_upgrade_effects() -> void:
+	_apply_main_base_recipe_upgrade()
+	var building_layer := _get_layer("BuildingLayer")
+	if building_layer == null:
+		return
+	for child in building_layer.get_children():
+		if child == null or not is_instance_valid(child):
+			continue
+		var building_def: BuildingDef = child.get("building_def")
+		if _is_miner_def(building_def) or _is_water_pump_def(building_def):
+			_apply_producer_recipe_upgrade(child)
+		elif _is_processor_def(building_def) and child.has_method("setup_processor"):
+			var selected_recipe_id := &""
+			var selected_recipe: RecipeDef = child.get("selected_recipe")
+			if selected_recipe != null:
+				selected_recipe_id = selected_recipe.id
+			child.call("setup_processor", _get_resource_recipes_for_processor(building_def), _get_main_base_inventory())
+			if not String(selected_recipe_id).is_empty() and child.has_method("set_recipe"):
+				child.call("set_recipe", selected_recipe_id)
+
+func _apply_main_base_recipe_upgrade() -> void:
+	if main_base == null or not is_instance_valid(main_base):
+		return
+	if not main_base.has_meta("base_construction_mass_per_minute"):
+		main_base.set_meta("base_construction_mass_per_minute", int(main_base.get("construction_mass_per_minute")))
+	var base_rate := int(main_base.get_meta("base_construction_mass_per_minute"))
+	var level := _get_recipe_upgrade_level(MvpDataDefaults.RES_CONSTRUCTION_MASS)
+	main_base.set("construction_mass_per_minute", maxi(1, ceili(float(base_rate) * _get_recipe_output_multiplier(level))))
+
+func _apply_producer_recipe_upgrade(producer: Node) -> void:
+	if producer == null or not is_instance_valid(producer):
+		return
+	var resource_id := _get_producer_output_resource_id(producer)
+	if String(resource_id).is_empty():
+		return
+	if not producer.has_meta("base_output_per_minute"):
+		producer.set_meta("base_output_per_minute", int(producer.get("output_per_minute")))
+	var base_rate := int(producer.get_meta("base_output_per_minute"))
+	var level := _get_recipe_upgrade_level(resource_id)
+	producer.set("output_per_minute", maxi(1, ceili(float(base_rate) * _get_recipe_output_multiplier(level))))
+	if producer.has_method("_rebuild_mining_recipe"):
+		producer.call("_rebuild_mining_recipe")
+	if producer.has_method("_rebuild_operation_recipe"):
+		producer.call("_rebuild_operation_recipe")
+
+func _get_producer_output_resource_id(producer: Node) -> StringName:
+	if producer is WaterPumpBuilding:
+		return MvpDataDefaults.RES_WATER
+	if producer is MinerBuilding:
+		return StringName(producer.get("output_resource_id"))
+	if producer.get("output_resource_id") != null:
+		return StringName(producer.get("output_resource_id"))
+	return &""
 
 func _is_resource_recipe_unlocked(recipe: RecipeDef) -> bool:
 	if recipe == null:

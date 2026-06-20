@@ -5,6 +5,7 @@ signal unlocks_changed
 signal stage_advanced(stage: int)
 signal key_item_added(key_item_id: StringName)
 signal technology_unlocked(technology_id: StringName)
+signal recipe_upgrade_changed(resource_id: StringName, level: int)
 
 var current_stage: int = 0
 var defeated_nests: Array[StringName] = []
@@ -20,6 +21,7 @@ var unlocked_templates: Array[StringName] = []
 var unlocked_conditions: Array[StringName] = []
 var unlocked_actions: Array[StringName] = []
 var unlocked_upgrades: Array[StringName] = []
+var recipe_upgrade_levels: Dictionary = {}
 
 func seed_defaults() -> void:
 	unlocked_buildings = [&"main_base", &"miner", &"processor", &"robot_forge", &"research_terminal"]
@@ -95,7 +97,19 @@ func to_save_snapshot() -> Dictionary:
 		"unlocked_conditions": _string_array(unlocked_conditions),
 		"unlocked_actions": _string_array(unlocked_actions),
 		"unlocked_upgrades": _string_array(unlocked_upgrades),
+		"recipe_upgrade_levels": _string_key_int_dictionary(recipe_upgrade_levels),
 	}
+
+func get_recipe_upgrade_level(resource_id: StringName) -> int:
+	return clampi(int(recipe_upgrade_levels.get(resource_id, recipe_upgrade_levels.get(String(resource_id), 0))), 0, 5)
+
+func set_recipe_upgrade_level(resource_id: StringName, level: int) -> void:
+	var next_level := clampi(level, 0, 5)
+	if get_recipe_upgrade_level(resource_id) == next_level:
+		return
+	recipe_upgrade_levels[resource_id] = next_level
+	recipe_upgrade_changed.emit(resource_id, next_level)
+	unlocks_changed.emit()
 
 func _apply_unlocks(unlocks: Dictionary) -> void:
 	_append_unique(unlocked_resources, unlocks.get("resources", []))
@@ -121,4 +135,10 @@ func _string_array(values: Array[StringName]) -> Array[String]:
 	var result: Array[String] = []
 	for value in values:
 		result.append(String(value))
+	return result
+
+func _string_key_int_dictionary(values: Dictionary) -> Dictionary:
+	var result := {}
+	for key in values.keys():
+		result[String(key)] = int(values[key])
 	return result

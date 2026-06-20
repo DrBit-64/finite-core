@@ -1,12 +1,15 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "technologies": [
     {
       "id": "stage1_light_chassis_tuning",
-      "display_name": "\u9636\u6bb51\uff1a\u8f7b\u578b\u5e95\u76d8\u5f3a\u5316",
-      "description": "\u7528\u521d\u7ea7\u611f\u5e94\u7ebf\u5708\u6821\u51c6\u8f7b\u578b\u5e95\u76d8\u7684\u8fd0\u52a8\u548c\u9632\u62a4\u53c2\u6570\uff0c\u4f5c\u4e3a\u7b2c\u4e00\u9636\u6bb5\u7684\u6570\u503c\u6210\u957f\u5165\u53e3\u3002",
+      "display_name": "阶段1：基础机体强化",
+      "description": "通过初级感应线圈解析了旧式巡逻机的运动回路。解锁基础机器人强化升级，提高基础步枪机器人的机动、防护和火力成长空间。",
       "stage": 1,
       "duration_seconds": 8.0,
+      "icon_path": "res://Resources/art/blueprints/basic_rifle_robot.svg",
+      "tree_column": 1,
+      "tree_row": 0,
       "key_item_requirements": ["initial_sensor_coil"],
       "prerequisites": [],
       "costs": {
@@ -15,76 +18,104 @@
         "copper_wire": 8
       },
       "unlocks": {
-        "chassis": ["light_chassis"],
         "upgrades": ["reinforced_frame_1", "overclocked_drive_1", "rifle_calibration_1", "rapid_cycle_1"]
       }
     },
     {
       "id": "stage1_kinetic_chainsaw",
-      "display_name": "\u9636\u6bb51\uff1a\u8fd1\u6218\u94fe\u952f\u6a21\u5757",
-      "description": "\u89e3\u9501\u7528\u4e8e\u5bf9\u6297\u539a\u8840\u76ee\u6807\u7684\u8fd1\u6218\u94fe\u952f\u6a21\u5757\uff0c\u4f5c\u4e3a\u540e\u7eed\u6b66\u5668\u5206\u652f\u7684\u7b2c\u4e00\u4e2a\u8282\u70b9\u3002",
+      "display_name": "阶段1：近战突击机器人",
+      "description": "从敌巢残留的切割痕迹中复原了高扭矩近战传动方案。解锁链锯机器人与肉盾机器人，用于贴近敌人、牵制火力并处理厚血目标。",
       "stage": 1,
       "duration_seconds": 10.0,
+      "icon_path": "res://Resources/art/blueprints/kinetic_chainsaw_robot.svg",
+      "tree_column": 1,
+      "tree_row": 1,
       "key_item_requirements": ["initial_sensor_coil"],
-      "prerequisites": ["stage1_light_chassis_tuning"],
+      "prerequisites": [],
       "costs": {
         "construction_mass": 80,
         "iron_plate": 18,
         "copper_wire": 10
       },
       "unlocks": {
-        "unit_types": ["kinetic_chainsaw_robot", "shield_bulwark_robot"],
-        "modules": ["kinetic_chainsaw"],
-        "weapons": ["kinetic_chainsaw"]
+        "unit_types": ["kinetic_chainsaw_robot", "shield_bulwark_robot"]
       }
     },
     {
       "id": "stage1_basic_logic_capacity",
-      "display_name": "\u9636\u6bb51\uff1a\u57fa\u7840\u903b\u8f91\u5bb9\u91cf",
-      "description": "\u6574\u7406\u57fa\u7840\u903b\u8f91\u677f\u7684\u6570\u636e\u63a5\u53e3\uff0c\u4e3a\u7b2c\u4e00\u7ae0\u5185\u7684\u66f4\u591a\u6218\u672f\u89c4\u5219\u9884\u7559\u5bb9\u91cf\u3002",
+      "display_name": "阶段1：基础逻辑容量",
+      "description": "初级感应线圈揭示了机器人脑干中的空白控制通道。解锁基础逻辑板容量与默认战斗规则，让机器人能够承载更多战术指令。",
       "stage": 1,
       "duration_seconds": 10.0,
+      "icon_path": "res://Resources/art/ui/state_default_brain.svg",
+      "tree_column": 1,
+      "tree_row": 2,
       "key_item_requirements": ["initial_sensor_coil"],
-      "prerequisites": ["stage1_light_chassis_tuning"],
+      "prerequisites": [],
       "costs": {
         "construction_mass": 80,
         "iron_plate": 16,
         "copper_wire": 18
       },
       "unlocks": {
-        "modules": ["basic_logic_board"],
         "conditions": ["self_flag_is"],
         "actions": ["default_combat"],
         "upgrades": ["logic_board_1"]
       }
     },
     {
-      "id": "stage2_remote_logistics_and_water",
-      "display_name": "\u9636\u6bb52\uff1a\u8fdc\u7a0b\u7269\u6d41\u4e0e\u6c34\u8d44\u6e90",
-      "description": "\u5728\u6467\u6bc1\u7b2c\u4e00\u5904\u654c\u5de2\u5e76\u5efa\u7acb\u57fa\u7840\u903b\u8f91\u677f\u540e\uff0c\u89e3\u9501\u7b2c\u4e8c\u8d44\u6e90\u5708\u6240\u9700\u7684\u6c34\u6cf5\u548c\u524d\u7ebf\u8865\u7ed9\u70b9\u3002",
+      "id": "stage2_remote_logistics",
+      "display_name": "阶段2：远程物流网络",
+      "description": "初级感应线圈复原了远距货运队列的同步信号。解锁前线补给点和货舱升级，让物流机器人能够支撑更远距离的资源转运与前线补给。",
       "stage": 2,
-      "duration_seconds": 12.0,
+      "duration_seconds": 10.0,
+      "icon_path": "res://Resources/art/buildings/forward_supply_point.svg",
+      "tree_column": 2,
+      "tree_row": 0,
       "key_item_requirements": ["initial_sensor_coil"],
-      "prerequisites": ["stage1_basic_logic_capacity"],
+      "prerequisites": [],
       "costs": {
-        "construction_mass": 110,
-        "iron_plate": 24,
-        "copper_wire": 24
+        "construction_mass": 90,
+        "iron_plate": 22,
+        "copper_wire": 20
       },
       "unlocks": {
-        "resources": ["water"],
-        "buildings": ["water_pump", "forward_supply_point"],
+        "buildings": ["forward_supply_point"],
         "upgrades": ["cargo_bay_1"]
       }
     },
     {
+      "id": "stage2_water_extraction",
+      "display_name": "阶段2：水资源抽取",
+      "description": "传感器记录显示远端矿层下方存在可利用的冷却水脉。解锁水资源和水泵，为复合材料加工与后续热能设备提供稳定冷却介质。",
+      "stage": 2,
+      "duration_seconds": 10.0,
+      "icon_path": "res://Resources/art/buildings/water_pump.svg",
+      "tree_column": 2,
+      "tree_row": 1,
+      "key_item_requirements": ["initial_sensor_coil"],
+      "prerequisites": [],
+      "costs": {
+        "construction_mass": 80,
+        "iron_plate": 18,
+        "copper_wire": 18
+      },
+      "unlocks": {
+        "resources": ["water"],
+        "buildings": ["water_pump"]
+      }
+    },
+    {
       "id": "stage2_advanced_processing",
-      "display_name": "\u9636\u6bb52\uff1a\u590d\u5408\u6750\u6599\u52a0\u5de5",
-      "description": "\u5c06\u6676\u4f53\u77ff\u3001\u539f\u7164\u548c\u57fa\u7840\u91d1\u5c5e\u52a0\u5de5\u6210\u88c5\u7532\u548c\u80fd\u91cf\u6b66\u5668\u6240\u9700\u7684\u4e2d\u95f4\u4ef6\uff0c\u5e76\u89e3\u9501\u9ad8\u7ea7\u52a0\u5de5\u5382\u3002",
+      "display_name": "阶段2：复合材料加工",
+      "description": "水冷加工流程让晶体矿与原煤能够稳定参与复合冶炼。解锁高级加工厂、强化钢板、光学透镜和高容电池，为装甲机器人与能量设备提供材料基础。",
       "stage": 2,
       "duration_seconds": 14.0,
+      "icon_path": "res://Resources/art/buildings/advanced_processor.svg",
+      "tree_column": 3,
+      "tree_row": 1,
       "key_item_requirements": ["initial_sensor_coil"],
-      "prerequisites": ["stage2_remote_logistics_and_water"],
+      "prerequisites": ["stage2_water_extraction"],
       "costs": {
         "construction_mass": 130,
         "iron_plate": 30,
@@ -93,17 +124,18 @@
       },
       "unlocks": {
         "resources": ["crystal_ore", "coal", "reinforced_steel_plate", "optical_lens", "high_capacity_battery"],
-        "buildings": ["advanced_processor"],
-        "chassis": ["heavy_tracked_chassis"],
-        "modules": ["thermal_laser"]
+        "buildings": ["advanced_processor"]
       }
     },
     {
       "id": "stage2_thermal_laser_weaponry",
-      "display_name": "\u9636\u6bb52\uff1a\u70ed\u80fd\u6fc0\u5149\u6b66\u5668",
-      "description": "\u5728\u8fdb\u653b\u88c5\u7532\u5de2\u7a74\u524d\u5b8c\u6210\u70ed\u80fd\u6fc0\u5149\u6b66\u5668\u5b9a\u578b\uff0c\u5bf9\u539a\u88c5\u7532\u654c\u4eba\u5f62\u6210\u9488\u5bf9\u6027\u53cd\u5236\u3002",
+      "display_name": "阶段2：热能激光武器",
+      "description": "光学透镜阵列捕捉到了装甲外壳的热疲劳弱点。解锁热能激光机器人和热能控制规则，用持续能量束克制重装甲目标。",
       "stage": 2,
       "duration_seconds": 16.0,
+      "icon_path": "res://Resources/art/blueprints/thermal_laser_robot.svg",
+      "tree_column": 4,
+      "tree_row": 0,
       "key_item_requirements": ["initial_sensor_coil"],
       "prerequisites": ["stage2_advanced_processing"],
       "costs": {
@@ -115,8 +147,6 @@
       },
       "unlocks": {
         "unit_types": ["thermal_laser_robot"],
-        "weapons": ["thermal_laser"],
-        "modules": ["thermal_laser"],
         "templates": ["weapon_heat_control"],
         "conditions": ["heat_above_percent", "heat_below_percent"],
         "actions": ["hold_fire_for_heat"]
@@ -124,12 +154,15 @@
     },
     {
       "id": "stage2_oscillator_cooling",
-      "display_name": "\u9636\u6bb52\uff1a\u632f\u8361\u51b7\u5374\u6821\u51c6",
-      "description": "\u5229\u7528\u88c5\u7532\u5de2\u7a74\u56de\u6536\u7684\u9ad8\u9891\u632f\u8361\u5668\u4f18\u5316\u6fc0\u5149\u6b66\u5668\u7684\u51b7\u5374\u5faa\u73af\uff0c\u964d\u4f4e\u8fde\u7eed\u5c04\u51fb\u7684\u70ed\u91cf\u538b\u529b\u3002",
+      "display_name": "阶段2：振荡冷却校准",
+      "description": "高频振荡器中残留着一套异常稳定的散热节律。解锁冷却鳍片升级，降低热能武器连续开火时的过热压力。",
       "stage": 2,
       "duration_seconds": 12.0,
+      "icon_path": "res://Resources/art/resources/high_frequency_oscillator.svg",
+      "tree_column": 4,
+      "tree_row": 1,
       "key_item_requirements": ["high_frequency_oscillator"],
-      "prerequisites": ["stage2_thermal_laser_weaponry"],
+      "prerequisites": ["stage2_advanced_processing"],
       "costs": {
         "construction_mass": 90,
         "reinforced_steel_plate": 6,
@@ -143,11 +176,14 @@
     {
       "id": "stage3_battlefield_salvage",
       "display_name": "阶段3：战场回收闭环",
-      "description": "解锁装甲回收车、残骸牵引与回收扫描模板，让残骸战场的战利品需要被带回后才进入生产链。",
+      "description": "高频振荡器暴露了残骸战场中仍在跳动的可回收信号。解锁装甲回收车、残骸牵引系统和回收模板，让战场掉落物能够被安全带回生产链。",
       "stage": 3,
       "duration_seconds": 14.0,
+      "icon_path": "res://Resources/art/blueprints/armored_salvage_vehicle.svg",
+      "tree_column": 4,
+      "tree_row": 2,
       "key_item_requirements": ["high_frequency_oscillator"],
-      "prerequisites": ["stage2_oscillator_cooling"],
+      "prerequisites": ["stage2_advanced_processing"],
       "costs": {
         "construction_mass": 150,
         "reinforced_steel_plate": 12,
@@ -157,8 +193,6 @@
       "unlocks": {
         "resources": ["wreckage_scrap", "heavy_wreckage", "salvage_data_core"],
         "unit_types": ["armored_salvage_vehicle"],
-        "chassis": ["armored_salvage_chassis"],
-        "modules": ["salvage_scanner", "wreckage_tether", "compressed_cargo_bay", "armored_cargo_shell"],
         "templates": ["salvage_and_return", "supply_run", "hazard_avoidance", "prioritize_tagged_target"],
         "conditions": ["salvage_available", "nearby_enemy_count", "cargo_full", "hp_below_percent"],
         "actions": ["pickup_salvage", "return_to_base", "avoid_hazard"]

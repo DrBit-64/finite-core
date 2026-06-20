@@ -23,7 +23,7 @@ static func is_shared_tooltip_visible() -> bool:
 func _ready() -> void:
 	_build()
 
-func setup(icon: Texture2D, quantity_text: String = "", border_color: Color = Color(0.30, 0.36, 0.42, 0.9), tooltip: String = "") -> void:
+func setup(icon: Texture2D, quantity_text: String = "", border_color: Color = Color(0.30, 0.36, 0.42, 0.9), tooltip: String = "", quantity_color: Color = Color(0.95, 0.98, 1.0, 1.0)) -> void:
 	_build()
 	custom_minimum_size = slot_size
 	add_theme_stylebox_override("panel", _make_slot_style(border_color))
@@ -32,6 +32,7 @@ func setup(icon: Texture2D, quantity_text: String = "", border_color: Color = Co
 		_root.custom_minimum_size = slot_size
 	_icon_rect.texture = icon
 	_quantity_label.text = quantity_text
+	_quantity_label.add_theme_color_override("font_color", quantity_color)
 	_quantity_label.visible = not quantity_text.is_empty()
 
 func _build() -> void:
