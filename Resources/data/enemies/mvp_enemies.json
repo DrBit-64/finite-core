@@ -111,7 +111,7 @@
       "fire_range": 170.0,
       "fire_cooldown_seconds": 1.05,
       "projectile_tint": [1.0, 0.42, 0.18, 1.0],
-      "weapon_audio_id": "enemy_melee",
+      "weapon_audio_id": "enemy_ranged",
       "melee_damage": 26,
       "melee_range": 170.0,
       "melee_cooldown_seconds": 1.05,

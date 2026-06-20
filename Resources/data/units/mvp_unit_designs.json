@@ -283,6 +283,15 @@
       "applies_to_tags": ["heat_weapon"],
       "stat_mult": {"heat_per_shot": 0.86, "heat_cooling_per_second": 1.22},
       "cost_add": {"optical_lens": 1, "high_capacity_battery": 1}
+    },
+    {
+      "id": "heavy_armor_conversion_1",
+      "display_name": "重甲改造 I",
+      "description": "将近战链锯机器人和高速肉盾机器人的装甲类型改为重甲，显著降低敌方近战与远程火力造成的伤害。",
+      "point_cost": 1,
+      "applies_to_unit_types": ["kinetic_chainsaw_robot", "shield_bulwark_robot"],
+      "stat_set": {"armor_type": "heavy_armor"},
+      "cost_add": {"reinforced_steel_plate": 4, "construction_mass": 6}
     }
   ]
 }

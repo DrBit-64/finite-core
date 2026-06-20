@@ -1200,8 +1200,16 @@ func _apply_damage_profile(amount: int, source_payload: Dictionary) -> int:
 
 func _damage_multiplier_for_profile(source_payload: Dictionary) -> float:
 	var source_damage_type := StringName(str(source_payload.get("damage_type", "kinetic")))
+	var source_team := str(source_payload.get("team", ""))
 	var multiplier := 1.0
-	if armor_type == &"armored":
+	if armor_type == &"heavy_armor":
+		if source_team == "Team_B":
+			match source_damage_type:
+				&"melee", &"enemy_melee":
+					multiplier = 0.75
+				&"kinetic", &"ranged", &"enemy_ranged":
+					multiplier = 0.50
+	elif armor_type == &"armored":
 		match source_damage_type:
 			&"kinetic":
 				multiplier = 0.55

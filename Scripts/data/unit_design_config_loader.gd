@@ -119,6 +119,7 @@ static func make_stats(config: Dictionary, unit_type_id: StringName, upgrade_ids
 			continue
 		_apply_stat_add(stats, upgrade.get("stat_add", {}))
 		_apply_stat_mult(stats, upgrade.get("stat_mult", {}))
+		_apply_stat_set(stats, upgrade.get("stat_set", {}))
 	return stats
 
 static func calculate_cost(config: Dictionary, base_cost: Dictionary, upgrade_ids: Array[StringName]) -> Dictionary:
@@ -163,6 +164,10 @@ static func describe_stat_delta(config: Dictionary, upgrade_id: StringName) -> S
 		for key in stat_mult.keys():
 			var multiplier := float(stat_mult[key])
 			parts.append("%s x%.2f" % [_format_stat_name(str(key)), multiplier])
+	var stat_set: Variant = upgrade.get("stat_set", {})
+	if typeof(stat_set) == TYPE_DICTIONARY:
+		for key in stat_set.keys():
+			parts.append("%s → %s" % [_format_stat_name(str(key)), str(stat_set[key])])
 	return " / ".join(parts)
 
 static func describe_cost_delta(config: Dictionary, upgrade_id: StringName) -> String:
@@ -309,6 +314,16 @@ static func _apply_stat_mult(stats: UnitStats, values: Variant) -> void:
 			"logic_capacity":
 				stats.logic_capacity = roundi(float(stats.logic_capacity) * multiplier)
 
+static func _apply_stat_set(stats: UnitStats, values: Variant) -> void:
+	if typeof(values) != TYPE_DICTIONARY:
+		return
+	for key in values.keys():
+		match str(key):
+			"damage_type":
+				stats.damage_type = StringName(str(values[key]))
+			"armor_type":
+				stats.armor_type = StringName(str(values[key]))
+
 static func _add_cost(target: Dictionary, values: Variant) -> void:
 	if typeof(values) != TYPE_DICTIONARY:
 		return
@@ -381,6 +396,10 @@ static func _format_stat_name(stat_id: String) -> String:
 			return "射程"
 		"damage":
 			return "伤害"
+		"damage_type":
+			return "伤害类型"
+		"armor_type":
+			return "装甲类型"
 		"fire_cooldown_seconds":
 			return "间隔"
 		"heat_capacity":

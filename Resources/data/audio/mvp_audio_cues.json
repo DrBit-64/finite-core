@@ -3,6 +3,8 @@
   "description": "First-pass synthesized Stage 12 sound cue map.",
   "weapon_hit_cues": {
     "rifle_module": "rifle_hit",
+    "enemy_melee": "impact_normal",
+    "enemy_ranged": "impact_normal",
     "default": "unit_hit"
   },
   "weapon_fire_cues": {},
@@ -10,6 +12,12 @@
     "weak": "impact_weak",
     "normal": "impact_normal",
     "strong": "impact_strong",
+    "enemy_melee:weak": "impact_weak",
+    "enemy_melee:normal": "impact_normal",
+    "enemy_melee:strong": "impact_strong",
+    "enemy_ranged:weak": "impact_weak",
+    "enemy_ranged:normal": "impact_normal",
+    "enemy_ranged:strong": "impact_strong",
     "thermal_laser:weak": "laser_impact_weak",
     "thermal_laser:normal": "laser_impact_normal",
     "thermal_laser:strong": "laser_impact_strong"

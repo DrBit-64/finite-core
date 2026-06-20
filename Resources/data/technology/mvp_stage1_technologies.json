@@ -47,7 +47,7 @@
       "description": "初级感应线圈揭示了机器人脑干中的空白控制通道。解锁基础逻辑板容量与默认战斗规则，让机器人能够承载更多战术指令。",
       "stage": 1,
       "duration_seconds": 10.0,
-      "icon_path": "res://Resources/art/ui/state_default_brain.svg",
+      "icon_path": "res://Resources/art/ui/tech_icon_logic_capacity_small.svg",
       "tree_column": 1,
       "tree_row": 2,
       "key_item_requirements": ["initial_sensor_coil"],
@@ -171,6 +171,27 @@
       },
       "unlocks": {
         "upgrades": ["cooling_fins_1"]
+      }
+    },
+    {
+      "id": "stage2_heavy_armor_conversion",
+      "display_name": "阶段2：重甲改造",
+      "description": "从晶体荒原装甲残骸中提取到更可靠的受力结构。解锁重甲改造装配，使近战链锯机器人和高速肉盾机器人可以换装重甲。",
+      "stage": 2,
+      "duration_seconds": 12.0,
+      "icon_path": "res://Resources/art/ui/tech_icon_heavy_armor_small.svg",
+      "tree_column": 5,
+      "tree_row": 1,
+      "key_item_requirements": ["high_frequency_oscillator"],
+      "prerequisites": ["stage2_advanced_processing"],
+      "costs": {
+        "construction_mass": 120,
+        "reinforced_steel_plate": 10,
+        "high_capacity_battery": 2,
+        "copper_wire": 18
+      },
+      "unlocks": {
+        "upgrades": ["heavy_armor_conversion_1"]
       }
     },
     {
