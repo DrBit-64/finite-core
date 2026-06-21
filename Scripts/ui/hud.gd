@@ -41,6 +41,7 @@ const TECHNOLOGY_TREE_KEY_NODE_SIZE := Vector2(118.0, 72.0)
 const TECHNOLOGY_TREE_GRID_GAP := Vector2(178.0, 116.0)
 const TECHNOLOGY_TREE_MARGIN := Vector2(30.0, 28.0)
 const TECHNOLOGY_UNLOCK_SLOT_SIZE := Vector2(43.0, 43.0)
+const TOP_RESOURCE_SLOT_SIZE := Vector2(32.0, 32.0)
 const TECHNOLOGY_TREE_KEY_ITEM_ICONS := {
 	"initial_sensor_coil": "res://Resources/art/resources/initial_sensor_coil.svg",
 	"high_frequency_oscillator": "res://Resources/art/resources/high_frequency_oscillator.svg",
@@ -60,6 +61,9 @@ const TECHNOLOGY_TREE_KEY_ITEM_ICONS := {
 
 var _building_defs: Array[BuildingDef] = []
 var _inventory_amounts: Dictionary = {}
+var _resource_summary_slots: HBoxContainer = null
+var _resource_summary_slots_by_id: Dictionary = {}
+var _resource_summary_structure_key: String = ""
 var _cost_panel: PanelContainer = null
 var _cost_list: VBoxContainer = null
 var _cost_preview_content_key: String = ""
@@ -162,6 +166,9 @@ func set_current_goal(text: String) -> void:
 func set_resource_summary(text: String) -> void:
 	if resource_summary_label:
 		resource_summary_label.text = text
+		resource_summary_label.visible = true
+	if _resource_summary_slots:
+		_resource_summary_slots.visible = false
 
 func set_elapsed_seconds(elapsed_seconds: float) -> void:
 	if elapsed_time_label:
@@ -331,18 +338,91 @@ func set_guidance_highlights(highlights: Dictionary) -> void:
 func set_resource_amounts(resource_defs: Array[ResourceDef], amounts: Dictionary) -> void:
 	_resource_defs = resource_defs.duplicate()
 	_inventory_amounts = amounts.duplicate(true)
-	var parts: Array[String] = []
-	for resource_def in resource_defs:
-		if resource_def.id == &"initial_sensor_coil" and not amounts.has(resource_def.id):
-			continue
-		parts.append("%s %s" % [resource_def.display_name, int(amounts.get(resource_def.id, 0))])
-	set_resource_summary(" / ".join(parts))
+	_refresh_top_resource_slots(resource_defs, amounts)
 	_refresh_build_buttons()
 
 func set_resource_definitions(resource_defs: Array[ResourceDef]) -> void:
 	_resource_defs = resource_defs.duplicate()
 	if _combat_report_overlay and _combat_report_overlay.has_method("configure"):
 		_combat_report_overlay.call("configure", _get_combat_event_log(), _resource_defs, _blueprints, _logistics_diagnostics)
+
+func _refresh_top_resource_slots(resource_defs: Array[ResourceDef], amounts: Dictionary) -> void:
+	var container := _ensure_top_resource_slots()
+	if container == null:
+		return
+	var visible_defs: Array[ResourceDef] = []
+	for resource_def in resource_defs:
+		if resource_def == null:
+			continue
+		if resource_def.id == &"initial_sensor_coil" and not _has_resource_amount_key(amounts, resource_def.id):
+			continue
+		visible_defs.append(resource_def)
+	var parts: Array[String] = []
+	for resource_def in visible_defs:
+		parts.append(String(resource_def.id))
+	var next_key := "|".join(parts)
+	if next_key != _resource_summary_structure_key:
+		_resource_summary_structure_key = next_key
+		_clear_top_resource_slots()
+		for resource_def in visible_defs:
+			var slot = ItemIconSlotScript.new()
+			slot.slot_size = TOP_RESOURCE_SLOT_SIZE
+			container.add_child(slot)
+			_resource_summary_slots_by_id[String(resource_def.id)] = slot
+	for resource_def in visible_defs:
+		var resource_key := String(resource_def.id)
+		var slot = _resource_summary_slots_by_id.get(resource_key)
+		if slot == null:
+			continue
+		slot.slot_size = TOP_RESOURCE_SLOT_SIZE
+		var amount := _get_resource_amount_from_dictionary(amounts, resource_def.id)
+		var icon := _get_resource_icon(resource_defs, resource_def.id)
+		if icon == null:
+			icon = _load_ui_icon(TECHNOLOGY_TREE_FALLBACK_ICON_PATH)
+		slot.setup(
+			icon,
+			str(amount),
+			Color(0.36, 0.78, 0.60, 0.92),
+			"%s\n库存：%d" % [resource_def.display_name, amount]
+		)
+	container.visible = true
+	if resource_summary_label:
+		resource_summary_label.visible = visible_defs.is_empty()
+		if visible_defs.is_empty():
+			resource_summary_label.text = "资源 -"
+
+func _ensure_top_resource_slots() -> HBoxContainer:
+	if _resource_summary_slots != null and is_instance_valid(_resource_summary_slots):
+		return _resource_summary_slots
+	if resource_summary_label == null:
+		return null
+	var parent := resource_summary_label.get_parent()
+	if parent == null:
+		return null
+	_resource_summary_slots = HBoxContainer.new()
+	_resource_summary_slots.name = "ResourceSummarySlots"
+	_resource_summary_slots.mouse_filter = Control.MOUSE_FILTER_PASS
+	_resource_summary_slots.add_theme_constant_override("separation", 4)
+	_resource_summary_slots.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_resource_summary_slots.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_resource_summary_slots.custom_minimum_size = Vector2(0, TOP_RESOURCE_SLOT_SIZE.y)
+	parent.add_child(_resource_summary_slots)
+	parent.move_child(_resource_summary_slots, resource_summary_label.get_index())
+	return _resource_summary_slots
+
+func _clear_top_resource_slots() -> void:
+	if _resource_summary_slots == null:
+		return
+	for child in _resource_summary_slots.get_children():
+		_resource_summary_slots.remove_child(child)
+		child.queue_free()
+	_resource_summary_slots_by_id.clear()
+
+func _has_resource_amount_key(amounts: Dictionary, resource_id: StringName) -> bool:
+	return amounts.has(resource_id) or amounts.has(String(resource_id))
+
+func _get_resource_amount_from_dictionary(amounts: Dictionary, resource_id: StringName) -> int:
+	return int(amounts.get(resource_id, amounts.get(String(resource_id), 0)))
 
 func set_building_options(building_defs: Array[BuildingDef]) -> void:
 	_building_defs = building_defs.duplicate()

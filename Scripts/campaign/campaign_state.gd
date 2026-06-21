@@ -74,6 +74,16 @@ func debug_unlock_all_technologies(technologies: Array) -> int:
 		unlocks_changed.emit()
 	return unlocked_count
 
+func reconcile_unlocked_technology_unlocks(technologies: Array) -> void:
+	var total_before := _unlock_total_count()
+	for technology in technologies:
+		if technology == null or not unlocked_technologies.has(technology.id):
+			continue
+		_apply_unlocks(technology.unlocks)
+		current_stage = maxi(current_stage, int(technology.stage))
+	if _unlock_total_count() != total_before:
+		unlocks_changed.emit()
+
 func is_building_unlocked(building_id: StringName) -> bool:
 	return unlocked_buildings.has(building_id)
 
@@ -130,6 +140,20 @@ func _append_unique(target: Array[StringName], values: Variant) -> void:
 		var id := StringName(str(value))
 		if not target.has(id):
 			target.append(id)
+
+func _unlock_total_count() -> int:
+	return (
+		unlocked_resources.size()
+		+ unlocked_buildings.size()
+		+ unlocked_unit_types.size()
+		+ unlocked_chassis.size()
+		+ unlocked_weapons.size()
+		+ unlocked_modules.size()
+		+ unlocked_templates.size()
+		+ unlocked_conditions.size()
+		+ unlocked_actions.size()
+		+ unlocked_upgrades.size()
+	)
 
 func _string_array(values: Array[StringName]) -> Array[String]:
 	var result: Array[String] = []

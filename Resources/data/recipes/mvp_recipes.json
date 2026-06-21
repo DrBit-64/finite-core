@@ -11,7 +11,7 @@
         "iron_ore": 2
       },
       "outputs": {
-        "iron_plate": 1
+        "iron_plate": 2
       }
     },
     {
@@ -58,7 +58,7 @@
       "target_id": "processor",
       "duration_seconds": 8.0,
       "inputs": {
-        "construction_mass": 35,
+        "construction_mass": 20,
         "iron_plate": 5
       },
       "outputs": {
@@ -72,7 +72,7 @@
       "target_id": "robot_forge",
       "duration_seconds": 10.0,
       "inputs": {
-        "construction_mass": 45,
+        "construction_mass": 20,
         "iron_plate": 8,
         "copper_wire": 6
       },
@@ -87,7 +87,7 @@
       "target_id": "research_terminal",
       "duration_seconds": 8.0,
       "inputs": {
-        "construction_mass": 35,
+        "construction_mass": 25,
         "iron_plate": 6,
         "copper_wire": 8
       },
@@ -189,9 +189,9 @@
       "target_id": "basic_rifle_robot",
       "duration_seconds": 12.0,
       "inputs": {
-        "iron_plate": 6,
-        "copper_wire": 3,
-        "construction_mass": 5
+        "iron_plate": 4,
+        "copper_wire": 2,
+        "construction_mass": 1
       },
       "outputs": {
         "basic_rifle_robot": 1
@@ -204,9 +204,9 @@
       "target_id": "battlefield_hauler",
       "duration_seconds": 14.0,
       "inputs": {
-        "iron_plate": 7,
-        "copper_wire": 5,
-        "construction_mass": 8
+        "iron_plate": 5,
+        "copper_wire": 3,
+        "construction_mass": 3
       },
       "outputs": {
         "battlefield_hauler": 1
@@ -219,9 +219,9 @@
       "target_id": "kinetic_chainsaw_robot",
       "duration_seconds": 13.0,
       "inputs": {
-        "iron_plate": 8,
-        "copper_wire": 4,
-        "construction_mass": 7
+        "iron_plate": 4,
+        "copper_wire": 2,
+        "construction_mass": 3
       },
       "outputs": {
         "kinetic_chainsaw_robot": 1
@@ -234,9 +234,9 @@
       "target_id": "shield_bulwark_robot",
       "duration_seconds": 13.0,
       "inputs": {
-        "iron_plate": 9,
-        "copper_wire": 3,
-        "construction_mass": 8
+        "iron_plate": 8,
+        "copper_wire": 8,
+        "construction_mass": 4
       },
       "outputs": {
         "shield_bulwark_robot": 1
@@ -249,11 +249,11 @@
       "target_id": "thermal_laser_robot",
       "duration_seconds": 16.0,
       "inputs": {
-        "reinforced_steel_plate": 8,
+        "reinforced_steel_plate": 4,
         "optical_lens": 2,
         "high_capacity_battery": 1,
         "copper_wire": 8,
-        "construction_mass": 10
+        "construction_mass": 4
       },
       "outputs": {
         "thermal_laser_robot": 1
@@ -266,11 +266,10 @@
       "target_id": "armored_salvage_vehicle",
       "duration_seconds": 18.0,
       "inputs": {
-        "reinforced_steel_plate": 10,
+        "reinforced_steel_plate": 4,
         "optical_lens": 2,
         "high_capacity_battery": 2,
-        "high_frequency_oscillator": 1,
-        "construction_mass": 14
+        "construction_mass": 6
       },
       "outputs": {
         "armored_salvage_vehicle": 1
@@ -286,7 +285,7 @@
         "wreckage_scrap": 1
       },
       "outputs": {
-        "salvaged_alloy": 4
+        "salvaged_alloy": 20
       }
     },
     {
@@ -300,7 +299,7 @@
         "reinforced_steel_plate": 1
       },
       "outputs": {
-        "recovered_servo_core": 3
+        "recovered_servo_core": 40
       }
     },
     {
@@ -315,7 +314,7 @@
         "high_capacity_battery": 1
       },
       "outputs": {
-        "targeting_processor": 3
+        "targeting_processor": 100
       }
     },
     {
@@ -326,10 +325,9 @@
       "duration_seconds": 16.0,
       "inputs": {
         "salvaged_alloy": 4,
-        "targeting_processor": 1,
         "optical_lens": 2,
         "high_capacity_battery": 1,
-        "construction_mass": 12
+        "construction_mass": 5
       },
       "outputs": {
         "target_locker_robot": 1
@@ -347,7 +345,7 @@
         "targeting_processor": 1,
         "high_capacity_battery": 2,
         "reinforced_steel_plate": 6,
-        "construction_mass": 20
+        "construction_mass": 10
       },
       "outputs": {
         "cruise_missile_robot": 1

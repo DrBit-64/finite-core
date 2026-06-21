@@ -212,7 +212,14 @@
         "high_capacity_battery": 3
       },
       "unlocks": {
-        "resources": ["wreckage_scrap", "heavy_wreckage", "salvage_data_core"],
+        "resources": [
+          "wreckage_scrap",
+          "heavy_wreckage",
+          "salvage_data_core",
+          "salvaged_alloy",
+          "recovered_servo_core",
+          "targeting_processor"
+        ],
         "unit_types": ["armored_salvage_vehicle"],
         "templates": ["salvage_and_return", "supply_run", "hazard_avoidance", "prioritize_tagged_target"],
         "conditions": ["salvage_available", "nearby_enemy_count", "cargo_full", "hp_below_percent"],
@@ -237,7 +244,6 @@
         "construction_mass": 120
       },
       "unlocks": {
-        "resources": ["salvaged_alloy", "recovered_servo_core", "targeting_processor"],
         "unit_types": ["target_locker_robot", "cruise_missile_robot"],
         "templates": ["lock_target", "locked_missile_strike"]
       }

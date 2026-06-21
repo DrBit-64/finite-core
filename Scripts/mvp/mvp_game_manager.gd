@@ -49,7 +49,7 @@ const RECIPE_UPGRADE_MAX_LEVEL := 5
 const RECIPE_UPGRADE_OUTPUT_MULTIPLIER := 1.5
 const RECIPE_UPGRADE_INPUT_MULTIPLIER := 1.3
 const RECIPE_UPGRADE_NEXT_COST_MULTIPLIER := 1.5
-const RECIPE_UPGRADE_BASE_RESOURCE_AMOUNT := 100
+const RECIPE_UPGRADE_BASE_RESOURCE_AMOUNT := 25
 const RECIPE_UPGRADE_RESOURCE_ORDER := [
 	MvpDataDefaults.RES_CONSTRUCTION_MASS,
 	MvpDataDefaults.RES_IRON_ORE,
@@ -154,6 +154,8 @@ var map_painted_region_cells_cache: Array = []
 var map_semantic_cells_by_tag_cache: Dictionary = {}
 var map_minimap_static_snapshot: Dictionary = {}
 var map_static_cache_version: int = 0
+var _map_enemy_spawn_filter_active: bool = false
+var _map_enemy_spawn_ids_to_restore: Dictionary = {}
 var _stage12_soft_failure_shown: bool = false
 var stage14_logistics_tick_seconds: float = 0.0
 var stage14_logistics_tasks_by_robot: Dictionary = {}
@@ -776,7 +778,7 @@ func _get_recipe_upgrade_preview(resource_id: StringName, level: int) -> Diction
 
 func _get_base_passive_output_per_minute(resource_id: StringName) -> int:
 	if resource_id == MvpDataDefaults.RES_CONSTRUCTION_MASS:
-		return 45
+		return 90
 	if resource_id == MvpDataDefaults.RES_WATER:
 		return 24
 	return 30
@@ -870,6 +872,13 @@ func _stats_to_save_dictionary(stats: UnitStats) -> Dictionary:
 		"fire_range": stats.fire_range,
 		"damage": stats.damage,
 		"fire_cooldown_seconds": stats.fire_cooldown_seconds,
+		"damage_type": String(stats.damage_type),
+		"armor_type": String(stats.armor_type),
+		"heat_capacity": stats.heat_capacity,
+		"heat_per_shot": stats.heat_per_shot,
+		"heat_cooling_per_second": stats.heat_cooling_per_second,
+		"overheat_threshold": stats.overheat_threshold,
+		"overheated_resume_threshold": stats.overheated_resume_threshold,
 		"cargo_capacity": stats.cargo_capacity,
 		"logic_capacity": stats.logic_capacity,
 	}
@@ -913,7 +922,10 @@ func get_campaign_save_snapshot() -> Dictionary:
 		"units": _make_unit_save_snapshots(),
 		"salvage_pickups": _make_salvage_pickup_save_snapshots(),
 		"map_regions": map_region_states.duplicate(true),
+		"map_region_signals": _make_region_signal_save_snapshot(),
 		"map_region_gates": map_region_gate_states.duplicate(true),
+		"map_enemy_spawn_tracking": true,
+		"map_enemy_spawn_ids_alive": _get_alive_map_enemy_spawn_ids(),
 		"runtime_profile_path": runtime_profile_path,
 		"stage15_blueprint_schema_reserve": {
 			"unit_type_id": true,
@@ -1048,6 +1060,23 @@ func _make_salvage_pickup_save_snapshots() -> Array[Dictionary]:
 		})
 	return result
 
+func _make_region_signal_save_snapshot() -> Dictionary:
+	var result := {}
+	for key in map_region_signal_cells.keys():
+		var centers_value = map_region_signal_cells[key]
+		if typeof(centers_value) != TYPE_ARRAY:
+			continue
+		var serialized_centers: Array = []
+		for signal_value in centers_value:
+			if typeof(signal_value) != TYPE_DICTIONARY:
+				continue
+			var signal_info: Dictionary = (signal_value as Dictionary).duplicate(true)
+			var cell := _vector2_from_variant(signal_info.get("cell", Vector2.ZERO))
+			signal_info["cell"] = [cell.x, cell.y]
+			serialized_centers.append(signal_info)
+		result[str(key)] = serialized_centers
+	return result
+
 func _make_unit_save_snapshots() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for layer_name in ["UnitLayer", "EnemyLayer"]:
@@ -1097,6 +1126,9 @@ func _make_robot_save_snapshot(robot: RobotUnit, layer_name: String) -> Dictiona
 		"enemy_unit_type": str(robot.get("pool_name")),
 		"guard_home_position": [guard_home.x, guard_home.y],
 	}
+	var map_spawn_id := _get_robot_map_spawn_id(robot)
+	if not map_spawn_id.is_empty():
+		entry["map_spawn_id"] = map_spawn_id
 	if robot.has_meta("guard_slot_index"):
 		entry["guard_slot_index"] = int(robot.get_meta("guard_slot_index"))
 	return entry
@@ -1161,12 +1193,17 @@ func _apply_campaign_save_snapshot(snapshot: Dictionary) -> void:
 	_restore_blueprint_library(snapshot.get("blueprints", []))
 	_clear_dynamic_units_for_load()
 	_clear_dynamic_buildings_for_load()
+	_prepare_map_enemy_spawn_restore_filter(
+		snapshot.get("map_enemy_spawn_ids_alive", []),
+		snapshot.get("map_enemy_spawn_tracking", snapshot.has("units")) == true
+	)
 	if snapshot.has("map_region_gates"):
 		_activate_all_unlocked_region_content()
 		_refresh_resource_gate_states()
 	else:
 		_activate_all_unlocked_region_content()
 		_refresh_resource_gate_states()
+	_clear_map_enemy_spawn_restore_filter()
 	var building_entries: Array = snapshot.get("buildings", [])
 	for entry_value in building_entries:
 		if typeof(entry_value) != TYPE_DICTIONARY:
@@ -1184,12 +1221,90 @@ func _apply_campaign_save_snapshot(snapshot: Dictionary) -> void:
 	if inventory and inventory.has_method("set_all"):
 		inventory.call("set_all", _string_name_key_dictionary(snapshot.get("inventory", {})), "读档恢复主库存")
 	map_region_states = snapshot.get("map_regions", {}).duplicate(true)
+	if snapshot.has("map_region_signals"):
+		map_region_signal_cells = snapshot.get("map_region_signals", {}).duplicate(true)
+	else:
+		_prune_region_signals_for_current_states()
 	_apply_region_fog_to_grid()
 	_mark_navigation_dirty()
 	_refresh_build_options()
 	_refresh_resource_hud()
 	_refresh_campaign_hud()
 	_refresh_blueprint_library_ui()
+
+func _prepare_map_enemy_spawn_restore_filter(alive_spawn_ids: Variant, tracking_enabled: bool) -> void:
+	_map_enemy_spawn_filter_active = false
+	_map_enemy_spawn_ids_to_restore.clear()
+	if not tracking_enabled or typeof(alive_spawn_ids) != TYPE_ARRAY:
+		return
+	_map_enemy_spawn_filter_active = true
+	for spawn_id_value in alive_spawn_ids:
+		var spawn_id := StringName(str(spawn_id_value))
+		if not String(spawn_id).is_empty():
+			_map_enemy_spawn_ids_to_restore[spawn_id] = true
+
+func _clear_map_enemy_spawn_restore_filter() -> void:
+	_map_enemy_spawn_filter_active = false
+	_map_enemy_spawn_ids_to_restore.clear()
+
+func _is_map_enemy_spawn_allowed(data: Dictionary) -> bool:
+	if not _map_enemy_spawn_filter_active:
+		return true
+	var spawn_id := StringName(str(data.get("id", "")))
+	if String(spawn_id).is_empty():
+		return true
+	return false
+
+func _get_alive_map_enemy_spawn_ids() -> Array[String]:
+	var result: Array[String] = []
+	var layer := _get_layer("EnemyLayer")
+	if layer == null:
+		return result
+	for child in layer.get_children():
+		if child == null or not is_instance_valid(child) or not (child is RobotUnit):
+			continue
+		var robot := child as RobotUnit
+		if robot.has_method("is_alive") and robot.call("is_alive") != true:
+			continue
+		var spawn_id := _get_robot_map_spawn_id(robot)
+		if spawn_id.is_empty() or result.has(spawn_id):
+			continue
+		result.append(spawn_id)
+	return result
+
+func _get_robot_map_spawn_id(robot: RobotUnit) -> String:
+	if robot == null or not is_instance_valid(robot):
+		return ""
+	if robot.has_meta("map_spawn_id"):
+		return str(robot.get_meta("map_spawn_id"))
+	var candidate := str(robot.name)
+	return candidate if _is_known_map_enemy_spawn_id(candidate) else ""
+
+func _is_known_map_enemy_spawn_id(spawn_id: String) -> bool:
+	if spawn_id.is_empty():
+		return false
+	var config := MapConfigLoaderScript.load_map_config(map_config_path)
+	for section in ["debug_enemies", "enemy_patrols"]:
+		for value in config.get(section, []):
+			if typeof(value) != TYPE_DICTIONARY:
+				continue
+			if str((value as Dictionary).get("id", "")) == spawn_id:
+				return true
+	return false
+
+func _set_robot_map_spawn_id(robot: RobotUnit, data: Dictionary) -> void:
+	if robot == null or not is_instance_valid(robot):
+		return
+	var spawn_id := str(data.get("id", ""))
+	if spawn_id.is_empty():
+		return
+	robot.set_meta("map_spawn_id", spawn_id)
+
+func _prune_region_signals_for_current_states() -> void:
+	for key in map_region_signal_cells.keys():
+		var state := str(map_region_states.get(key, "unknown"))
+		if state != "signal" and state != "unknown":
+			map_region_signal_cells.erase(key)
 
 func _clear_dynamic_units_for_load() -> void:
 	for layer_name in ["UnitLayer", "EnemyLayer"]:
@@ -1377,6 +1492,9 @@ func _apply_robot_common_save_state(robot: RobotUnit, entry: Dictionary) -> void
 	var saved_forge_name := str(entry.get("producer_forge_name", ""))
 	if not saved_forge_name.is_empty():
 		robot.set("producer_forge_name", saved_forge_name)
+	var map_spawn_id := str(entry.get("map_spawn_id", ""))
+	if not map_spawn_id.is_empty():
+		robot.set_meta("map_spawn_id", map_spawn_id)
 	if entry.has("cargo_inventory"):
 		robot.set("cargo_inventory", _string_name_key_dictionary(entry.get("cargo_inventory", {})))
 	if entry.has("cargo_capacity"):
@@ -1524,6 +1642,7 @@ func _apply_campaign_state_snapshot(data: Dictionary) -> void:
 	campaign_state.unlocked_actions = _string_name_list_from_variant(data.get("unlocked_actions", []))
 	campaign_state.unlocked_upgrades = _string_name_list_from_variant(data.get("unlocked_upgrades", []))
 	campaign_state.recipe_upgrade_levels = _string_name_key_dictionary(data.get("recipe_upgrade_levels", {}))
+	campaign_state.reconcile_unlocked_technology_unlocks(technology_defs)
 
 func _restore_blueprint_library(entries: Array) -> void:
 	blueprint_library = BlueprintLibraryScript.new()
@@ -1570,25 +1689,27 @@ func _blueprint_from_save_entry(entry: Dictionary) -> UnitBlueprint:
 		blueprint.embedded_rules = compiled.get("rules", []).duplicate(true)
 		blueprint.state_flag_defaults = compiled.get("state_flag_defaults", {}).duplicate(true)
 	blueprint.default_brain_enabled = bool(entry.get("default_brain_enabled", true))
-	blueprint.stats = _stats_from_save_dictionary(entry.get("stats", {}))
+	blueprint.stats = _stats_from_save_dictionary(entry.get("stats", {}), _find_blueprint_stats_fallback(blueprint.id, blueprint.unit_type_id))
 	if blueprint.stats == null:
 		UnitDesignConfigLoaderScript.apply_design_to_blueprint(blueprint, blueprint.unit_type_id, blueprint.upgrade_ids, MvpDataDefaults.create_recipe_defs())
 	if blueprint.stats == null:
-		blueprint.stats = _find_blueprint_stats_fallback(blueprint.id)
+		blueprint.stats = _find_blueprint_stats_fallback(blueprint.id, blueprint.unit_type_id)
 	return blueprint
 
-func _find_blueprint_stats_fallback(blueprint_id: StringName) -> UnitStats:
+func _find_blueprint_stats_fallback(blueprint_id: StringName, unit_type_id: StringName = &"") -> UnitStats:
 	for blueprint in MvpDataDefaults.create_unit_blueprints():
-		if blueprint != null and blueprint.id == blueprint_id and blueprint.stats:
+		if blueprint == null or blueprint.stats == null:
+			continue
+		if blueprint.id == blueprint_id or (not String(unit_type_id).is_empty() and blueprint.unit_type_id == unit_type_id):
 			return blueprint.stats.duplicate(true)
 	return UnitStats.new()
 
-func _stats_from_save_dictionary(data: Variant) -> UnitStats:
+func _stats_from_save_dictionary(data: Variant, fallback: UnitStats = null) -> UnitStats:
 	if typeof(data) != TYPE_DICTIONARY:
 		return null
 	if (data as Dictionary).is_empty():
 		return null
-	var stats := UnitStats.new()
+	var stats := fallback.duplicate(true) if fallback != null else UnitStats.new()
 	stats.max_hp = int(data.get("max_hp", stats.max_hp))
 	stats.speed = float(data.get("speed", stats.speed))
 	stats.lifespan_seconds = float(data.get("lifespan_seconds", stats.lifespan_seconds))
@@ -1596,6 +1717,13 @@ func _stats_from_save_dictionary(data: Variant) -> UnitStats:
 	stats.fire_range = float(data.get("fire_range", stats.fire_range))
 	stats.damage = int(data.get("damage", stats.damage))
 	stats.fire_cooldown_seconds = float(data.get("fire_cooldown_seconds", stats.fire_cooldown_seconds))
+	stats.damage_type = StringName(str(data.get("damage_type", stats.damage_type)))
+	stats.armor_type = StringName(str(data.get("armor_type", stats.armor_type)))
+	stats.heat_capacity = float(data.get("heat_capacity", stats.heat_capacity))
+	stats.heat_per_shot = float(data.get("heat_per_shot", stats.heat_per_shot))
+	stats.heat_cooling_per_second = float(data.get("heat_cooling_per_second", stats.heat_cooling_per_second))
+	stats.overheat_threshold = float(data.get("overheat_threshold", stats.overheat_threshold))
+	stats.overheated_resume_threshold = float(data.get("overheated_resume_threshold", stats.overheated_resume_threshold))
 	stats.cargo_capacity = int(data.get("cargo_capacity", stats.cargo_capacity))
 	stats.logic_capacity = int(data.get("logic_capacity", stats.logic_capacity))
 	return stats
@@ -3447,6 +3575,8 @@ func _refresh_resource_gate_states() -> void:
 		_apply_salvage_gate_state(pickup)
 
 func _spawn_debug_enemy(data: Dictionary) -> void:
+	if not _is_map_enemy_spawn_allowed(data):
+		return
 	var path_points := _get_world_path_points(data.get("grid_path", []))
 	if path_points.is_empty():
 		return
@@ -3455,6 +3585,7 @@ func _spawn_debug_enemy(data: Dictionary) -> void:
 	(layer if layer else self).add_child(enemy)
 	enemy.name = str(data.get("id", IdProvider.next_id(&"debug_enemy")))
 	enemy.global_position = path_points[0]
+	_set_robot_map_spawn_id(enemy, data)
 	if enemy.has_method("setup_debug_enemy"):
 		var debug_config := EnemyConfigLoaderScript.get_type(enemy_config, "unit_types", &"debug_enemy")
 		debug_config.merge(data, true)
@@ -3464,6 +3595,8 @@ func _spawn_debug_enemy(data: Dictionary) -> void:
 	push_debug_event("调试敌军已生成：%s，路径点 %d" % [enemy.name, path_points.size()])
 
 func _spawn_enemy_patrol(data: Dictionary) -> void:
+	if not _is_map_enemy_spawn_allowed(data):
+		return
 	var unit_type := StringName(str(data.get("unit_type", "armored_scout")))
 	var guard_config := EnemyConfigLoaderScript.get_type(enemy_config, "unit_types", unit_type)
 	if guard_config.is_empty():
@@ -3482,6 +3615,7 @@ func _spawn_enemy_patrol(data: Dictionary) -> void:
 		return
 	patrol.name = str(data.get("id", IdProvider.next_id(unit_type)))
 	patrol.global_position = world_position
+	_set_robot_map_spawn_id(patrol, data)
 	patrol.call("setup_scavenger_hound", guard_config, null)
 	patrol.set("guard_home_position", world_position)
 	if patrol.has_signal("robot_lost") and not patrol.is_connected("robot_lost", Callable(self, "_on_enemy_hound_lost")):

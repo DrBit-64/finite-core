@@ -2092,11 +2092,14 @@ func _tick_wreckage_titan_boss(delta: float) -> void:
 		current_target = null
 		current_distance_to_target = -1.0
 		current_fire_state = "等待入侵者"
+		_clear_boss_laser_visual()
 		_update_boss_turret_visuals(delta)
 		return
 	_boss_mg_a_target = _select_boss_target(targets, global_position + Vector2(34, -24), 290.0, false)
 	_boss_mg_b_target = _select_boss_target(targets, global_position + Vector2(34, 24), 290.0, false)
 	_boss_laser_target = _select_boss_target(targets, global_position + Vector2(-36, 0), 380.0, true)
+	if _boss_laser_target == null:
+		_clear_boss_laser_visual()
 	current_target = _boss_laser_target if _boss_laser_target != null else _boss_mg_a_target
 	current_distance_to_target = global_position.distance_to(get_target_position(current_target)) if current_target != null else -1.0
 	var now_seconds := Time.get_ticks_msec() / 1000.0
@@ -2223,6 +2226,7 @@ func _apply_boss_cannon_impact(shell: Dictionary) -> void:
 
 func _boss_try_fire_laser(target: Node2D, now_seconds: float, origin: Vector2) -> void:
 	if not _is_valid_enemy_target(target):
+		_clear_boss_laser_visual()
 		return
 	if now_seconds - _boss_last_laser_seconds < 0.10:
 		return
@@ -2233,6 +2237,15 @@ func _boss_try_fire_laser(target: Node2D, now_seconds: float, origin: Vector2) -
 	_boss_laser_visual_target = target
 	_boss_laser_beam_until_msec = Time.get_ticks_msec() + 150
 	current_fire_state = "后部激光炮"
+	queue_redraw()
+
+func _clear_boss_laser_visual() -> void:
+	if _boss_laser_beam_until_msec <= 0 and _boss_laser_visual_target == null:
+		return
+	_boss_laser_beam_until_msec = 0
+	_boss_laser_visual_target = null
+	_boss_laser_beam_start = Vector2.ZERO
+	_boss_laser_beam_end = Vector2.ZERO
 	queue_redraw()
 
 func _boss_try_launch_emp_shell(targets: Array[Node2D], now_seconds: float) -> void:
@@ -2708,10 +2721,12 @@ func _draw_boss_emp_visuals() -> void:
 
 func _draw_boss_laser_visual() -> void:
 	if Time.get_ticks_msec() > _boss_laser_beam_until_msec:
-		_boss_laser_visual_target = null
+		_clear_boss_laser_visual()
 		return
-	if _boss_laser_visual_target != null and not _is_valid_enemy_target(_boss_laser_visual_target):
-		_boss_laser_visual_target = null
+	if _boss_laser_visual_target != null and (not is_instance_valid(_boss_laser_visual_target) or not _is_valid_enemy_target(_boss_laser_visual_target)):
+		_clear_boss_laser_visual()
+		return
+	if _boss_laser_visual_target == null:
 		return
 	var end := get_target_position(_boss_laser_visual_target) if _boss_laser_visual_target != null else _boss_laser_beam_end
 	draw_line(to_local(_boss_laser_beam_start), to_local(end), Color(0.72, 1.0, 1.0, 0.95), 5.0)
