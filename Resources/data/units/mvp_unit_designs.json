@@ -234,7 +234,7 @@
       "upgrade_point_limit": 3,
       "default_brain_enabled": false,
       "base_cost": {
-        "salvaged_alloy": 4,
+        "salvaged_alloy": 1,
         "targeting_processor": 1,
         "optical_lens": 2,
         "high_capacity_battery": 1,
@@ -271,8 +271,8 @@
       "upgrade_point_limit": 3,
       "default_brain_enabled": false,
       "base_cost": {
-        "salvaged_alloy": 8,
-        "recovered_servo_core": 2,
+        "salvaged_alloy": 2,
+        "recovered_servo_core": 1,
         "targeting_processor": 1,
         "high_capacity_battery": 2,
         "reinforced_steel_plate": 6,

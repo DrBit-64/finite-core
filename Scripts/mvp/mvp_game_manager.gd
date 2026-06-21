@@ -45,6 +45,7 @@ const STAGE14_BASE_TARGET_STOCK := 36
 const RESOURCE_HUD_REFRESH_INTERVAL := 0.20
 const RESOURCE_EVENT_FLUSH_INTERVAL := 1.00
 const NAVIGATION_REACHABILITY_CACHE_MSEC := 300
+const WRECKAGE_CORE_REMINDER_INTERVAL_SECONDS := 18.0
 const RECIPE_UPGRADE_MAX_LEVEL := 5
 const RECIPE_UPGRADE_OUTPUT_MULTIPLIER := 1.5
 const RECIPE_UPGRADE_INPUT_MULTIPLIER := 1.3
@@ -62,6 +63,9 @@ const RECIPE_UPGRADE_RESOURCE_ORDER := [
 	MvpDataDefaults.RES_REINFORCED_STEEL_PLATE,
 	MvpDataDefaults.RES_OPTICAL_LENS,
 	MvpDataDefaults.RES_HIGH_CAPACITY_BATTERY,
+	MvpDataDefaults.RES_SALVAGED_ALLOY,
+	MvpDataDefaults.RES_RECOVERED_SERVO_CORE,
+	MvpDataDefaults.RES_TARGETING_PROCESSOR,
 ]
 const MINIMAP_SEMANTIC_TAGS := [
 	"water",
@@ -172,6 +176,7 @@ var _resource_event_flush_seconds: float = 0.0
 var _pending_resource_events: Dictionary = {}
 var _navigation_version: int = 0
 var _navigation_reachability_cache: Dictionary = {}
+var _wreckage_core_reminder_seconds: float = 0.0
 
 func _ready() -> void:
 	add_to_group("stage_path_provider")
@@ -189,6 +194,7 @@ func _process(delta: float) -> void:
 	if playtest_hud_refresh_seconds >= 0.25:
 		playtest_hud_refresh_seconds = 0.0
 		_refresh_playtest_hud()
+	_tick_wreckage_core_turn_in_reminder(delta)
 	_tick_resource_ui_and_events(delta)
 	if selected_operation_building:
 		operation_panel_refresh_seconds += delta
@@ -735,6 +741,12 @@ func _get_recipe_upgrade_cost_ingredients(resource_id: StringName) -> Array[Stri
 			return [MvpDataDefaults.RES_CRYSTAL_ORE, MvpDataDefaults.RES_WATER, MvpDataDefaults.RES_COPPER_WIRE]
 		MvpDataDefaults.RES_HIGH_CAPACITY_BATTERY:
 			return [MvpDataDefaults.RES_CRYSTAL_ORE, MvpDataDefaults.RES_COPPER_WIRE, MvpDataDefaults.RES_OPTICAL_LENS, MvpDataDefaults.RES_WATER]
+		MvpDataDefaults.RES_SALVAGED_ALLOY:
+			return [MvpDataDefaults.RES_REINFORCED_STEEL_PLATE, MvpDataDefaults.RES_COAL, MvpDataDefaults.RES_HIGH_CAPACITY_BATTERY]
+		MvpDataDefaults.RES_RECOVERED_SERVO_CORE:
+			return [MvpDataDefaults.RES_REINFORCED_STEEL_PLATE, MvpDataDefaults.RES_HIGH_CAPACITY_BATTERY, MvpDataDefaults.RES_HIGH_FREQUENCY_OSCILLATOR]
+		MvpDataDefaults.RES_TARGETING_PROCESSOR:
+			return [MvpDataDefaults.RES_OPTICAL_LENS, MvpDataDefaults.RES_HIGH_CAPACITY_BATTERY, MvpDataDefaults.RES_HIGH_FREQUENCY_OSCILLATOR, MvpDataDefaults.RES_COPPER_WIRE]
 		_:
 			return _get_recipe_upgrade_recipe_ingredients(resource_id)
 
@@ -800,9 +812,36 @@ func _on_campaign_unlocks_changed() -> void:
 
 func _on_campaign_key_item_added(key_item_id: StringName) -> void:
 	_unlock_region_gates_for_key_item(key_item_id)
+	if key_item_id == MvpDataDefaults.RES_SALVAGE_DATA_CORE:
+		_wreckage_core_reminder_seconds = 0.0
 	_refresh_build_options()
 	_refresh_blueprint_library_ui()
 	_refresh_campaign_hud()
+
+func _tick_wreckage_core_turn_in_reminder(delta: float) -> void:
+	if not _should_remind_wreckage_core_turn_in():
+		_wreckage_core_reminder_seconds = 0.0
+		return
+	_wreckage_core_reminder_seconds += delta
+	if _wreckage_core_reminder_seconds < WRECKAGE_CORE_REMINDER_INTERVAL_SECONDS:
+		return
+	_wreckage_core_reminder_seconds = 0.0
+	_show_wreckage_core_turn_in_hint(false)
+
+func _should_remind_wreckage_core_turn_in() -> bool:
+	if campaign_state == null:
+		return false
+	if not campaign_state.defeated_nests.has(&"wreckage_command_nest_001"):
+		return false
+	if campaign_state.key_items.has(MvpDataDefaults.RES_SALVAGE_DATA_CORE):
+		return false
+	return not _is_region_id_unlocked("interference_highlands")
+
+func _show_wreckage_core_turn_in_hint(immediate: bool = false) -> void:
+	var message := "残骸战场主巢已摧毁：派装甲回收车将残骸数据核心（逻辑核心）运回主基地，即可解锁干扰高地与下一步目标。"
+	set_current_goal("用装甲回收车回收残骸数据核心，并运回主基地解锁干扰高地")
+	if hud and hud.has_method("show_bottom_prompt"):
+		hud.call("show_bottom_prompt", message, 5.0 if immediate else 4.5, &"info")
 
 func _on_campaign_technology_unlocked(technology_id: StringName) -> void:
 	var technology: Variant = _find_technology_def(technology_id)
@@ -1147,10 +1186,12 @@ func _get_robot_producer_forge_name(robot: RobotUnit) -> String:
 
 func _get_robot_save_kind(robot: RobotUnit) -> String:
 	var pool_name := str(robot.get("pool_name"))
-	if pool_name == "scavenger_hound" or str(robot.get("brain_mode")) == "melee_hound":
-		return "scavenger_hound"
 	if pool_name == "debug_enemy_unit" or str(robot.get("brain_mode")) == "path_patrol":
 		return "debug_enemy"
+	if String(robot.get("team")) == "Team_B":
+		return "scavenger_hound"
+	if pool_name == "scavenger_hound" or str(robot.get("brain_mode")) == "melee_hound":
+		return "scavenger_hound"
 	return "player_robot"
 
 func _get_robot_lifespan_time_left(robot: RobotUnit) -> float:
@@ -1402,6 +1443,8 @@ func _restore_salvage_pickup_from_snapshot(entry: Dictionary) -> void:
 
 func _restore_unit_from_snapshot(entry: Dictionary) -> void:
 	var kind := str(entry.get("kind", "player_robot"))
+	if kind == "player_robot" and str(entry.get("team", "")) == "Team_B":
+		kind = "scavenger_hound"
 	var layer_name := str(entry.get("layer", "EnemyLayer" if kind != "player_robot" else "UnitLayer"))
 	var layer := _get_layer(layer_name)
 	if layer == null:
@@ -4045,6 +4088,9 @@ func _on_enemy_nest_destroyed(nest: Node) -> void:
 	_apply_abstract_nest_reward(nest)
 	_update_region_after_nest_destroyed(nest)
 	_unlock_region_gates_for_nest(nest)
+	if nest != null and str(nest.get("nest_id")) == "wreckage_command_nest_001" and _should_remind_wreckage_core_turn_in():
+		_wreckage_core_reminder_seconds = 0.0
+		_show_wreckage_core_turn_in_hint(true)
 	var event_log := get_node_or_null("/root/CombatEventLog")
 	if event_log and event_log.has_method("record"):
 		event_log.call("record", &"nest_destroyed", {

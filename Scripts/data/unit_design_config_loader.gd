@@ -2,6 +2,7 @@ extends RefCounted
 class_name UnitDesignConfigLoader
 
 const DEFAULT_CONFIG_PATH := "res://Resources/data/units/mvp_unit_designs.json"
+const UNIT_DESIGN_PRIORITY_AFTER_RECIPE_ID := &"decompose_heavy_wreckage_to_servo"
 
 static func load_design_config(path: String = DEFAULT_CONFIG_PATH) -> Dictionary:
 	var file := FileAccess.open(path, FileAccess.READ)
@@ -105,9 +106,12 @@ static func apply_design_to_blueprint(blueprint: UnitBlueprint, unit_type_id: St
 	var recipe_id := StringName(str(unit_type.get("production_recipe_id", blueprint.production_recipe_id)))
 	var recipe := _find_recipe(recipe_defs, recipe_id, blueprint.unit_type_id)
 	blueprint.production_recipe_id = recipe.id if recipe else recipe_id
-	var base_cost := recipe.inputs.duplicate(true) if recipe else _string_name_key_dictionary(unit_type.get("base_cost", {}))
+	var design_base_cost := _string_name_key_dictionary(unit_type.get("base_cost", {}))
+	var use_design_recipe_values := recipe != null and _is_recipe_after_priority_boundary(recipe_defs, recipe.id)
+	var base_cost := design_base_cost if use_design_recipe_values and not design_base_cost.is_empty() else (recipe.inputs.duplicate(true) if recipe else design_base_cost)
 	blueprint.production_cost = calculate_cost(config, base_cost, clean_upgrade_ids)
-	var duration := recipe.duration_seconds if recipe else float(unit_type.get("production_time_seconds", blueprint.production_time_seconds))
+	var design_duration := float(unit_type.get("production_time_seconds", blueprint.production_time_seconds))
+	var duration := design_duration if use_design_recipe_values else (recipe.duration_seconds if recipe else design_duration)
 	blueprint.production_time_seconds = calculate_duration(config, duration, clean_upgrade_ids)
 
 static func make_stats(config: Dictionary, unit_type_id: StringName, upgrade_ids: Array[StringName]) -> UnitStats:
@@ -348,6 +352,16 @@ static func _find_recipe(recipe_defs: Array[RecipeDef], recipe_id: StringName, t
 		if recipe.recipe_type == &"unit" and recipe.target_id == target_id:
 			return recipe
 	return null
+
+static func _is_recipe_after_priority_boundary(recipe_defs: Array[RecipeDef], recipe_id: StringName) -> bool:
+	var boundary_seen := false
+	for recipe in recipe_defs:
+		if recipe.id == UNIT_DESIGN_PRIORITY_AFTER_RECIPE_ID:
+			boundary_seen = true
+			continue
+		if recipe.id == recipe_id:
+			return boundary_seen
+	return false
 
 static func _dictionary_array(values: Variant) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []

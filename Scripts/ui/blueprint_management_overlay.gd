@@ -479,7 +479,7 @@ func _on_upgrade_toggled(enabled: bool, upgrade_id: StringName) -> void:
 func _make_preview_blueprint() -> UnitBlueprint:
 	var source := _find_blueprint(_selected_source_id)
 	var preview := source.make_snapshot() if source else UnitBlueprint.new()
-	var recipe_defs: Array[RecipeDef] = []
+	var recipe_defs := MvpDataDefaultsScript.create_recipe_defs()
 	UnitDesignConfigLoaderScript.apply_design_to_blueprint(preview, _selected_unit_type_id, _draft_upgrade_ids, recipe_defs)
 	return preview
 

@@ -304,17 +304,18 @@
     },
     {
       "id": "analyze_salvage_data_core",
-      "display_name": "解析残骸数据核心",
+      "display_name": "组装目标锁定处理器",
       "type": "resource",
       "target_id": "targeting_processor",
       "duration_seconds": 9.0,
       "inputs": {
-        "salvage_data_core": 1,
-        "optical_lens": 1,
-        "high_capacity_battery": 1
+        "salvaged_alloy": 6,
+        "recovered_servo_core": 2,
+        "optical_lens": 3,
+        "high_capacity_battery": 2
       },
       "outputs": {
-        "targeting_processor": 100
+        "targeting_processor": 10
       }
     },
     {
