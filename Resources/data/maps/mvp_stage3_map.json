@@ -136,10 +136,10 @@
 	  "color": [1.0, 0.56, 0.24, 0.15]
 	},
 	{
-	  "id": "basin_to_interference_main",
+	  "id": "wreckage_to_interference_main",
 	  "route_type": "main",
 	  "display_name": "干扰高地主入口",
-	  "path_cells": [[60, 44], [62, 36], [64, 28]],
+	  "path_cells": [[38, 46], [44, 42], [50, 38], [58, 34], [66, 30]],
 	  "color": [0.68, 1.0, 0.44, 0.18]
 	},
 	{
@@ -182,13 +182,15 @@
 	  "revealed_by": "enemy_nest_001_destroyed"
 	},
 	{
-	  "id": "gate_basin_to_interference_main",
-	  "from_region_id": "starting_basin",
+	  "id": "gate_wreckage_to_interference_main",
+	  "from_region_id": "wreckage_battlefield",
 	  "to_region_id": "interference_highlands",
 	  "connection_type": "main_gate",
-	  "gate_cells": [[60, 44], [62, 40], [64, 36]],
-	  "route_id": "basin_to_interference_main",
-	  "locked_by_default": true
+	  "gate_cells": [[42, 44], [45, 41], [48, 39], [51, 37]],
+	  "route_id": "wreckage_to_interference_main",
+	  "locked_by_default": true,
+	  "unlock_key_item_id": "salvage_data_core",
+	  "revealed_by": "salvage_data_core"
 	},
 	{
 	  "id": "gate_basin_to_wreckage_main",
@@ -415,6 +417,24 @@
 	  "unit_type": "ranged_enemy",
 	  "grid_origin": [8, 76],
 	  "region_id": "wreckage_battlefield"
+	},
+	{
+	  "id": "interference_highlands_guard_001",
+	  "unit_type": "boss_guard_drone",
+	  "grid_origin": [58, 28],
+	  "region_id": "interference_highlands"
+	},
+	{
+	  "id": "interference_highlands_guard_002",
+	  "unit_type": "boss_guard_drone",
+	  "grid_origin": [72, 28],
+	  "region_id": "interference_highlands"
+	},
+	{
+	  "id": "wreckage_titan_001",
+	  "unit_type": "wreckage_titan",
+	  "grid_origin": [66, 24],
+	  "region_id": "interference_highlands"
 	}
   ],
   "debug_enemies": [

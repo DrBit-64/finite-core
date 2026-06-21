@@ -5,6 +5,8 @@ signal save_requested(source_blueprint_id: StringName, display_name: String, uni
 
 const TacticalTemplateCompilerScript := preload("res://Scripts/ai/tactical_template_compiler.gd")
 const UnitDesignConfigLoaderScript := preload("res://Scripts/data/unit_design_config_loader.gd")
+const ItemIconSlotScript := preload("res://Scripts/ui/components/item_icon_slot.gd")
+const MvpDataDefaultsScript := preload("res://Scripts/data/mvp_data_defaults.gd")
 
 class TemplateDragRow:
 	extends HBoxContainer
@@ -49,6 +51,7 @@ var _selected_template_index: int = -1
 var _draft_templates: Array[Dictionary] = []
 var _compiled_rules: Array = []
 var _compiled_state_defaults: Dictionary = {}
+var _resource_defs: Array[ResourceDef] = []
 var _unlocked_template_ids: Array[StringName] = []
 var _unlocked_unit_type_ids: Array[StringName] = []
 var _unlocked_upgrade_ids: Array[StringName] = []
@@ -69,6 +72,7 @@ var _upgrade_list: GridContainer
 var _upgrade_summary_label: Label
 var _stat_summary_label: Label
 var _cost_summary_label: Label
+var _cost_summary_grid: GridContainer
 var _template_list: VBoxContainer
 var _template_option: OptionButton
 var _param_list: VBoxContainer
@@ -81,6 +85,7 @@ func _ready() -> void:
 	anchor_right = 0.96
 	anchor_bottom = 0.93
 	_unit_design_config = UnitDesignConfigLoaderScript.load_design_config()
+	_resource_defs = MvpDataDefaultsScript.create_resource_defs()
 	add_theme_stylebox_override("panel", _make_panel_style())
 	_build_layout()
 
@@ -283,8 +288,15 @@ func _build_rules_column(column: VBoxContainer) -> void:
 	_stat_summary_label = _make_wrapped_label("", 12, Color(0.82, 0.92, 0.98, 1.0))
 	_stat_summary_label.custom_minimum_size = Vector2(380, 40)
 	summary_box.add_child(_stat_summary_label)
-	_cost_summary_label = _make_wrapped_label("", 12, Color(0.94, 0.82, 0.58, 1.0))
-	_cost_summary_label.custom_minimum_size = Vector2(380, 36)
+	summary_box.add_child(_make_label("生产成本", 12, Color(0.94, 0.82, 0.58, 1.0)))
+	_cost_summary_grid = GridContainer.new()
+	_cost_summary_grid.columns = 6
+	_cost_summary_grid.add_theme_constant_override("h_separation", 5)
+	_cost_summary_grid.add_theme_constant_override("v_separation", 5)
+	_cost_summary_grid.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	summary_box.add_child(_cost_summary_grid)
+	_cost_summary_label = _make_wrapped_label("", 12, Color(0.72, 0.82, 0.90, 1.0))
+	_cost_summary_label.custom_minimum_size = Vector2(380, 22)
 	summary_box.add_child(_cost_summary_label)
 
 	column.add_child(_make_section_title("规则"))
@@ -440,9 +452,13 @@ func _make_upgrade_card(upgrade: Dictionary) -> Control:
 	box.add_child(checkbox)
 
 	var stat_text := UnitDesignConfigLoaderScript.describe_stat_delta(_unit_design_config, upgrade_id)
-	var cost_text := UnitDesignConfigLoaderScript.describe_cost_delta(_unit_design_config, upgrade_id)
 	box.add_child(_make_wrapped_label(stat_text if not stat_text.is_empty() else "-", 12, Color(0.74, 0.90, 1.0, 1.0)))
-	box.add_child(_make_wrapped_label(cost_text if not cost_text.is_empty() else "-", 11, Color(0.92, 0.74, 0.48, 1.0)))
+	var cost_add := _get_upgrade_cost_add(upgrade)
+	if cost_add.is_empty():
+		box.add_child(_make_wrapped_label("额外成本：无", 11, Color(0.72, 0.76, 0.80, 1.0)))
+	else:
+		box.add_child(_make_wrapped_label("额外成本：", 11, Color(0.92, 0.74, 0.48, 1.0)))
+		box.add_child(_make_resource_cost_grid(cost_add, Vector2(30, 30), 5))
 	return card
 
 func _on_upgrade_toggled(enabled: bool, upgrade_id: StringName) -> void:
@@ -479,10 +495,9 @@ func _update_design_summary() -> void:
 	if _stat_summary_label:
 		_stat_summary_label.text = "属性  %s" % UnitDesignConfigLoaderScript.format_stats(preview.stats)
 	if _cost_summary_label:
-		_cost_summary_label.text = "生产  %s  |  %.1fs" % [
-			UnitDesignConfigLoaderScript.format_cost(preview.production_cost),
-			preview.production_time_seconds,
-		]
+		_cost_summary_label.text = "生产时间：%.1fs" % preview.production_time_seconds
+	if _cost_summary_grid:
+		_rebuild_resource_cost_grid(_cost_summary_grid, preview.production_cost, Vector2(34, 34), 6)
 	_update_visual_preview(preview)
 	if _detail_label:
 		var upgrade_text := "无升级" if preview.upgrade_display_names.is_empty() else " / ".join(preview.upgrade_display_names)
@@ -592,6 +607,10 @@ func _is_template_allowed_for_unit(template_id: StringName, unit_type_id: String
 	if unit_type.is_empty():
 		return false
 	var tags := _string_array_from_variant(unit_type.get("tags", []))
+	if String(template_id) == TacticalTemplateCompilerScript.TEMPLATE_LOCK_TARGET:
+		return tags.has("locker")
+	if String(template_id) == TacticalTemplateCompilerScript.TEMPLATE_LOCKED_MISSILE_STRIKE:
+		return tags.has("missile")
 	if tags.has("logistics") or tags.has("cargo"):
 		return String(template_id) in [
 			TacticalTemplateCompilerScript.TEMPLATE_SALVAGE_AND_RETURN,
@@ -968,6 +987,66 @@ func _format_rule_action(rule: Dictionary) -> String:
 			return "默认脑干"
 		_:
 			return str(rule.get("action", "未知动作"))
+
+func _get_upgrade_cost_add(upgrade: Dictionary) -> Dictionary:
+	var cost_add: Variant = upgrade.get("cost_add", {})
+	if typeof(cost_add) != TYPE_DICTIONARY:
+		return {}
+	var result: Dictionary = {}
+	for key in (cost_add as Dictionary).keys():
+		var amount := int((cost_add as Dictionary)[key])
+		if amount > 0:
+			result[StringName(str(key))] = amount
+	return result
+
+func _make_resource_cost_grid(resources: Dictionary, slot_size: Vector2 = Vector2(34, 34), next_columns: int = 6) -> GridContainer:
+	var grid := GridContainer.new()
+	_rebuild_resource_cost_grid(grid, resources, slot_size, next_columns)
+	return grid
+
+func _rebuild_resource_cost_grid(grid: GridContainer, resources: Dictionary, slot_size: Vector2 = Vector2(34, 34), next_columns: int = 6) -> void:
+	if grid == null:
+		return
+	for child in grid.get_children():
+		grid.remove_child(child)
+		child.queue_free()
+	grid.columns = maxi(1, next_columns)
+	grid.add_theme_constant_override("h_separation", 5)
+	grid.add_theme_constant_override("v_separation", 5)
+	grid.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	if resources.is_empty():
+		grid.add_child(_make_label("无", 12, Color(0.62, 0.68, 0.74, 1.0)))
+		return
+	var keys := resources.keys()
+	keys.sort()
+	for key in keys:
+		var resource_id := StringName(str(key))
+		var amount := int(resources[key])
+		var resource_def := _find_resource_def(resource_id)
+		var display_name := _resource_display_name(resource_id, resource_def)
+		var slot = ItemIconSlotScript.new()
+		slot.slot_size = slot_size
+		slot.setup(
+			_resource_icon(resource_def),
+			str(amount),
+			Color(0.36, 0.78, 0.60, 0.92),
+			"%s x%d" % [display_name, amount]
+		)
+		grid.add_child(slot)
+
+func _find_resource_def(resource_id: StringName) -> ResourceDef:
+	for resource_def in _resource_defs:
+		if resource_def != null and resource_def.id == resource_id:
+			return resource_def
+	return null
+
+func _resource_display_name(resource_id: StringName, resource_def: ResourceDef = null) -> String:
+	return resource_def.display_name if resource_def != null else String(resource_id)
+
+func _resource_icon(resource_def: ResourceDef) -> Texture2D:
+	if resource_def == null or resource_def.icon_path.is_empty() or not ResourceLoader.exists(resource_def.icon_path, "Texture2D"):
+		return null
+	return load(resource_def.icon_path) as Texture2D
 
 func _find_blueprint(blueprint_id: StringName) -> UnitBlueprint:
 	for blueprint in _blueprints:

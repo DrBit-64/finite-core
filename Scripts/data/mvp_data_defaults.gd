@@ -24,6 +24,9 @@ const RES_HIGH_FREQUENCY_OSCILLATOR := &"high_frequency_oscillator"
 const RES_WRECKAGE_SCRAP := &"wreckage_scrap"
 const RES_HEAVY_WRECKAGE := &"heavy_wreckage"
 const RES_SALVAGE_DATA_CORE := &"salvage_data_core"
+const RES_SALVAGED_ALLOY := &"salvaged_alloy"
+const RES_RECOVERED_SERVO_CORE := &"recovered_servo_core"
+const RES_TARGETING_PROCESSOR := &"targeting_processor"
 
 const UNIT_BASIC_RIFLE_ROBOT := &"basic_rifle_robot"
 
@@ -53,7 +56,10 @@ static func create_resource_defs() -> Array[ResourceDef]:
 		_make_resource(RES_HIGH_FREQUENCY_OSCILLATOR, "高频振荡器", "res://Resources/art/resources/high_frequency_oscillator.svg", "装甲拾荒巢穴抽象回收的阶段 2 关键道具。"),
 		_make_resource(RES_WRECKAGE_SCRAP, "残骸碎料", "res://Resources/art/resources/wreckage_scrap.svg", "战场回收得到的通用残骸材料，可重新进入生产链。"),
 		_make_resource(RES_HEAVY_WRECKAGE, "重型残骸", "res://Resources/art/resources/heavy_wreckage.svg", "需要装甲回收车或牵引模块带回的高价值残骸。"),
-		_make_resource(RES_SALVAGE_DATA_CORE, "残骸数据核心", "res://Resources/art/resources/heavy_wreckage.svg", "从危险残骸中带回的阶段 17 战略样本。"),
+		_make_resource(RES_SALVAGE_DATA_CORE, "残骸数据核心", "res://Resources/art/resources/salvage_data_core.svg", "从危险残骸中带回的阶段 17 战略样本。"),
+		_make_resource(RES_SALVAGED_ALLOY, "回收合金", "res://Resources/art/resources/salvaged_alloy.svg", "由残骸碎料拆解出的终局机体材料。"),
+		_make_resource(RES_RECOVERED_SERVO_CORE, "回收伺服核心", "res://Resources/art/resources/recovered_servo_core.svg", "从重型残骸中恢复的高扭矩伺服部件。"),
+		_make_resource(RES_TARGETING_PROCESSOR, "目标锁定处理器", "res://Resources/art/resources/targeting_processor.svg", "解析残骸数据核心得到的远程制导处理器。"),
 	]
 
 static func create_recipe_defs() -> Array[RecipeDef]:

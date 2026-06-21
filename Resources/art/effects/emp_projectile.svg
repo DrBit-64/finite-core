@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="core" x1="14" y1="32" x2="52" y2="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7b5cff"/>
+      <stop offset=".52" stop-color="#bdfcff"/>
+      <stop offset="1" stop-color="#eaffff"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 32h13" stroke="#4edcff" stroke-width="4" opacity=".36"/>
+    <path d="M13 24l9 8-9 8" stroke="#8d6bff" stroke-width="3" opacity=".55"/>
+    <path d="M22 20h18l12 12-12 12H22l7-12z" fill="url(#core)" stroke="#dffcff" stroke-width="2.5" filter="url(#glow)"/>
+    <path d="M30 18c5 6 5 22 0 28M38 18c5 6 5 22 0 28" stroke="#7b5cff" stroke-width="2.2" opacity=".76"/>
+    <circle cx="45" cy="32" r="5.5" fill="#efffff" stroke="#65eaff" stroke-width="2"/>
+    <path d="M49 20l5-5M53 28l7-2M49 44l5 5M53 36l7 2" stroke="#b9fffb" stroke-width="2" opacity=".82"/>
+  </g>
+</svg>

@@ -344,6 +344,7 @@ func _load_stage_one_data() -> void:
 		starting_inventory_config_path = configured_inventory_path
 	campaign_state = CampaignStateScript.new()
 	campaign_state.seed_defaults()
+	campaign_state.key_item_added.connect(_on_campaign_key_item_added)
 	campaign_state.unlocks_changed.connect(_on_campaign_unlocks_changed)
 	campaign_state.technology_unlocked.connect(_on_campaign_technology_unlocked)
 	campaign_state.stage_advanced.connect(_on_campaign_stage_advanced)
@@ -398,6 +399,8 @@ func _configure_hud() -> void:
 		hud.connect("debug_kill_requested", Callable(self, "_on_debug_kill_requested"))
 	if hud.has_signal("forge_rally_point_requested"):
 		hud.connect("forge_rally_point_requested", Callable(self, "_on_forge_rally_point_requested"))
+	if hud.has_signal("forge_pause_toggled"):
+		hud.connect("forge_pause_toggled", Callable(self, "_on_forge_pause_toggled"))
 	if hud.has_signal("blueprint_library_requested"):
 		hud.connect("blueprint_library_requested", Callable(self, "_on_blueprint_library_requested"))
 	if hud.has_signal("blueprint_save_requested"):
@@ -793,9 +796,16 @@ func _on_campaign_unlocks_changed() -> void:
 	_refresh_blueprint_library_ui()
 	_refresh_campaign_hud()
 
+func _on_campaign_key_item_added(key_item_id: StringName) -> void:
+	_unlock_region_gates_for_key_item(key_item_id)
+	_refresh_build_options()
+	_refresh_blueprint_library_ui()
+	_refresh_campaign_hud()
+
 func _on_campaign_technology_unlocked(technology_id: StringName) -> void:
 	var technology: Variant = _find_technology_def(technology_id)
 	var unlock_text := _format_technology_unlocks(technology.unlocks) if technology != null else ""
+	_unlock_region_gates_for_technology(technology_id)
 	push_debug_event("科技解锁：%s %s" % [String(technology_id), unlock_text])
 	_play_audio_cue(&"technology_unlocked")
 	if hud and hud.has_method("show_bottom_prompt"):
@@ -980,6 +990,7 @@ func _make_building_save_snapshots() -> Array[Dictionary]:
 			entry["blueprint_id"] = String(blueprint.id) if blueprint else ""
 			entry["target_alive_count"] = int(child.get("target_alive_count"))
 			entry["progress_seconds"] = float(child.get("progress_seconds"))
+			entry["is_paused"] = bool(child.get("is_paused"))
 			entry["has_rally_point"] = bool(child.get("has_rally_point"))
 			entry["rally_point_cell"] = _vector2i_to_array(child.get("rally_point_cell"))
 			var rally_pos: Vector2 = child.get("rally_point_position")
@@ -1461,6 +1472,8 @@ func _apply_building_specific_save_state(building: Node, building_def: BuildingD
 			building.call("set_blueprint_snapshot", _create_blueprint_snapshot(blueprint))
 		building.set("target_alive_count", int(entry.get("target_alive_count", building.get("target_alive_count"))))
 		building.set("progress_seconds", float(entry.get("progress_seconds", 0.0)))
+		if building.has_method("set_paused"):
+			building.call("set_paused", bool(entry.get("is_paused", false)))
 		if bool(entry.get("has_rally_point", false)) and building.has_method("set_rally_point"):
 			var cell := _vector2i_from_array(entry.get("rally_point_cell", [0, 0]))
 			var pos := _vector2_from_array(entry.get("rally_point_position", [0.0, 0.0]))
@@ -2962,10 +2975,16 @@ func _initialize_region_gate_runtime(map_config: Dictionary) -> void:
 			continue
 		var locked_by_default := bool(connection.get("locked_by_default", false))
 		var unlock_source := _get_connection_unlock_source(connection)
-		if not unlock_source.is_empty():
+		var unlock_technology := _get_connection_unlock_technology(connection)
+		var unlock_key_item := _get_connection_unlock_key_item(connection)
+		if not unlock_source.is_empty() or not unlock_technology.is_empty() or not unlock_key_item.is_empty():
 			locked_by_default = true
 		var state := "locked" if locked_by_default else "open"
 		if not unlock_source.is_empty() and _is_nest_defeated_in_campaign(StringName(unlock_source)):
+			state = "open"
+		if not unlock_technology.is_empty() and _is_technology_unlocked_in_campaign(StringName(unlock_technology)):
+			state = "open"
+		if not unlock_key_item.is_empty() and _is_key_item_owned_in_campaign(StringName(unlock_key_item)):
 			state = "open"
 		map_region_gate_states[gate_id] = state
 	_rebuild_locked_gate_cells()
@@ -2984,7 +3003,7 @@ func _normalize_region_connections(raw_connections: Array) -> Array:
 				route_id = "connection_%02d" % index
 			connection["id"] = route_id
 		if not connection.has("locked_by_default"):
-			connection["locked_by_default"] = not _get_connection_unlock_source(connection).is_empty()
+			connection["locked_by_default"] = not _get_connection_unlock_source(connection).is_empty() or not _get_connection_unlock_technology(connection).is_empty() or not _get_connection_unlock_key_item(connection).is_empty()
 		result.append(connection)
 		index += 1
 	return result
@@ -2998,10 +3017,32 @@ func _get_connection_unlock_source(connection: Dictionary) -> String:
 		return revealed_by.substr(0, revealed_by.length() - "_destroyed".length())
 	return ""
 
+func _get_connection_unlock_technology(connection: Dictionary) -> String:
+	var direct := str(connection.get("unlock_technology_id", connection.get("technology_id", "")))
+	if not direct.is_empty():
+		return direct
+	var revealed_by := str(connection.get("revealed_by", ""))
+	if revealed_by.begins_with("stage") or revealed_by.begins_with("tech_"):
+		return revealed_by
+	return ""
+
+func _get_connection_unlock_key_item(connection: Dictionary) -> String:
+	return str(connection.get("unlock_key_item_id", connection.get("key_item_id", "")))
+
 func _is_nest_defeated_in_campaign(nest_id: StringName) -> bool:
 	if campaign_state == null or String(nest_id).is_empty():
 		return false
 	return campaign_state.defeated_nests.has(nest_id)
+
+func _is_technology_unlocked_in_campaign(technology_id: StringName) -> bool:
+	if campaign_state == null or String(technology_id).is_empty():
+		return false
+	return campaign_state.unlocked_technologies.has(technology_id)
+
+func _is_key_item_owned_in_campaign(key_item_id: StringName) -> bool:
+	if campaign_state == null or String(key_item_id).is_empty():
+		return false
+	return campaign_state.key_items.has(key_item_id)
 
 func _rebuild_locked_gate_cells() -> void:
 	map_locked_gate_cells.clear()
@@ -3195,9 +3236,15 @@ func _sync_gate_states_from_campaign() -> void:
 		var connection: Dictionary = connection_value
 		var gate_id := str(connection.get("id", ""))
 		var unlock_source := _get_connection_unlock_source(connection)
-		if gate_id.is_empty() or unlock_source.is_empty():
+		var unlock_technology := _get_connection_unlock_technology(connection)
+		var unlock_key_item := _get_connection_unlock_key_item(connection)
+		if gate_id.is_empty():
 			continue
-		if _is_nest_defeated_in_campaign(StringName(unlock_source)):
+		if not unlock_source.is_empty() and _is_nest_defeated_in_campaign(StringName(unlock_source)):
+			map_region_gate_states[gate_id] = "open"
+		if not unlock_technology.is_empty() and _is_technology_unlocked_in_campaign(StringName(unlock_technology)):
+			map_region_gate_states[gate_id] = "open"
+		if not unlock_key_item.is_empty() and _is_key_item_owned_in_campaign(StringName(unlock_key_item)):
 			map_region_gate_states[gate_id] = "open"
 	_refresh_region_gate_runtime_state()
 
@@ -3315,6 +3362,53 @@ func _spawn_salvage_pickup(data: Dictionary) -> Node:
 	salvage_pickups_by_cell[origin] = pickup
 	_apply_salvage_gate_state(pickup, data)
 	return pickup
+
+func _is_salvage_spawn_cell_free(cell: Vector2i, reserved_cells: Dictionary = {}) -> bool:
+	if grid_map and grid_map.has_method("is_cell_in_bounds") and not bool(grid_map.call("is_cell_in_bounds", cell)):
+		return false
+	if reserved_cells.has(cell):
+		return false
+	if grid_occupancy != null and grid_occupancy.get_at(cell) != null:
+		return false
+	if salvage_pickups_by_cell.has(cell):
+		var existing_pickup: Node = salvage_pickups_by_cell[cell]
+		if existing_pickup != null and is_instance_valid(existing_pickup) and int(existing_pickup.get("amount")) > 0:
+			return false
+		salvage_pickups_by_cell.erase(cell)
+	return true
+
+func _find_nearest_free_salvage_cell(preferred_cell: Vector2i, reserved_cells: Dictionary = {}, max_radius: int = 8) -> Vector2i:
+	if _is_salvage_spawn_cell_free(preferred_cell, reserved_cells):
+		return preferred_cell
+	for radius in range(1, max_radius + 1):
+		var candidates: Array[Vector2i] = []
+		for y in range(preferred_cell.y - radius, preferred_cell.y + radius + 1):
+			for x in range(preferred_cell.x - radius, preferred_cell.x + radius + 1):
+				var cell := Vector2i(x, y)
+				if maxi(absi(cell.x - preferred_cell.x), absi(cell.y - preferred_cell.y)) != radius:
+					continue
+				if _is_salvage_spawn_cell_free(cell, reserved_cells):
+					candidates.append(cell)
+		candidates.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+			var distance_a := Vector2(a - preferred_cell).length_squared()
+			var distance_b := Vector2(b - preferred_cell).length_squared()
+			if not is_equal_approx(distance_a, distance_b):
+				return distance_a < distance_b
+			if a.y != b.y:
+				return a.y < b.y
+			return a.x < b.x
+		)
+		if not candidates.is_empty():
+			return candidates[0]
+	return Vector2i(-999999, -999999)
+
+func _assign_salvage_spawn_cell(data: Dictionary, preferred_cell: Vector2i, reserved_cells: Dictionary = {}) -> bool:
+	var spawn_cell := _find_nearest_free_salvage_cell(preferred_cell, reserved_cells)
+	if spawn_cell.x <= -999999:
+		return false
+	data["grid_origin"] = _vector2i_to_array(spawn_cell)
+	reserved_cells[spawn_cell] = true
+	return true
 
 func _on_salvage_pickup_depleted(pickup: Node) -> void:
 	if pickup == null:
@@ -3717,6 +3811,8 @@ func _on_enemy_hound_lost(hound: Node, reason: StringName) -> void:
 			payload["killer_blueprint_name"] = str(source_payload.get("blueprint_name", ""))
 		event_log.call("record", &"enemy_killed", payload)
 	_spawn_salvage_drops_for_enemy(hound)
+	if hound != null and is_instance_valid(hound) and str(hound.get("pool_name")) == "wreckage_titan":
+		_on_final_boss_defeated(hound)
 
 func _spawn_salvage_drops_for_enemy(enemy: Node) -> void:
 	if enemy == null or not is_instance_valid(enemy) or not (enemy is Node2D):
@@ -3729,19 +3825,75 @@ func _spawn_salvage_drops_for_enemy(enemy: Node) -> void:
 	if drops.is_empty():
 		return
 	var base_cell: Vector2i = grid_map.call("world_to_grid", (enemy as Node2D).global_position) if grid_map else Vector2i.ZERO
+	var reserved_cells := {}
 	var index := 0
 	for drop_value in drops:
 		if typeof(drop_value) != TYPE_DICTIONARY:
 			continue
 		var drop: Dictionary = drop_value.duplicate(true)
-		var drop_cell := base_cell + Vector2i(index % 2, floori(float(index) / 2.0))
+		var preferred_cell := base_cell + Vector2i(index % 2, floori(float(index) / 2.0))
 		drop["id"] = "drop_%s_%d" % [enemy.name, index]
-		drop["grid_origin"] = [drop_cell.x, drop_cell.y]
 		drop["source_enemy"] = str(enemy_type)
+		if not _assign_salvage_spawn_cell(drop, preferred_cell, reserved_cells):
+			index += 1
+			continue
 		var pickup := _spawn_salvage_pickup(drop)
 		if pickup != null:
 			_record_salvage_event(&"salvage_dropped", pickup, enemy)
 		index += 1
+
+func _spawn_cargo_drops_for_lost_robot(robot: Node) -> void:
+	if robot == null or not is_instance_valid(robot) or not (robot is Node2D):
+		return
+	if String(robot.get("team")) != "Team_A":
+		return
+	if not robot.has_method("get_cargo_inventory"):
+		return
+	var cargo: Dictionary = robot.call("get_cargo_inventory")
+	if cargo.is_empty():
+		return
+	var base_cell: Vector2i = grid_map.call("world_to_grid", (robot as Node2D).global_position) if grid_map else Vector2i.ZERO
+	var reserved_cells := {}
+	var index := 0
+	for resource_key in cargo.keys():
+		var amount := int(cargo[resource_key])
+		if amount <= 0:
+			continue
+		var resource_id := StringName(str(resource_key))
+		var drop := {
+			"id": "cargo_drop_%s_%d" % [robot.name, index],
+			"resource_id": String(resource_id),
+			"amount": amount,
+			"value": maxi(1, amount),
+			"salvage_type": "cargo_wreckage",
+			"source_enemy": str(robot.name),
+		}
+		var key_item_id := _infer_key_item_from_salvage_resource(resource_id)
+		if not String(key_item_id).is_empty():
+			drop["key_item_id"] = String(key_item_id)
+			drop["strategic_reward"] = true
+			drop["salvage_type"] = "key_drop"
+		var preferred_cell := base_cell + Vector2i(index % 2, floori(float(index) / 2.0))
+		if not _assign_salvage_spawn_cell(drop, preferred_cell, reserved_cells):
+			index += 1
+			continue
+		var pickup := _spawn_salvage_pickup(drop)
+		if pickup != null:
+			_record_salvage_event(&"cargo_salvage_dropped", pickup, robot)
+		index += 1
+
+func _on_final_boss_defeated(boss: Node) -> void:
+	push_debug_event("Final boss defeated: Wreckage Titan")
+	if hud and hud.has_method("show_bottom_prompt"):
+		hud.call("show_bottom_prompt", "最终 Boss 已击败：干扰高原核心被摧毁。", 4.0, &"success")
+	set_current_goal("最终 Boss 已击败：回收战利品并复盘战斗。")
+	var event_log := get_node_or_null("/root/CombatEventLog")
+	if event_log and event_log.has_method("record"):
+		event_log.call("record", &"final_boss_defeated", {
+			"boss_id": boss.name if boss != null and is_instance_valid(boss) else "wreckage_titan",
+			"boss_type": "wreckage_titan",
+		})
+	_refresh_campaign_hud()
 
 func _record_salvage_event(event_type: StringName, pickup: Node, source: Node = null) -> void:
 	var event_log := get_node_or_null("/root/CombatEventLog")
@@ -3798,6 +3950,70 @@ func _unlock_region_gates_for_nest(nest: Node) -> void:
 			_region_gate_overlay.call("animate_gate", gate_id)
 	for gate_id in unlocked_gate_ids:
 		push_debug_event("区域通道已开启：%s" % gate_id)
+	if unlocked_gate_ids.is_empty():
+		return
+	_refresh_region_gate_runtime_state()
+	for region_id in unlocked_regions:
+		_activate_region_content(region_id)
+	_mark_regions_discovered_after_gate_unlock(unlocked_regions)
+	_refresh_resource_gate_states()
+	_apply_region_fog_to_grid()
+
+func _unlock_region_gates_for_technology(technology_id: StringName) -> void:
+	if String(technology_id).is_empty():
+		return
+	var unlocked_regions: Array[String] = []
+	var unlocked_gate_ids: Array[String] = []
+	for connection_value in map_region_connections:
+		if typeof(connection_value) != TYPE_DICTIONARY:
+			continue
+		var connection: Dictionary = connection_value
+		var gate_id := str(connection.get("id", ""))
+		if gate_id.is_empty() or str(map_region_gate_states.get(gate_id, "open")) == "open":
+			continue
+		if _get_connection_unlock_technology(connection) != String(technology_id):
+			continue
+		map_region_gate_states[gate_id] = "open"
+		unlocked_gate_ids.append(gate_id)
+		var target_region := str(connection.get("to_region_id", ""))
+		if not target_region.is_empty() and not unlocked_regions.has(target_region):
+			unlocked_regions.append(target_region)
+		if _region_gate_overlay != null and is_instance_valid(_region_gate_overlay) and _region_gate_overlay.has_method("animate_gate"):
+			_region_gate_overlay.call("animate_gate", gate_id)
+	for gate_id in unlocked_gate_ids:
+		push_debug_event("Technology gate opened: %s" % gate_id)
+	if unlocked_gate_ids.is_empty():
+		return
+	_refresh_region_gate_runtime_state()
+	for region_id in unlocked_regions:
+		_activate_region_content(region_id)
+	_mark_regions_discovered_after_gate_unlock(unlocked_regions)
+	_refresh_resource_gate_states()
+	_apply_region_fog_to_grid()
+
+func _unlock_region_gates_for_key_item(key_item_id: StringName) -> void:
+	if String(key_item_id).is_empty():
+		return
+	var unlocked_regions: Array[String] = []
+	var unlocked_gate_ids: Array[String] = []
+	for connection_value in map_region_connections:
+		if typeof(connection_value) != TYPE_DICTIONARY:
+			continue
+		var connection: Dictionary = connection_value
+		var gate_id := str(connection.get("id", ""))
+		if gate_id.is_empty() or str(map_region_gate_states.get(gate_id, "open")) == "open":
+			continue
+		if _get_connection_unlock_key_item(connection) != String(key_item_id):
+			continue
+		map_region_gate_states[gate_id] = "open"
+		unlocked_gate_ids.append(gate_id)
+		var target_region := str(connection.get("to_region_id", ""))
+		if not target_region.is_empty() and not unlocked_regions.has(target_region):
+			unlocked_regions.append(target_region)
+		if _region_gate_overlay != null and is_instance_valid(_region_gate_overlay) and _region_gate_overlay.has_method("animate_gate"):
+			_region_gate_overlay.call("animate_gate", gate_id)
+	for gate_id in unlocked_gate_ids:
+		push_debug_event("Key item gate opened: %s" % gate_id)
 	if unlocked_gate_ids.is_empty():
 		return
 	_refresh_region_gate_runtime_state()
@@ -4001,6 +4217,9 @@ func _get_resource_recipes_for_processor(building_def: BuildingDef) -> Array[Rec
 			&"process_reinforced_steel_plate",
 			&"process_optical_lens",
 			&"process_high_capacity_battery",
+			&"decompose_wreckage_scrap_to_alloy",
+			&"decompose_heavy_wreckage_to_servo",
+			&"analyze_salvage_data_core",
 		]
 	else:
 		allowed_recipe_ids = [
@@ -4279,6 +4498,12 @@ func _on_processor_pause_toggled(processor: Node) -> void:
 		push_debug_event("加工厂%s" % ("已暂停" if bool(processor.get("is_paused")) else "继续加工"))
 	call_deferred("_refresh_operation_panel")
 
+func _on_forge_pause_toggled(forge: Node) -> void:
+	if forge and forge.has_method("toggle_paused"):
+		forge.call("toggle_paused")
+		push_debug_event("机器人锻造厂%s" % ("已暂停" if bool(forge.get("is_paused")) else "继续生产"))
+	call_deferred("_refresh_operation_panel")
+
 func _on_building_demolish_requested(building: Node) -> void:
 	_demolish_building(building)
 
@@ -4475,6 +4700,13 @@ func _prune_stage14_logistics_tasks() -> void:
 			_clear_logistics_task_visual(robot)
 
 func _try_assign_stage14_logistics_task(robot: Node) -> void:
+	if _should_stage14_logistics_robot_evade(robot):
+		var cargo_used := int(robot.call("get_cargo_used_capacity")) if robot.has_method("get_cargo_used_capacity") else 0
+		if cargo_used > 0:
+			if _assign_stage14_hazard_return_task(robot):
+				return
+		elif _assign_stage14_hazard_evasion_task(robot):
+			return
 	if _try_assign_stage14_existing_cargo_delivery(robot):
 		return
 	var task := _build_stage14_best_logistics_task(robot)
@@ -4489,6 +4721,15 @@ func _advance_stage14_logistics_task(robot: Node, task: Dictionary) -> void:
 	var source := _get_stage14_task_node(task, "source")
 	var target := _get_stage14_task_node(task, "target")
 	_update_logistics_task_visual(robot, task)
+	if _try_interrupt_stage14_task_for_hazard(robot, task):
+		return
+	if stage == "to_safe":
+		var safe_position := _vector2_from_array(task.get("safe_position", [0.0, 0.0]))
+		if robot is Node2D and (robot as Node2D).global_position.distance_to(safe_position) <= 40.0:
+			_clear_stage14_robot_task(robot)
+			return
+		_move_logistics_robot_towards(robot, safe_position, str(task.get("status", "紧急避险：撤退到安全点")))
+		return
 	if stage == "to_pickup":
 		if source == null or not is_instance_valid(source):
 			_clear_stage14_robot_task(robot)
@@ -4515,6 +4756,84 @@ func _advance_stage14_logistics_task(robot: Node, task: Dictionary) -> void:
 		_move_logistics_robot_towards(robot, _get_logistics_node_position(target), _get_stage14_dropoff_status(task), target)
 	else:
 		_clear_stage14_robot_task(robot)
+
+func _try_interrupt_stage14_task_for_hazard(robot: Node, task: Dictionary) -> bool:
+	if _is_stage14_hazard_task(task):
+		return false
+	if not _should_stage14_logistics_robot_evade(robot):
+		return false
+	var cargo_used := int(robot.call("get_cargo_used_capacity")) if robot.has_method("get_cargo_used_capacity") else 0
+	if cargo_used > 0:
+		return _assign_stage14_hazard_return_task(robot)
+	return _assign_stage14_hazard_evasion_task(robot)
+
+func _is_stage14_hazard_task(task: Dictionary) -> bool:
+	return str(task.get("type", "")) in ["hazard_return", "hazard_evasion"]
+
+func _should_stage14_logistics_robot_evade(robot: Node) -> bool:
+	if robot == null or not is_instance_valid(robot):
+		return false
+	if robot.has_method("hp_ratio") and float(robot.call("hp_ratio")) <= 0.45:
+		return true
+	if not (robot is Node2D):
+		return false
+	return _count_enemy_units_near((robot as Node2D).global_position, 220.0) >= 3
+
+func _assign_stage14_hazard_return_task(robot: Node) -> bool:
+	if main_base == null or not is_instance_valid(main_base):
+		return false
+	var cargo: Dictionary = robot.call("get_cargo_inventory") if robot.has_method("get_cargo_inventory") else {}
+	for resource_id in cargo.keys():
+		var amount := int(cargo[resource_id])
+		if amount <= 0:
+			continue
+		var task := _make_stage14_task("hazard_return", robot, main_base, StringName(resource_id), amount, "紧急避险：携货返航", 0.0)
+		task["stage"] = "to_dropoff"
+		stage14_logistics_tasks_by_robot[robot] = task
+		_sync_stage14_robot_task(robot, task)
+		_update_logistics_task_visual(robot, task)
+		push_debug_event("物流紧急避险：%s 携货返航" % robot.name)
+		return true
+	return false
+
+func _assign_stage14_hazard_evasion_task(robot: Node) -> bool:
+	if not (robot is Node2D):
+		return false
+	var safe_position := _get_nearest_stage14_safe_retreat_position(robot)
+	var task := {
+		"stage": "to_safe",
+		"type": "hazard_evasion",
+		"source": robot,
+		"target": null,
+		"resource_id": &"",
+		"amount": 0,
+		"status": "紧急避险：撤退到安全点",
+		"score": 0.0,
+		"safe_position": [safe_position.x, safe_position.y],
+	}
+	stage14_logistics_tasks_by_robot[robot] = task
+	_sync_stage14_robot_task(robot, task)
+	_update_logistics_task_visual(robot, task)
+	push_debug_event("物流紧急避险：%s 撤退到安全点" % robot.name)
+	return true
+
+func _get_nearest_stage14_safe_retreat_position(robot: Node) -> Vector2:
+	var robot_position: Vector2 = (robot as Node2D).global_position if robot is Node2D else Vector2.ZERO
+	var best_position := Vector2.ZERO
+	var best_distance := INF
+	for forge in _get_player_buildings_by_id(MvpDataDefaults.BUILDING_ROBOT_FORGE):
+		if forge == null or not is_instance_valid(forge) or not bool(forge.get("has_rally_point")):
+			continue
+		var rally_position: Vector2 = forge.get("rally_point_position")
+		var distance := robot_position.distance_squared_to(rally_position)
+		if distance < best_distance:
+			best_distance = distance
+			best_position = rally_position
+	if best_distance < INF:
+		return best_position
+	if main_base != null and is_instance_valid(main_base):
+		return _get_logistics_node_position(main_base)
+	return robot_position
 
 func _pickup_stage14_logistics_cargo(robot: Node, task: Dictionary) -> bool:
 	var source := _get_stage14_task_node(task, "source")
@@ -5122,6 +5441,10 @@ func _get_stage14_dropoff_status(task: Dictionary) -> String:
 			return "送回主基地"
 		"salvage_return":
 			return "回收残骸返航"
+		"hazard_return":
+			return "紧急避险：携货返航"
+		"hazard_evasion":
+			return "紧急避险：撤退到安全点"
 	return "投递物资"
 
 func _move_logistics_robot_towards(robot: Node, world_position: Vector2, action_text: String, target_node: Node = null) -> void:
@@ -5432,6 +5755,10 @@ func _is_template_allowed_for_unit_type(template_id: StringName, unit_type_id: S
 	if unit_type.is_empty():
 		return false
 	var tags := _string_list_from_variant(unit_type.get("tags", []))
+	if String(template_id) == TacticalTemplateCompilerScript.TEMPLATE_LOCK_TARGET:
+		return tags.has("locker")
+	if String(template_id) == TacticalTemplateCompilerScript.TEMPLATE_LOCKED_MISSILE_STRIKE:
+		return tags.has("missile")
 	if tags.has("logistics") or tags.has("cargo"):
 		return String(template_id) in [
 			TacticalTemplateCompilerScript.TEMPLATE_SALVAGE_AND_RETURN,
@@ -5480,6 +5807,7 @@ func _on_robot_lost_for_blueprint_cleanup(robot: Node, reason: StringName) -> vo
 			"reason": String(reason),
 		})
 		_maybe_show_stage12_soft_failure_hint()
+		_spawn_cargo_drops_for_lost_robot(robot)
 	call_deferred("_prune_blueprint_snapshots")
 
 func _get_blueprint_rule_summaries(blueprint: UnitBlueprint) -> Array[Dictionary]:

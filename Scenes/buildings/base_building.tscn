@@ -1,11 +1,11 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://dp8p2jlgifcik"]
 
-[ext_resource type="Script" path="res://Scripts/buildings/base_building.gd" id="1_oj8na"]
+[ext_resource type="Script" uid="uid://dpwn6flcw07qj" path="res://Scripts/buildings/base_building.gd" id="1_oj8na"]
 
-[node name="BaseBuilding" type="StaticBody2D"]
+[node name="BaseBuilding" type="StaticBody2D" unique_id=773164079]
 script = ExtResource("1_oj8na")
 
-[node name="Footprint" type="Polygon2D" parent="."]
+[node name="Footprint" type="Polygon2D" parent="." unique_id=29346781]
 color = Color(0.15, 0.2, 0.24, 0.64)
 
-[node name="IconSprite" type="Sprite2D" parent="."]
+[node name="IconSprite" type="Sprite2D" parent="." unique_id=1702886888]

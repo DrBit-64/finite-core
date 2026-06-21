@@ -8,10 +8,22 @@ const TacticalTemplateCompilerScript := preload("res://Scripts/ai/tactical_templ
 const ACTION_ICON_RALLY := preload("res://Resources/art/ui/state_rally.svg")
 const ACTION_ICON_WAIT := preload("res://Resources/art/ui/state_wait.svg")
 const ACTION_ICON_DEFAULT_BRAIN := preload("res://Resources/art/ui/state_default_brain.svg")
+const TARGET_LOCK_OVERLAY_TEXTURE := preload("res://Resources/art/map/target_lock_overlay.svg")
+const BOSS_MACHINE_GUN_TURRET_TEXTURE := preload("res://Resources/art/enemies/wreckage_titan_machine_gun_turret.svg")
+const BOSS_LASER_TURRET_TEXTURE := preload("res://Resources/art/enemies/wreckage_titan_laser_turret.svg")
+const BOSS_SPELL_CORE_TEXTURE := preload("res://Resources/art/enemies/wreckage_titan_spell_core.svg")
+const BOSS_EMP_PROJECTILE_TEXTURE := preload("res://Resources/art/effects/emp_projectile.svg")
+const BOSS_GUARD_DRONE_SCENE_PATH := "res://Scenes/units/scavenger_hound.tscn"
 const RALLY_CANDIDATE_CACHE_MSEC := 120
 const SEPARATION_ACTIVE_INTERVAL_MSEC := 140
 const SEPARATION_WAITING_INTERVAL_MSEC := 360
 const SEPARATION_MAX_NEIGHBORS := 8
+const MISSILE_LOCK_META := &"missile_lock_until_msec"
+const MISSILE_LOCK_SOURCE_META := &"missile_lock_source"
+const TARGET_LOCKER_UNIT_TYPE := "target_locker_robot"
+const CRUISE_MISSILE_UNIT_TYPE := "cruise_missile_robot"
+const MISSILE_FORMATION_CELL_SIZE := 64.0
+const MISSILE_FORMATION_CHECK_MSEC := 700
 
 static var _shared_rally_candidate_cache: Dictionary = {}
 static var _shared_rally_cache_prune_msec: int = 0
@@ -36,7 +48,7 @@ static var _shared_rally_cache_prune_msec: int = 0
 @export var overheated_resume_threshold: float = 0.0
 @export var minimum_overheat_lock_seconds: float = 1.0
 @export var weapon_enabled: bool = true
-@export_enum("default_combat", "path_patrol", "melee_hound", "ranged_hound", "logistics", "idle") var brain_mode: String = "default_combat"
+@export_enum("default_combat", "path_patrol", "melee_hound", "ranged_hound", "logistics", "target_locker", "cruise_missile", "wreckage_titan_boss", "idle") var brain_mode: String = "default_combat"
 @export var default_brain_enabled: bool = true
 @export var preferred_range_ratio: float = 0.85
 @export var range_dead_zone: float = 12.0
@@ -119,10 +131,43 @@ var _navigation_next_repath_msec: int = 0
 var _navigation_path_resolved: bool = false
 var action_icon: Sprite2D = null
 var module_sprite: Sprite2D = null
+var target_lock_overlay_sprite: Sprite2D = null
 var _next_separation_update_msec: int = 0
 var _separation_accumulated_delta: float = 0.0
 var _chainsaw_visual_was_active: bool = false
 var _runtime_tag_groups: Array[String] = []
+var _emp_disabled_until_msec: int = 0
+var _lock_channel_target: Node2D = null
+var _lock_channel_complete_msec: int = 0
+var _last_lock_scan_msec: int = 0
+var _missile_cached_target: Node2D = null
+var _last_missile_scan_msec: int = 0
+var _missile_last_fire_seconds: float = -9999.0
+var _missile_formation_target_position: Vector2 = Vector2.INF
+var _missile_formation_target_cell: Vector2i = Vector2i(-999999, -999999)
+var _missile_next_formation_check_msec: int = 0
+var _missile_visuals: Array[Dictionary] = []
+var _boss_machine_gun_a: Sprite2D = null
+var _boss_machine_gun_b: Sprite2D = null
+var _boss_laser_turret: Sprite2D = null
+var _boss_spell_core: Sprite2D = null
+var _boss_mg_a_target: Node2D = null
+var _boss_mg_b_target: Node2D = null
+var _boss_laser_target: Node2D = null
+var _boss_last_mg_a_seconds: float = -9999.0
+var _boss_last_mg_b_seconds: float = -9999.0
+var _boss_last_laser_seconds: float = -9999.0
+var _boss_last_emp_seconds: float = -9999.0
+var _boss_last_summon_seconds: float = -9999.0
+var _boss_laser_beam_until_msec: int = 0
+var _boss_laser_beam_start: Vector2 = Vector2.ZERO
+var _boss_laser_beam_end: Vector2 = Vector2.ZERO
+var _boss_laser_visual_target: Node2D = null
+var _boss_mg_traces: Array[Dictionary] = []
+var _boss_cannon_shells: Array[Dictionary] = []
+var _boss_splash_rings: Array[Dictionary] = []
+var _boss_emp_shells: Array[Dictionary] = []
+var _boss_emp_pulses: Array[Dictionary] = []
 
 @onready var unit_sprite: Sprite2D = get_node_or_null("UnitSprite")
 @onready var hp_bar: ProgressBar = get_node_or_null("HPBar")
@@ -148,6 +193,16 @@ func _physics_process(delta: float) -> void:
 	if _is_dead:
 		return
 	_update_heat(delta)
+	_tick_pending_cruise_missile_impacts()
+	_tick_pending_boss_projectile_impacts()
+	if _is_emp_disabled():
+		if movement_component:
+			movement_component.stop(&"emp_disabled")
+			movement_component.apply_to(self)
+		current_action = "EMP disabled"
+		current_fire_state = "EMP %.1fs" % get_emp_disabled_remaining_seconds()
+		_update_unit_visuals()
+		return
 
 	match brain_mode:
 		"path_patrol":
@@ -176,6 +231,15 @@ func _physics_process(delta: float) -> void:
 			_tick_ranged_hound()
 		"logistics":
 			pass
+		"target_locker":
+			_clear_invalid_lock_channel()
+			if not _evaluate_special_brain_rules():
+				_tick_target_locker(delta)
+		"cruise_missile":
+			if not _evaluate_special_brain_rules():
+				_tick_cruise_missile(delta)
+		"wreckage_titan_boss":
+			_tick_wreckage_titan_boss(delta)
 		_:
 			current_action = "闲置"
 			if movement_component:
@@ -238,6 +302,22 @@ func setup_from_blueprint(blueprint: UnitBlueprint, next_rally_point: Vector2 = 
 		current_logistics_task.clear()
 		brain_mode = "default_combat"
 		weapon_enabled = bullet_damage > 0 and fire_range > 0.0
+		var unit_type_text := String(blueprint.unit_type_id)
+		if unit_type_text == TARGET_LOCKER_UNIT_TYPE or String(blueprint.id).contains("target_locker"):
+			tags = ["combat", "scout", "locker", "ranged"]
+			brain_mode = "target_locker"
+			weapon_enabled = false
+			damage_type = &"none"
+			fire_range = maxf(fire_range, 320.0)
+			target_lock_seconds = maxf(target_lock_seconds, 2.0)
+		elif unit_type_text == CRUISE_MISSILE_UNIT_TYPE or String(blueprint.id).contains("cruise_missile"):
+			tags = ["combat", "ranged", "missile", "long_range"]
+			brain_mode = "cruise_missile"
+			weapon_enabled = true
+			damage_type = &"missile"
+			fire_range = maxf(fire_range, 99999.0)
+			fire_cooldown_seconds = maxf(fire_cooldown_seconds, 8.0)
+			projectile_tint = Color(1.0, 0.58, 0.18, 1.0)
 	default_brain_enabled = blueprint.default_brain_enabled
 	var state_flag_defaults := blueprint.state_flag_defaults
 	var logic_rules := blueprint.embedded_rules
@@ -283,6 +363,8 @@ func setup_scavenger_hound(config: Dictionary, nest: Node = null) -> void:
 	team = "Team_B"
 	var attack_mode := str(config.get("attack_mode", "melee"))
 	brain_mode = "ranged_hound" if attack_mode == "ranged" else "melee_hound"
+	if attack_mode == "boss":
+		brain_mode = "wreckage_titan_boss"
 	blueprint_snapshot_id = &""
 	default_brain_enabled = false
 	weapon_enabled = attack_mode == "ranged"
@@ -305,6 +387,12 @@ func setup_scavenger_hound(config: Dictionary, nest: Node = null) -> void:
 	weapon_audio_id = StringName(str(config.get("weapon_audio_id", "enemy_melee")))
 	guard_aggro_radius = maxf(0.0, float(config.get("guard_aggro_radius", 320.0)))
 	hound_follow_up_radius = maxf(0.0, float(config.get("hound_follow_up_radius", 180.0)))
+	if brain_mode == "wreckage_titan_boss":
+		weapon_enabled = false
+		lifespan_seconds = 0.0
+		separation_radius = 96.0
+		muzzle_distance = 64.0
+		turn_speed_radians = 4.0
 	reset_state()
 	source_nest = nest if nest != null and is_instance_valid(nest) else null
 	guard_home_position = global_position
@@ -376,6 +464,32 @@ func reset_state() -> void:
 	_last_damage_source_payload.clear()
 	_damage_flash_until_msec = 0
 	_rallied_at_msec = 0
+	_emp_disabled_until_msec = 0
+	_lock_channel_target = null
+	_lock_channel_complete_msec = 0
+	_last_lock_scan_msec = 0
+	_missile_cached_target = null
+	_last_missile_scan_msec = 0
+	_missile_last_fire_seconds = -9999.0
+	_missile_formation_target_position = Vector2.INF
+	_missile_formation_target_cell = Vector2i(-999999, -999999)
+	_missile_next_formation_check_msec = 0
+	_missile_visuals.clear()
+	_boss_mg_a_target = null
+	_boss_mg_b_target = null
+	_boss_laser_target = null
+	_boss_last_mg_a_seconds = -9999.0
+	_boss_last_mg_b_seconds = -9999.0
+	_boss_last_laser_seconds = -9999.0
+	_boss_last_emp_seconds = -9999.0
+	_boss_last_summon_seconds = -9999.0
+	_boss_laser_beam_until_msec = 0
+	_boss_laser_visual_target = null
+	_boss_mg_traces.clear()
+	_boss_cannon_shells.clear()
+	_boss_splash_rings.clear()
+	_boss_emp_shells.clear()
+	_boss_emp_pulses.clear()
 	_clear_navigation_path()
 	_sync_runtime_groups()
 	_configure_team_collision()
@@ -456,6 +570,9 @@ func get_inspector_lines() -> Array[String]:
 	lines.append("Stats: HP %s / Speed %.1f" % [max_hp, speed])
 	lines.append("Combat: armor %s / damage %s" % [String(armor_type), String(damage_type)])
 	lines.append("攻击：%s" % _format_attack_profile())
+	if brain_mode == "wreckage_titan_boss":
+		lines.append("Boss技能CD：EMP %.1fs / 召唤 %.1fs" % [_get_boss_emp_cooldown_remaining(), _get_boss_summon_cooldown_remaining()])
+		lines.append("Boss主武器：热能激光 8/0.10s；双机炮 36/0.85s 溅射")
 	if heat_capacity > 0.0:
 		lines.append("热量：%.1f / %.1f" % [current_heat, heat_capacity])
 		lines.append("热控：每次结算 +%.1f / 每秒散热 %.1f" % [heat_per_shot, heat_cooling_per_second])
@@ -564,6 +681,8 @@ func is_current_enemy_in_fire_range() -> bool:
 	return global_position.distance_to(get_target_position(enemy)) <= fire_range
 
 func _apply_separation_micro_offset(delta: float) -> void:
+	if brain_mode == "cruise_missile":
+		return
 	if delta <= 0.0 or separation_radius <= 0.0 or separation_strength <= 0.0:
 		return
 	_separation_accumulated_delta += delta
@@ -1136,6 +1255,36 @@ func heat_ratio() -> float:
 func has_heat_weapon() -> bool:
 	return heat_capacity > 0.0 and heat_per_shot > 0.0
 
+func apply_emp_disabled(duration_seconds: float) -> void:
+	if duration_seconds <= 0.0:
+		return
+	_emp_disabled_until_msec = maxi(_emp_disabled_until_msec, Time.get_ticks_msec() + roundi(duration_seconds * 1000.0))
+	if movement_component:
+		movement_component.stop(&"emp_disabled")
+	current_action = "EMP disabled"
+	current_fire_state = "EMP %.1fs" % get_emp_disabled_remaining_seconds()
+	record_brain_trigger(&"emp_disabled", "EMP disabled %.1fs" % duration_seconds)
+
+func get_emp_disabled_remaining_seconds() -> float:
+	return maxf(0.0, float(_emp_disabled_until_msec - Time.get_ticks_msec()) / 1000.0)
+
+func _is_emp_disabled() -> bool:
+	return Time.get_ticks_msec() < _emp_disabled_until_msec
+
+func apply_missile_target_lock(locker: Node = null, duration_seconds: float = 10.0) -> void:
+	var lock_until := Time.get_ticks_msec() + roundi(maxf(0.25, duration_seconds) * 1000.0)
+	set_meta(MISSILE_LOCK_META, lock_until)
+	set_meta(MISSILE_LOCK_SOURCE_META, str(locker.name) if locker != null and is_instance_valid(locker) else "")
+	queue_redraw()
+
+func get_missile_target_lock_remaining_seconds() -> float:
+	if not has_meta(MISSILE_LOCK_META):
+		return 0.0
+	return maxf(0.0, float(int(get_meta(MISSILE_LOCK_META)) - Time.get_ticks_msec()) / 1000.0)
+
+func is_missile_locked() -> bool:
+	return get_missile_target_lock_remaining_seconds() > 0.0
+
 func hold_fire_for_heat() -> void:
 	_active_heat_hold = true
 	if movement_component:
@@ -1215,6 +1364,8 @@ func _damage_multiplier_for_profile(source_payload: Dictionary) -> float:
 				multiplier = 0.55
 			&"thermal":
 				multiplier = 1.35
+			&"missile":
+				multiplier = 1.20
 			&"melee":
 				multiplier = 0.80
 	elif armor_type == &"structure_armor":
@@ -1223,6 +1374,18 @@ func _damage_multiplier_for_profile(source_payload: Dictionary) -> float:
 				multiplier = 0.75
 			&"thermal":
 				multiplier = 1.25
+			&"missile":
+				multiplier = 1.35
+	elif armor_type == &"boss_armor":
+		match source_damage_type:
+			&"kinetic":
+				multiplier = 0.45
+			&"thermal":
+				multiplier = 0.85
+			&"missile":
+				multiplier = 1.45
+			&"melee":
+				multiplier = 0.65
 	return multiplier
 
 func _damage_effectiveness_from_multiplier(multiplier: float) -> StringName:
@@ -1396,13 +1559,17 @@ func _update_unit_visuals() -> void:
 				var next_scale := Vector2(visual_size.x / texture_size.x, visual_size.y / texture_size.y)
 				if not unit_sprite.scale.is_equal_approx(next_scale):
 					unit_sprite.scale = next_scale
-		var next_rotation := 0.0 if _uses_fixed_icon_orientation() else _facing_angle
+		var next_rotation := 0.0 if _uses_fixed_icon_orientation() else _facing_angle + _get_icon_rotation_offset()
 		if not is_equal_approx(unit_sprite.rotation, next_rotation):
 			unit_sprite.rotation = next_rotation
 		var next_modulate := Color(1.0, 0.48, 0.38, 1.0) if Time.get_ticks_msec() < _damage_flash_until_msec else Color.WHITE
 		if unit_sprite.modulate != next_modulate:
 			unit_sprite.modulate = next_modulate
 	_update_module_visuals()
+	_update_target_lock_overlay_visuals()
+	if brain_mode == "wreckage_titan_boss":
+		_ensure_boss_turrets()
+		_update_boss_turret_visuals(get_physics_process_delta_time())
 	if muzzle:
 		var next_muzzle_position := Vector2.RIGHT.rotated(_facing_angle) * muzzle_distance
 		if not muzzle.position.is_equal_approx(next_muzzle_position):
@@ -1446,10 +1613,43 @@ func _update_unit_visuals() -> void:
 	if chainsaw_visual_active or _chainsaw_visual_was_active:
 		queue_redraw()
 	_chainsaw_visual_was_active = chainsaw_visual_active
+	if _has_active_projectile_visuals():
+		queue_redraw()
 
 func _update_module_visuals() -> void:
 	if module_sprite:
 		module_sprite.visible = false
+
+func _update_target_lock_overlay_visuals() -> void:
+	if target_lock_overlay_sprite == null:
+		target_lock_overlay_sprite = Sprite2D.new()
+		target_lock_overlay_sprite.name = "TargetLockOverlay"
+		target_lock_overlay_sprite.texture = TARGET_LOCK_OVERLAY_TEXTURE
+		target_lock_overlay_sprite.z_index = 12
+		target_lock_overlay_sprite.visible = false
+		add_child(target_lock_overlay_sprite)
+	var lock_remaining := get_missile_target_lock_remaining_seconds()
+	var should_show := lock_remaining > 0.0 and is_alive()
+	target_lock_overlay_sprite.visible = should_show
+	if not should_show:
+		return
+	var texture := target_lock_overlay_sprite.texture
+	if texture != null:
+		var texture_size := texture.get_size()
+		var size := maxf(34.0, maxf(visual_size.x, visual_size.y) * 0.95)
+		if texture_size.x > 0.0 and texture_size.y > 0.0:
+			target_lock_overlay_sprite.scale = Vector2(size / texture_size.x, size / texture_size.y)
+	target_lock_overlay_sprite.rotation = -float(Time.get_ticks_msec() % 1600) / 1600.0 * TAU
+
+func _has_active_projectile_visuals() -> bool:
+	var now := Time.get_ticks_msec()
+	return now <= _boss_laser_beam_until_msec \
+		or not _missile_visuals.is_empty() \
+		or not _boss_mg_traces.is_empty() \
+		or not _boss_cannon_shells.is_empty() \
+		or not _boss_splash_rings.is_empty() \
+		or not _boss_emp_shells.is_empty() \
+		or not _boss_emp_pulses.is_empty()
 
 func _update_facing(delta: float) -> void:
 	if _should_face_attack_target():
@@ -1458,8 +1658,58 @@ func _update_facing(delta: float) -> void:
 	if movement_component and movement_component.desired_velocity.length() > 0.001:
 		_turn_angle_towards(movement_component.desired_velocity.angle(), delta)
 
+func _ensure_boss_turrets() -> void:
+	if brain_mode != "wreckage_titan_boss":
+		return
+	if _boss_machine_gun_a != null and is_instance_valid(_boss_machine_gun_a):
+		return
+	_boss_machine_gun_a = _make_boss_turret("MachineGunTurretA", BOSS_MACHINE_GUN_TURRET_TEXTURE, Vector2(34, -24), Vector2(36, 36))
+	_boss_machine_gun_b = _make_boss_turret("MachineGunTurretB", BOSS_MACHINE_GUN_TURRET_TEXTURE, Vector2(34, 24), Vector2(36, 36))
+	_boss_laser_turret = _make_boss_turret("LaserTurret", BOSS_LASER_TURRET_TEXTURE, Vector2(-32, 0), Vector2(48, 48))
+	_boss_spell_core = _make_boss_turret("SpellCore", BOSS_SPELL_CORE_TEXTURE, Vector2(0, 0), Vector2(50, 50))
+
+func _make_boss_turret(node_name: String, texture: Texture2D, local_position: Vector2, target_size: Vector2) -> Sprite2D:
+	var sprite := Sprite2D.new()
+	sprite.name = node_name
+	sprite.texture = texture
+	sprite.position = local_position
+	sprite.z_index = 4
+	if texture != null:
+		var texture_size := texture.get_size()
+		if texture_size.x > 0.0 and texture_size.y > 0.0:
+			sprite.scale = Vector2(target_size.x / texture_size.x, target_size.y / texture_size.y)
+	add_child(sprite)
+	return sprite
+
+func _update_boss_turret_visuals(delta: float) -> void:
+	_rotate_turret_towards(_boss_machine_gun_a, _boss_mg_a_target, delta)
+	_rotate_turret_towards(_boss_machine_gun_b, _boss_mg_b_target, delta)
+	_rotate_turret_towards(_boss_laser_turret, _boss_laser_target, delta)
+	if _boss_spell_core != null and is_instance_valid(_boss_spell_core):
+		_boss_spell_core.rotation += delta * 0.9
+
+func _rotate_turret_towards(sprite: Sprite2D, target: Node2D, delta: float) -> void:
+	if sprite == null or not is_instance_valid(sprite):
+		return
+	if not _is_valid_enemy_target(target):
+		return
+	var direction := get_target_position(target) - sprite.global_position
+	if direction.length() <= 0.001:
+		return
+	sprite.global_rotation = rotate_toward(sprite.global_rotation, direction.angle(), maxf(0.0, delta) * 8.0)
+
+func _hide_boss_turrets() -> void:
+	for sprite in [_boss_machine_gun_a, _boss_machine_gun_b, _boss_laser_turret, _boss_spell_core]:
+		if sprite != null and is_instance_valid(sprite):
+			sprite.visible = false
+
 func _uses_fixed_icon_orientation() -> bool:
-	return brain_mode == "logistics" or tags.has("cargo") or tags.has("logistics")
+	return brain_mode == "logistics" or brain_mode == "cruise_missile" or brain_mode == "wreckage_titan_boss" or tags.has("cargo") or tags.has("logistics")
+
+func _get_icon_rotation_offset() -> float:
+	if brain_mode == "target_locker":
+		return PI * 0.5
+	return 0.0
 
 func _uses_chainsaw_weapon() -> bool:
 	return String(weapon_audio_id).contains("chainsaw") or String(blueprint_id).contains("chainsaw")
@@ -1492,6 +1742,681 @@ func _should_face_attack_target() -> bool:
 	if current_distance_to_target < 0.0:
 		return false
 	return current_distance_to_target <= fire_range
+
+func _evaluate_special_brain_rules() -> bool:
+	if ai_controller and ai_controller.has_method("evaluate_logic"):
+		return bool(ai_controller.call("evaluate_logic"))
+	return false
+
+func _clear_invalid_lock_channel() -> void:
+	if _lock_channel_target != null and not _is_valid_enemy_target(_lock_channel_target):
+		_lock_channel_target = null
+		_lock_channel_complete_msec = 0
+		queue_redraw()
+
+func _tick_target_locker(delta: float) -> void:
+	var enemy := _get_lock_channel_target()
+	if enemy == null:
+		enemy = _select_target_for_locking()
+	current_target = enemy
+	if enemy == null:
+		current_action = "扫描锁定目标"
+		current_fire_state = "无可锁定目标"
+		current_distance_to_target = -1.0
+		if movement_component:
+			movement_component.stop(&"idle")
+		return
+	var target_position := get_target_position(enemy)
+	current_distance_to_target = global_position.distance_to(target_position)
+	if current_distance_to_target > fire_range:
+		_lock_channel_target = null
+		_lock_channel_complete_msec = 0
+		move_towards(target_position, enemy)
+		current_action = "接近锁定距离"
+		current_fire_state = "目标超出锁定距离"
+		return
+	if movement_component:
+		movement_component.stop(&"target_lock")
+	_turn_towards(target_position, delta)
+	var now := Time.get_ticks_msec()
+	if _lock_channel_target != enemy:
+		_lock_channel_target = enemy
+		_lock_channel_complete_msec = now + roundi(target_lock_seconds * 1000.0)
+	current_action = "目标锁定"
+	var remaining := maxf(0.0, float(_lock_channel_complete_msec - now) / 1000.0)
+	current_fire_state = "锁定 %.1fs" % remaining
+	queue_redraw()
+	if now >= _lock_channel_complete_msec:
+		_apply_target_lock_to(enemy, 12.0)
+		_lock_channel_complete_msec = now + roundi(target_lock_seconds * 1000.0)
+		record_brain_trigger(&"target_locked", "目标已锁定：%s" % enemy.name)
+
+func _get_lock_channel_target() -> Node2D:
+	if _is_valid_enemy_target(_lock_channel_target):
+		return _lock_channel_target
+	if _lock_channel_target != null:
+		queue_redraw()
+	_lock_channel_target = null
+	_lock_channel_complete_msec = 0
+	return null
+
+func _select_target_for_locking() -> Node2D:
+	var now := Time.get_ticks_msec()
+	if now - _last_lock_scan_msec < 180 and _is_valid_enemy_target(current_target):
+		return current_target
+	_last_lock_scan_msec = now
+	var best: Node2D = null
+	var best_score := -INF
+	for candidate in _get_all_valid_enemy_targets():
+		var score := _score_lock_target(candidate)
+		if score > best_score:
+			best = candidate
+			best_score = score
+	return best
+
+func _score_lock_target(candidate: Node2D) -> float:
+	if candidate == null:
+		return -INF
+	var score := 0.0
+	var remaining := _get_target_lock_remaining_seconds(candidate)
+	score -= remaining * 12.0
+	if remaining >= 8.0:
+		score -= 100.0
+	var distance := global_position.distance_to(get_target_position(candidate))
+	score += maxf(0.0, 520.0 - distance) * 0.12
+	score -= distance * 0.04
+	if _target_has_tag(candidate, &"boss"):
+		score += 90.0
+	if _target_has_tag(candidate, &"high_value"):
+		score += 55.0
+	if _target_has_tag(candidate, &"jammer"):
+		score += 45.0
+	if _target_has_tag(candidate, &"backline"):
+		score += 20.0
+	return score
+
+func _apply_target_lock_to(target: Node2D, duration_seconds: float) -> void:
+	if target == null or not is_instance_valid(target):
+		return
+	if target.has_method("apply_missile_target_lock"):
+		target.call("apply_missile_target_lock", self, duration_seconds)
+	else:
+		target.set_meta(MISSILE_LOCK_META, Time.get_ticks_msec() + roundi(duration_seconds * 1000.0))
+		target.set_meta(MISSILE_LOCK_SOURCE_META, str(name))
+
+func _tick_cruise_missile(delta: float) -> void:
+	var formation_target := _get_cruise_missile_formation_target()
+	var moving_to_formation := false
+	if formation_target != Vector2.INF and global_position.distance_to(formation_target) > 14.0:
+		moving_to_formation = move_towards(formation_target, null, 0.72)
+		if moving_to_formation:
+			current_action = "导弹阵地展开"
+	var enemy := _select_locked_missile_target()
+	current_target = enemy
+	if enemy == null:
+		if not moving_to_formation:
+			current_action = "等待锁定目标"
+		current_fire_state = "无锁定目标"
+		current_distance_to_target = -1.0
+		if movement_component and not moving_to_formation:
+			movement_component.stop(&"missile_wait")
+		return
+	if movement_component and not moving_to_formation:
+		movement_component.stop(&"missile_fire")
+	var target_position := get_target_position(enemy)
+	_turn_towards(target_position, delta)
+	current_distance_to_target = global_position.distance_to(target_position)
+	if not moving_to_formation:
+		current_action = "远程导弹打击"
+	var now_seconds := Time.get_ticks_msec() / 1000.0
+	var cooldown := maxf(1.0, fire_cooldown_seconds)
+	if now_seconds - _missile_last_fire_seconds < cooldown:
+		current_fire_state = "导弹装填 %.1fs" % maxf(0.0, cooldown - (now_seconds - _missile_last_fire_seconds))
+		return
+	_missile_last_fire_seconds = now_seconds
+	_fire_cruise_missile(enemy)
+
+func _select_locked_missile_target() -> Node2D:
+	var now := Time.get_ticks_msec()
+	if now - _last_missile_scan_msec < 250 and _is_valid_enemy_target(_missile_cached_target) and _is_target_missile_locked(_missile_cached_target):
+		return _missile_cached_target
+	_last_missile_scan_msec = now
+	var best: Node2D = null
+	var best_score := -INF
+	for candidate in _get_all_valid_enemy_targets():
+		if not _is_target_missile_locked(candidate):
+			continue
+		var score := _score_missile_target(candidate)
+		if score > best_score:
+			best = candidate
+			best_score = score
+	_missile_cached_target = best
+	return best
+
+func _get_cruise_missile_formation_target() -> Vector2:
+	var now := Time.get_ticks_msec()
+	if now < _missile_next_formation_check_msec:
+		return _missile_formation_target_position
+	_missile_next_formation_check_msec = now + MISSILE_FORMATION_CHECK_MSEC + int(get_instance_id() % 173)
+	_missile_formation_target_position = Vector2.INF
+	_missile_formation_target_cell = Vector2i(-999999, -999999)
+	var path_provider := _get_path_provider()
+	if path_provider == null:
+		return Vector2.INF
+	var self_cell := _get_navigation_cell(path_provider, global_position)
+	if self_cell.x <= -999999:
+		return Vector2.INF
+	var cluster := _collect_nearby_cruise_missiles(path_provider, self_cell)
+	if cluster.size() <= 1:
+		return Vector2.INF
+	cluster.sort_custom(func(a: RobotUnit, b: RobotUnit) -> bool:
+		return int(a.get_instance_id()) < int(b.get_instance_id())
+	)
+	var index := cluster.find(self)
+	if index < 0:
+		return Vector2.INF
+	var anchor := _get_missile_cluster_anchor_cell(path_provider, cluster)
+	var target_cell := _find_available_missile_formation_cell(path_provider, anchor, index, cluster)
+	if target_cell == self_cell and global_position.distance_to(_missile_cell_to_world(target_cell)) <= 14.0:
+		return Vector2.INF
+	_missile_formation_target_cell = target_cell
+	_missile_formation_target_position = _missile_cell_to_world(target_cell)
+	return _missile_formation_target_position
+
+func _collect_nearby_cruise_missiles(path_provider: Node, self_cell: Vector2i) -> Array[RobotUnit]:
+	var result: Array[RobotUnit] = []
+	if get_tree() == null:
+		return result
+	for unit in get_tree().get_nodes_in_group("missile"):
+		if unit == null or not is_instance_valid(unit) or not (unit is RobotUnit):
+			continue
+		var other := unit as RobotUnit
+		if other.team != team or not other.is_alive() or other.brain_mode != "cruise_missile":
+			continue
+		var cell := _get_navigation_cell(path_provider, other.global_position)
+		var same_cell := cell == self_cell
+		var close_enough := global_position.distance_to(other.global_position) <= MISSILE_FORMATION_CELL_SIZE * 0.72
+		if same_cell or close_enough:
+			result.append(other)
+	return result
+
+func _get_missile_cluster_anchor_cell(path_provider: Node, cluster: Array[RobotUnit]) -> Vector2i:
+	var min_cell := Vector2i(999999, 999999)
+	for unit in cluster:
+		var cell := _get_navigation_cell(path_provider, unit.global_position)
+		if cell.x < min_cell.x or (cell.x == min_cell.x and cell.y < min_cell.y):
+			min_cell = cell
+	return min_cell
+
+func _find_available_missile_formation_cell(path_provider: Node, anchor: Vector2i, preferred_index: int, cluster: Array[RobotUnit]) -> Vector2i:
+	var offsets := _get_square_formation_offsets(maxi(4, cluster.size() + 4))
+	var occupied_by_other_missiles := {}
+	for unit in cluster:
+		if unit == self:
+			continue
+		var existing_target: Vector2i = unit._missile_formation_target_cell
+		if existing_target.x > -999999:
+			occupied_by_other_missiles[existing_target] = true
+	for pass_index in range(2):
+		for offset_index in range(offsets.size()):
+			var index := (preferred_index + offset_index) % offsets.size()
+			var candidate := anchor + offsets[index]
+			if occupied_by_other_missiles.has(candidate):
+				continue
+			if _is_missile_formation_cell_usable(path_provider, candidate):
+				return candidate
+	return anchor
+
+func _get_square_formation_offsets(min_count: int) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	var side := ceili(sqrt(float(maxi(1, min_count))))
+	var half := floori(float(side) / 2.0)
+	for y in range(side):
+		for x in range(side):
+			result.append(Vector2i(x - half, y - half))
+	result.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		var da: int = absi(a.x) + absi(a.y)
+		var db: int = absi(b.x) + absi(b.y)
+		if da == db:
+			if a.y == b.y:
+				return a.x < b.x
+			return a.y < b.y
+		return da < db
+	)
+	return result
+
+func _is_missile_formation_cell_usable(path_provider: Node, cell: Vector2i) -> bool:
+	var world_position := _missile_cell_to_world(cell)
+	if path_provider != null and path_provider.has_method("is_navigation_world_position_walkable"):
+		return bool(path_provider.call("is_navigation_world_position_walkable", world_position))
+	return true
+
+func _missile_cell_to_world(cell: Vector2i) -> Vector2:
+	return Vector2(
+		(float(cell.x) + 0.5) * MISSILE_FORMATION_CELL_SIZE,
+		(float(cell.y) + 0.5) * MISSILE_FORMATION_CELL_SIZE
+	)
+
+func _score_missile_target(candidate: Node2D) -> float:
+	var score := _get_target_lock_remaining_seconds(candidate) * 2.0
+	if _target_has_tag(candidate, &"boss"):
+		score += 120.0
+	if _target_has_tag(candidate, &"high_value"):
+		score += 70.0
+	if _target_has_tag(candidate, &"backline"):
+		score += 25.0
+	score += maxf(0.0, 1000.0 - global_position.distance_to(get_target_position(candidate))) * 0.01
+	return score
+
+func _fire_cruise_missile(target: Node2D) -> void:
+	var payload := _make_weapon_source_payload()
+	payload["weapon_id"] = "cruise_missile_launcher"
+	payload["damage_type"] = "missile"
+	var center := get_target_position(target)
+	var direct_damage := maxi(1, bullet_damage)
+	var now := Time.get_ticks_msec()
+	_missile_visuals.append({
+		"start": global_position,
+		"end": center,
+		"target": target,
+		"payload": payload,
+		"direct_damage": direct_damage,
+		"splash_radius": 92.0,
+		"start_msec": now,
+		"end_msec": now + 720,
+		"impacted": false,
+		"impact_msec": 0,
+	})
+	if _missile_visuals.size() > 8:
+		_missile_visuals.pop_front()
+	current_fire_state = "导弹发射"
+	record_brain_trigger(&"cruise_missile_fire", "巡航导弹发射：%s" % target.name)
+	queue_redraw()
+
+func _tick_pending_cruise_missile_impacts() -> void:
+	if _missile_visuals.is_empty():
+		return
+	var now := Time.get_ticks_msec()
+	for index in range(_missile_visuals.size() - 1, -1, -1):
+		var visual: Dictionary = _missile_visuals[index]
+		if bool(visual.get("impacted", false)):
+			continue
+		if now < int(visual.get("end_msec", 0)):
+			continue
+		_apply_cruise_missile_impact(visual)
+		visual["impacted"] = true
+		visual["impact_msec"] = now
+		_missile_visuals[index] = visual
+		current_fire_state = "导弹命中"
+		queue_redraw()
+
+func _apply_cruise_missile_impact(visual: Dictionary) -> void:
+	var center: Vector2 = visual.get("end", global_position)
+	var target: Node2D = visual.get("target", null)
+	var payload: Dictionary = visual.get("payload", _make_weapon_source_payload())
+	var direct_damage := maxi(1, int(visual.get("direct_damage", bullet_damage)))
+	var splash_radius := maxf(1.0, float(visual.get("splash_radius", 92.0)))
+	var direct_applied := false
+	if _is_valid_enemy_target(target):
+		var target_distance := center.distance_to(get_target_position(target))
+		if target_distance <= splash_radius:
+			if target.has_method("take_damage_from"):
+				target.call("take_damage_from", direct_damage, payload)
+			elif target.has_method("take_damage"):
+				target.call("take_damage", direct_damage)
+			direct_applied = true
+	for enemy in _get_all_valid_enemy_targets():
+		if direct_applied and enemy == target:
+			continue
+		var distance := center.distance_to(get_target_position(enemy))
+		if distance > splash_radius:
+			continue
+		var splash_damage := maxi(1, roundi(float(direct_damage) * (1.0 - distance / splash_radius) * 0.55))
+		if enemy.has_method("take_damage_from"):
+			enemy.call("take_damage_from", splash_damage, payload)
+		elif enemy.has_method("take_damage"):
+			enemy.call("take_damage", splash_damage)
+	record_brain_trigger(&"cruise_missile_impact", "巡航导弹命中")
+
+func _tick_wreckage_titan_boss(delta: float) -> void:
+	_ensure_boss_turrets()
+	if movement_component:
+		if guard_home_position != Vector2.ZERO and global_position.distance_to(guard_home_position) > 96.0:
+			move_towards(guard_home_position, null, 0.35)
+			current_action = "回到干扰核心"
+		else:
+			movement_component.stop(&"boss_hold")
+			current_action = "压制战场"
+	var targets := _get_all_valid_enemy_targets()
+	if targets.is_empty():
+		current_target = null
+		current_distance_to_target = -1.0
+		current_fire_state = "等待入侵者"
+		_update_boss_turret_visuals(delta)
+		return
+	_boss_mg_a_target = _select_boss_target(targets, global_position + Vector2(34, -24), 290.0, false)
+	_boss_mg_b_target = _select_boss_target(targets, global_position + Vector2(34, 24), 290.0, false)
+	_boss_laser_target = _select_boss_target(targets, global_position + Vector2(-36, 0), 380.0, true)
+	current_target = _boss_laser_target if _boss_laser_target != null else _boss_mg_a_target
+	current_distance_to_target = global_position.distance_to(get_target_position(current_target)) if current_target != null else -1.0
+	var now_seconds := Time.get_ticks_msec() / 1000.0
+	_boss_try_fire_machine_gun(_boss_mg_a_target, "mg_a", now_seconds, global_position + Vector2(34, -24))
+	_boss_try_fire_machine_gun(_boss_mg_b_target, "mg_b", now_seconds, global_position + Vector2(34, 24))
+	_boss_try_fire_laser(_boss_laser_target, now_seconds, global_position + Vector2(-36, 0))
+	_boss_try_launch_emp_shell(targets, now_seconds)
+	_boss_try_summon_guards(now_seconds)
+	_update_boss_turret_visuals(delta)
+
+func _select_boss_target(targets: Array[Node2D], origin: Vector2, range: float, prefer_heavy: bool) -> Node2D:
+	var best: Node2D = null
+	var best_score := -INF
+	for target in targets:
+		var distance := origin.distance_to(get_target_position(target))
+		if distance > range:
+			continue
+		var score := maxf(0.0, range - distance)
+		if prefer_heavy and (target.is_in_group("heavy_armor") or target.is_in_group("missile")):
+			score += 120.0
+		if target.is_in_group("missile"):
+			score += 80.0
+		if target.is_in_group("locker"):
+			score += 60.0
+		if target.has_method("hp_ratio"):
+			score += (1.0 - float(target.call("hp_ratio"))) * 30.0
+		if score > best_score:
+			best = target
+			best_score = score
+	return best
+
+func _boss_try_fire_machine_gun(target: Node2D, slot: String, now_seconds: float, origin: Vector2) -> void:
+	if not _is_valid_enemy_target(target):
+		return
+	var last_fire := _boss_last_mg_a_seconds if slot == "mg_a" else _boss_last_mg_b_seconds
+	var cooldown := 0.85
+	if now_seconds - last_fire < cooldown:
+		return
+	if slot == "mg_a":
+		_boss_last_mg_a_seconds = now_seconds
+	else:
+		_boss_last_mg_b_seconds = now_seconds
+	_boss_fire_cannon_shell(target, origin)
+	current_fire_state = "机炮轰击"
+
+func _boss_fire_cannon_shell(target: Node2D, origin: Vector2) -> void:
+	if not _is_valid_enemy_target(target):
+		return
+	var impact := get_target_position(target)
+	var radius := 72.0
+	var payload := _make_weapon_source_payload()
+	payload["weapon_id"] = "boss_cannon"
+	payload["damage_type"] = "enemy_ranged"
+	var now := Time.get_ticks_msec()
+	_boss_cannon_shells.append({
+		"start": origin,
+		"end": impact,
+		"target": target,
+		"payload": payload,
+		"direct_damage": 36,
+		"splash_radius": radius,
+		"start_msec": now,
+		"end_msec": now + 360,
+		"impacted": false,
+	})
+	if _boss_cannon_shells.size() > 10:
+		_boss_cannon_shells.pop_front()
+	queue_redraw()
+
+func _tick_pending_boss_projectile_impacts() -> void:
+	if _boss_cannon_shells.is_empty() and _boss_emp_shells.is_empty():
+		return
+	var now := Time.get_ticks_msec()
+	for index in range(_boss_cannon_shells.size() - 1, -1, -1):
+		var shell: Dictionary = _boss_cannon_shells[index]
+		if bool(shell.get("impacted", false)):
+			continue
+		if now < int(shell.get("end_msec", 0)):
+			continue
+		_apply_boss_cannon_impact(shell)
+		shell["impacted"] = true
+		shell["impact_msec"] = now
+		_boss_cannon_shells[index] = shell
+		queue_redraw()
+	for index in range(_boss_emp_shells.size() - 1, -1, -1):
+		var shell: Dictionary = _boss_emp_shells[index]
+		if bool(shell.get("impacted", false)):
+			continue
+		if now < int(shell.get("end_msec", 0)):
+			continue
+		_apply_boss_emp_impact(shell)
+		shell["impacted"] = true
+		shell["impact_msec"] = now
+		_boss_emp_shells[index] = shell
+		queue_redraw()
+
+func _apply_boss_cannon_impact(shell: Dictionary) -> void:
+	var impact: Vector2 = shell.get("end", global_position)
+	var target: Node2D = shell.get("target", null)
+	var radius := maxf(1.0, float(shell.get("splash_radius", 72.0)))
+	var direct_damage := maxi(1, int(shell.get("direct_damage", 36)))
+	var payload: Dictionary = shell.get("payload", _make_weapon_source_payload())
+	for enemy in _get_all_valid_enemy_targets():
+		var distance := impact.distance_to(get_target_position(enemy))
+		if distance > radius:
+			continue
+		var damage := direct_damage
+		if enemy != target:
+			damage = maxi(8, roundi(float(direct_damage) * (1.0 - distance / radius) * 0.70))
+		if enemy.has_method("take_damage_from"):
+			enemy.call("take_damage_from", damage, payload)
+		elif enemy.has_method("take_damage"):
+			enemy.call("take_damage", damage)
+	var now := Time.get_ticks_msec()
+	_boss_splash_rings.append({
+		"center": impact,
+		"radius": radius,
+		"start_msec": now,
+		"end_msec": now + 420,
+	})
+	if _boss_splash_rings.size() > 10:
+		_boss_splash_rings.pop_front()
+	record_brain_trigger(&"boss_cannon_impact", "Boss cannon impact")
+
+func _boss_try_fire_laser(target: Node2D, now_seconds: float, origin: Vector2) -> void:
+	if not _is_valid_enemy_target(target):
+		return
+	if now_seconds - _boss_last_laser_seconds < 0.10:
+		return
+	_boss_last_laser_seconds = now_seconds
+	_boss_deal_damage(target, 8, &"thermal", "boss_laser")
+	_boss_laser_beam_start = origin
+	_boss_laser_beam_end = get_target_position(target)
+	_boss_laser_visual_target = target
+	_boss_laser_beam_until_msec = Time.get_ticks_msec() + 150
+	current_fire_state = "后部激光炮"
+	queue_redraw()
+
+func _boss_try_launch_emp_shell(targets: Array[Node2D], now_seconds: float) -> void:
+	if now_seconds - _boss_last_emp_seconds < 14.0:
+		return
+	var center_target := _select_boss_target(targets, global_position, 360.0, true)
+	if center_target == null:
+		return
+	_boss_last_emp_seconds = now_seconds
+	var center := get_target_position(center_target)
+	var origin := global_position
+	if _boss_spell_core != null and is_instance_valid(_boss_spell_core):
+		origin = _boss_spell_core.global_position
+	var payload := _make_weapon_source_payload()
+	payload["weapon_id"] = "boss_emp"
+	payload["damage_type"] = "emp"
+	var now := Time.get_ticks_msec()
+	_boss_emp_shells.append({
+		"start": origin,
+		"end": center,
+		"target": center_target,
+		"payload": payload,
+		"damage": 70,
+		"radius": 150.0,
+		"emp_duration": 3.25,
+		"start_msec": now,
+		"end_msec": now + 620,
+		"impacted": false,
+	})
+	if _boss_emp_shells.size() > 6:
+		_boss_emp_shells.pop_front()
+	current_fire_state = "EMP 炮弹发射"
+	record_brain_trigger(&"boss_emp_launch", "Boss EMP launch")
+	queue_redraw()
+
+func _apply_boss_emp_impact(shell: Dictionary) -> void:
+	var center: Vector2 = shell.get("end", global_position)
+	var radius := maxf(1.0, float(shell.get("radius", 150.0)))
+	var damage := maxi(0, int(shell.get("damage", 70)))
+	var duration := maxf(0.0, float(shell.get("emp_duration", 3.25)))
+	var payload: Dictionary = shell.get("payload", _make_weapon_source_payload())
+	var affected := 0
+	for target in _get_all_valid_enemy_targets():
+		if center.distance_to(get_target_position(target)) > radius:
+			continue
+		if target.has_method("apply_emp_disabled"):
+			target.call("apply_emp_disabled", duration)
+		if damage > 0:
+			if target.has_method("take_damage_from"):
+				target.call("take_damage_from", damage, payload)
+			elif target.has_method("take_damage"):
+				target.call("take_damage", damage)
+		affected += 1
+	var now := Time.get_ticks_msec()
+	_boss_emp_pulses.append({
+		"center": center,
+		"radius": radius,
+		"start_msec": now,
+		"end_msec": now + 720,
+	})
+	if _boss_emp_pulses.size() > 6:
+		_boss_emp_pulses.pop_front()
+	current_fire_state = "EMP 冲击"
+	record_brain_trigger(&"boss_emp", "Boss EMP hit %d targets" % affected)
+
+func _boss_try_cast_emp(targets: Array[Node2D], now_seconds: float) -> void:
+	if now_seconds - _boss_last_emp_seconds < 14.0:
+		return
+	var center_target := _select_boss_target(targets, global_position, 360.0, true)
+	if center_target == null:
+		return
+	_boss_last_emp_seconds = now_seconds
+	var center := get_target_position(center_target)
+	var affected := 0
+	for target in targets:
+		if center.distance_to(get_target_position(target)) > 150.0:
+			continue
+		if target.has_method("apply_emp_disabled"):
+			target.call("apply_emp_disabled", 3.25)
+		_boss_deal_damage(target, 70, &"emp", "boss_emp")
+		affected += 1
+	record_brain_trigger(&"boss_emp", "Boss EMP 命中 %d 个目标" % affected)
+
+func _boss_try_summon_guards(now_seconds: float) -> void:
+	if now_seconds - _boss_last_summon_seconds < 18.0:
+		return
+	var current_guards := _count_nearby_boss_guards()
+	if current_guards >= 4:
+		return
+	_boss_last_summon_seconds = now_seconds
+	var offsets := [Vector2(-64, -64), Vector2(-64, 64), Vector2(64, -64), Vector2(64, 64)]
+	var spawned := 0
+	for offset in offsets:
+		if current_guards + spawned >= 4:
+			break
+		_spawn_boss_guard(global_position + offset)
+		spawned += 1
+	record_brain_trigger(&"boss_summon", "Boss 召唤护卫 x%d" % spawned)
+
+func _get_boss_emp_cooldown_remaining() -> float:
+	var elapsed := Time.get_ticks_msec() / 1000.0 - _boss_last_emp_seconds
+	return maxf(0.0, 14.0 - elapsed)
+
+func _get_boss_summon_cooldown_remaining() -> float:
+	var elapsed := Time.get_ticks_msec() / 1000.0 - _boss_last_summon_seconds
+	return maxf(0.0, 18.0 - elapsed)
+
+func _spawn_boss_guard(world_position: Vector2) -> void:
+	var parent := get_parent()
+	var guard_scene := load(BOSS_GUARD_DRONE_SCENE_PATH) as PackedScene
+	if guard_scene == null:
+		return
+	var guard := ObjectPool.get_instance(guard_scene, parent if parent else self, "boss_guard_drone") as RobotUnit
+	if guard == null:
+		return
+	guard.name = "boss_guard_drone_%s" % Time.get_ticks_msec()
+	guard.global_position = world_position
+	var config := {
+		"display_name": "Boss 护卫无人机",
+		"id": "boss_guard_drone",
+		"pool_name": "boss_guard_drone",
+		"icon_path": "res://Resources/art/enemies/boss_guard_drone.svg",
+		"max_hp": 150,
+		"speed": 128.0,
+		"tags": ["frontline", "summoned"],
+		"visual_size": [38, 38],
+		"armor_type": "armored",
+		"damage_type": "melee",
+		"melee_damage": 18,
+		"melee_range": 34.0,
+		"melee_cooldown_seconds": 1.05,
+		"guard_aggro_radius": 420.0,
+		"hound_follow_up_radius": 260.0,
+	}
+	guard.call("setup_scavenger_hound", config, null)
+	guard.set("guard_home_position", world_position)
+
+func _count_nearby_boss_guards() -> int:
+	var count := 0
+	if get_tree() == null:
+		return count
+	for unit in get_tree().get_nodes_in_group("summoned"):
+		if unit == null or not is_instance_valid(unit) or not (unit is Node2D):
+			continue
+		if (unit as Node2D).global_position.distance_to(global_position) <= 520.0:
+			count += 1
+	return count
+
+func _boss_deal_damage(target: Node2D, amount: int, next_damage_type: StringName, weapon_id: String) -> void:
+	var payload := _make_weapon_source_payload()
+	payload["weapon_id"] = weapon_id
+	payload["damage_type"] = String(next_damage_type)
+	payload["team"] = team
+	if target.has_method("take_damage_from"):
+		target.call("take_damage_from", amount, payload)
+	elif target.has_method("take_damage"):
+		target.call("take_damage", amount)
+
+func _get_all_valid_enemy_targets() -> Array[Node2D]:
+	var result: Array[Node2D] = []
+	if get_tree() == null:
+		return result
+	for candidate in get_tree().get_nodes_in_group("combat_target"):
+		if candidate == self or candidate == null or not is_instance_valid(candidate) or not (candidate is Node2D):
+			continue
+		var target := candidate as Node2D
+		if _is_valid_enemy_target(target):
+			result.append(target)
+	return result
+
+func _is_target_missile_locked(target: Node2D) -> bool:
+	return _get_target_lock_remaining_seconds(target) > 0.0
+
+func _get_target_lock_remaining_seconds(target: Node2D) -> float:
+	if target == null or not is_instance_valid(target):
+		return 0.0
+	if target.has_method("get_missile_target_lock_remaining_seconds"):
+		return float(target.call("get_missile_target_lock_remaining_seconds"))
+	if not target.has_meta(MISSILE_LOCK_META):
+		return 0.0
+	return maxf(0.0, float(int(target.get_meta(MISSILE_LOCK_META)) - Time.get_ticks_msec()) / 1000.0)
+
+func _target_has_tag(target: Node2D, tag: StringName) -> bool:
+	return target != null and is_instance_valid(target) and target.is_in_group(String(tag))
 
 func _tick_melee_hound() -> void:
 	var enemy := get_current_enemy()
@@ -1592,6 +2517,9 @@ func _play_death_fade_and_return() -> void:
 		action_label.visible = false
 	if action_icon:
 		action_icon.visible = false
+	if target_lock_overlay_sprite:
+		target_lock_overlay_sprite.visible = false
+	_hide_boss_turrets()
 	if unit_sprite == null:
 		ObjectPool.return_instance(self, pool_name)
 		return
@@ -1626,8 +2554,168 @@ func _draw() -> void:
 		var end_angle := _facing_angle + 1.15
 		draw_arc(_chainsaw_hit_center, radius, start_angle, end_angle, 28, Color(1.0, 0.76, 0.18, 0.9), 3.0)
 		draw_arc(_chainsaw_hit_center, radius * 0.62, start_angle + 0.18, end_angle - 0.18, 22, Color(0.62, 0.95, 1.0, 0.55), 2.0)
+	_draw_target_lock_channel_visual()
+	_draw_missile_visuals()
+	_draw_boss_machine_gun_traces()
+	_draw_boss_cannon_visuals()
+	_draw_boss_emp_visuals()
+	_draw_boss_laser_visual()
 	if _selected:
 		draw_arc(Vector2.ZERO, 28.0, 0.0, TAU, 64, Color(1.0, 0.86, 0.12, 0.95), 2.5)
+
+func _draw_target_lock_channel_visual() -> void:
+	if brain_mode != "target_locker":
+		return
+	if not _is_valid_enemy_target(_lock_channel_target):
+		return
+	if _lock_channel_complete_msec <= 0 or target_lock_seconds <= 0.0:
+		return
+	var now := Time.get_ticks_msec()
+	var total_msec := maxf(1.0, target_lock_seconds * 1000.0)
+	var remaining_msec := maxf(0.0, float(_lock_channel_complete_msec - now))
+	var progress := clampf(1.0 - remaining_msec / total_msec, 0.0, 1.0)
+	var start := Vector2.RIGHT.rotated(_facing_angle) * maxf(18.0, visual_size.x * 0.42)
+	var end := to_local(get_target_position(_lock_channel_target))
+	var width := lerpf(1.0, 4.0, progress)
+	var pulse := 0.65 + 0.35 * sin(float(now) * 0.018)
+	draw_line(start, end, Color(1.0, 0.08, 0.04, 0.32 + 0.36 * progress), width + 2.0)
+	draw_line(start, end, Color(1.0, 0.18, 0.12, 0.78 * pulse), width)
+	draw_circle(end, lerpf(4.0, 9.0, progress), Color(1.0, 0.10, 0.05, 0.16 + 0.18 * progress))
+
+func _draw_missile_visuals() -> void:
+	var now := Time.get_ticks_msec()
+	for index in range(_missile_visuals.size() - 1, -1, -1):
+		var visual: Dictionary = _missile_visuals[index]
+		var end_msec := int(visual.get("end_msec", 0))
+		if bool(visual.get("impacted", false)):
+			var impact_msec := int(visual.get("impact_msec", end_msec))
+			if now > impact_msec + 240:
+				_missile_visuals.remove_at(index)
+				continue
+			var impact_t := clampf(float(now - impact_msec) / 240.0, 0.0, 1.0)
+			var center: Vector2 = visual.get("end", global_position)
+			var radius := float(visual.get("splash_radius", 92.0))
+			var alpha := 1.0 - impact_t
+			draw_circle(to_local(center), radius * (0.16 + 0.34 * impact_t), Color(1.0, 0.72, 0.20, 0.16 * alpha))
+			draw_arc(to_local(center), radius * (0.18 + 0.32 * impact_t), 0.0, TAU, 40, Color(1.0, 0.86, 0.24, 0.82 * alpha), 3.0)
+			continue
+		if now > end_msec:
+			continue
+		var start_msec := int(visual.get("start_msec", now))
+		var duration := maxf(1.0, float(end_msec - start_msec))
+		var t := clampf(float(now - start_msec) / duration, 0.0, 1.0)
+		var start: Vector2 = visual.get("start", global_position)
+		var end: Vector2 = visual.get("end", global_position)
+		var position := start.lerp(end, t)
+		var direction := (end - start).normalized()
+		if direction.length() <= 0.001:
+			direction = Vector2.RIGHT
+		var local_position := to_local(position)
+		var local_tail := to_local(position - direction * 34.0)
+		draw_line(local_tail, local_position, Color(1.0, 0.70, 0.18, 0.82), 5.0)
+		draw_circle(local_position, 5.5, Color(1.0, 0.92, 0.36, 0.95))
+
+func _draw_boss_machine_gun_traces() -> void:
+	var now := Time.get_ticks_msec()
+	for index in range(_boss_mg_traces.size() - 1, -1, -1):
+		var trace: Dictionary = _boss_mg_traces[index]
+		if now > int(trace.get("end_msec", 0)):
+			_boss_mg_traces.remove_at(index)
+			continue
+		draw_line(to_local(trace.get("start", global_position)), to_local(trace.get("end", global_position)), Color(1.0, 0.42, 0.16, 0.92), 3.0)
+
+func _draw_boss_cannon_visuals() -> void:
+	var now := Time.get_ticks_msec()
+	for index in range(_boss_cannon_shells.size() - 1, -1, -1):
+		var shell: Dictionary = _boss_cannon_shells[index]
+		var end_msec := int(shell.get("end_msec", 0))
+		if now > end_msec:
+			if bool(shell.get("impacted", false)):
+				_boss_cannon_shells.remove_at(index)
+			continue
+		var start_msec := int(shell.get("start_msec", now))
+		var duration := maxf(1.0, float(end_msec - start_msec))
+		var t := clampf(float(now - start_msec) / duration, 0.0, 1.0)
+		var start: Vector2 = shell.get("start", global_position)
+		var end: Vector2 = shell.get("end", global_position)
+		var position := start.lerp(end, t)
+		var direction := (end - start).normalized()
+		if direction.length() <= 0.001:
+			direction = Vector2.RIGHT
+		var local_position := to_local(position)
+		draw_line(to_local(position - direction * 22.0), local_position, Color(1.0, 0.54, 0.20, 0.82), 6.0)
+		draw_circle(local_position, 8.5, Color(1.0, 0.76, 0.30, 0.96))
+		draw_circle(local_position, 4.5, Color(0.30, 0.18, 0.12, 0.98))
+	for index in range(_boss_splash_rings.size() - 1, -1, -1):
+		var ring: Dictionary = _boss_splash_rings[index]
+		var end_msec := int(ring.get("end_msec", 0))
+		if now > end_msec:
+			_boss_splash_rings.remove_at(index)
+			continue
+		var start_msec := int(ring.get("start_msec", now))
+		var duration := maxf(1.0, float(end_msec - start_msec))
+		var t := clampf(float(now - start_msec) / duration, 0.0, 1.0)
+		var center: Vector2 = ring.get("center", global_position)
+		var radius := float(ring.get("radius", 72.0))
+		var alpha := 1.0 - t
+		draw_circle(to_local(center), radius * (0.25 + 0.75 * t), Color(1.0, 0.42, 0.14, 0.12 * alpha))
+		draw_arc(to_local(center), radius * (0.25 + 0.75 * t), 0.0, TAU, 48, Color(1.0, 0.60, 0.20, 0.82 * alpha), 3.0)
+
+func _draw_boss_emp_visuals() -> void:
+	var now := Time.get_ticks_msec()
+	for index in range(_boss_emp_shells.size() - 1, -1, -1):
+		var shell: Dictionary = _boss_emp_shells[index]
+		var end_msec := int(shell.get("end_msec", 0))
+		if now > end_msec:
+			if bool(shell.get("impacted", false)):
+				_boss_emp_shells.remove_at(index)
+			continue
+		var start_msec := int(shell.get("start_msec", now))
+		var duration := maxf(1.0, float(end_msec - start_msec))
+		var t := clampf(float(now - start_msec) / duration, 0.0, 1.0)
+		var start: Vector2 = shell.get("start", global_position)
+		var end: Vector2 = shell.get("end", global_position)
+		var position := start.lerp(end, t)
+		var direction := (end - start).normalized()
+		if direction.length() <= 0.001:
+			direction = Vector2.RIGHT
+		var local_position := to_local(position)
+		var local_tail := to_local(position - direction * 24.0)
+		draw_line(local_tail, local_position, Color(0.48, 0.92, 1.0, 0.72), 5.0)
+		var texture := BOSS_EMP_PROJECTILE_TEXTURE
+		if texture != null:
+			var size := Vector2(24, 24)
+			var rect := Rect2(local_position - size * 0.5, size)
+			draw_texture_rect(texture, rect, false, Color(0.90, 1.0, 1.0, 0.96))
+		else:
+			draw_circle(local_position, 8.0, Color(0.66, 1.0, 1.0, 0.96))
+	for index in range(_boss_emp_pulses.size() - 1, -1, -1):
+		var pulse: Dictionary = _boss_emp_pulses[index]
+		var end_msec := int(pulse.get("end_msec", 0))
+		if now > end_msec:
+			_boss_emp_pulses.remove_at(index)
+			continue
+		var start_msec := int(pulse.get("start_msec", now))
+		var duration := maxf(1.0, float(end_msec - start_msec))
+		var t := clampf(float(now - start_msec) / duration, 0.0, 1.0)
+		var center: Vector2 = pulse.get("center", global_position)
+		var radius := float(pulse.get("radius", 150.0))
+		var alpha := 1.0 - t
+		var local_center := to_local(center)
+		draw_circle(local_center, radius * (0.18 + 0.82 * t), Color(0.45, 0.92, 1.0, 0.10 * alpha))
+		draw_arc(local_center, radius * (0.24 + 0.76 * t), 0.0, TAU, 64, Color(0.70, 1.0, 1.0, 0.86 * alpha), 3.0)
+		draw_arc(local_center, radius * (0.42 + 0.58 * t), 0.0, TAU, 64, Color(0.72, 0.52, 1.0, 0.54 * alpha), 2.0)
+
+func _draw_boss_laser_visual() -> void:
+	if Time.get_ticks_msec() > _boss_laser_beam_until_msec:
+		_boss_laser_visual_target = null
+		return
+	if _boss_laser_visual_target != null and not _is_valid_enemy_target(_boss_laser_visual_target):
+		_boss_laser_visual_target = null
+		return
+	var end := get_target_position(_boss_laser_visual_target) if _boss_laser_visual_target != null else _boss_laser_beam_end
+	draw_line(to_local(_boss_laser_beam_start), to_local(end), Color(0.72, 1.0, 1.0, 0.95), 5.0)
+	draw_line(to_local(_boss_laser_beam_start), to_local(end), Color(0.15, 0.72, 1.0, 0.48), 11.0)
 
 func _format_team_name() -> String:
 	return "玩家" if team == "Team_A" else "调试敌军"
@@ -1648,6 +2736,12 @@ func _format_brain_mode() -> String:
 			return "闲置"
 
 func _format_attack_profile() -> String:
+	if brain_mode == "target_locker":
+		return "目标锁定 / 引导 %.1fs / 锁定 12s / 范围 %.0f" % [target_lock_seconds, fire_range]
+	if brain_mode == "cruise_missile":
+		return "巡航导弹 / 攻击力 %d / 间隔 %.2fs / 仅攻击锁定目标" % [bullet_damage, fire_cooldown_seconds]
+	if brain_mode == "wreckage_titan_boss":
+		return "Boss多炮台 / 连续激光8每0.10s / 双机炮36每0.85s溅射 / EMP / 召唤"
 	if not weapon_enabled and brain_mode != "melee_hound":
 		return "无武器"
 	var attack_mode := "远程弹体"

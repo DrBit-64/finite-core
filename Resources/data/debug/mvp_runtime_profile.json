@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "description": "Runtime profile for MVP development. debug_enabled is the master switch for debug-only runtime features.",
-  "debug_enabled": true,
-  "use_debug_starting_inventory": true,
+  "debug_enabled": false,
+  "use_debug_starting_inventory": false,
   "spawn_debug_wandering_enemy": false,
-  "unlock_all_technologies": true,
+  "unlock_all_technologies": false,
   "balance_starting_inventory_path": "res://Resources/data/balance/mvp_starting_inventory.json",
   "debug_starting_inventory_path": "res://Resources/data/debug/mvp_debug_starting_inventory.json"
 }

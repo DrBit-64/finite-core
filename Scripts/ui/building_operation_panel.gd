@@ -6,6 +6,7 @@ signal processor_pause_toggled(processor: Node)
 signal building_demolish_requested(building: Node)
 signal debug_kill_requested(target: Node)
 signal forge_rally_point_requested(forge: Node)
+signal forge_pause_toggled(forge: Node)
 signal forge_blueprint_picker_requested(forge: Node, blueprints: Array[UnitBlueprint])
 signal technology_panel_requested
 
@@ -27,6 +28,7 @@ var _generic_building: Node = null
 var _debug_target: Node = null
 var _recipes: Array[RecipeDef] = []
 var _blueprints: Array[UnitBlueprint] = []
+var _resource_defs: Array[ResourceDef] = []
 
 var _current_label: Label = null
 var _recipe_card: PanelContainer = null
@@ -43,6 +45,7 @@ var _rally_label: Label = null
 var _blueprint_parts_row: HBoxContainer = null
 var _cost_list: VBoxContainer = null
 var _forge_blueprint_button: Button = null
+var _forge_pause_button: Button = null
 var _cargo_capacity_label: Label = null
 var _cargo_inventory_list: VBoxContainer = null
 var _cargo_task_list: VBoxContainer = null
@@ -75,6 +78,7 @@ func _init() -> void:
 
 func show_processor_panel(processor: Node, recipes: Array[RecipeDef], resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
 	visible = true
+	_resource_defs = resource_defs.duplicate()
 	if _mode != &"processor" or _processor != processor or _recipes.size() != recipes.size():
 		_mode = &"processor"
 		_processor = processor
@@ -91,10 +95,12 @@ func show_processor_panel(processor: Node, recipes: Array[RecipeDef], resource_d
 	_position_panel(screen_position)
 
 func show_miner_panel(miner: Node, resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
+	_resource_defs = resource_defs.duplicate()
 	show_producer_panel(miner, resource_defs, screen_position)
 
 func show_producer_panel(producer: Node, resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
 	visible = true
+	_resource_defs = resource_defs.duplicate()
 	if _mode != &"producer" or _miner != producer:
 		_mode = &"producer"
 		_miner = producer
@@ -112,6 +118,7 @@ func show_producer_panel(producer: Node, resource_defs: Array[ResourceDef], scre
 
 func show_forge_panel(forge: Node, blueprint: UnitBlueprint, blueprints: Array[UnitBlueprint], resource_defs: Array[ResourceDef], screen_position: Vector2) -> void:
 	visible = true
+	_resource_defs = resource_defs.duplicate()
 	if _mode != &"forge" or _forge != forge or _blueprints.size() != blueprints.size():
 		_mode = &"forge"
 		_forge = forge
@@ -228,12 +235,13 @@ func _rebuild_processor_panel(processor: Node, recipes: Array[RecipeDef]) -> voi
 	_list.add_child(_make_panel_header(processor))
 	_list.add_child(_make_label("配方", Color(0.72, 0.78, 0.84, 1.0), 12))
 
-	var recipe_row := HBoxContainer.new()
-	recipe_row.add_theme_constant_override("separation", 6)
+	var recipe_row := GridContainer.new()
+	recipe_row.columns = 7
+	recipe_row.add_theme_constant_override("h_separation", 6)
+	recipe_row.add_theme_constant_override("v_separation", 6)
+	recipe_row.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	for recipe in recipes:
-		var button := Button.new()
-		button.text = recipe.display_name
-		button.custom_minimum_size = Vector2(88, 28)
+		var button := _make_processor_recipe_icon_button(recipe)
 		button.pressed.connect(_on_processor_recipe_button_pressed.bind(processor, recipe.id), CONNECT_DEFERRED)
 		recipe_row.add_child(button)
 		_recipe_buttons[recipe.id] = button
@@ -359,6 +367,10 @@ func _rebuild_forge_panel(forge: Node) -> void:
 	rally_button.custom_minimum_size = Vector2(112, 30)
 	rally_button.pressed.connect(_on_forge_rally_button_pressed.bind(forge), CONNECT_DEFERRED)
 	action_row.add_child(rally_button)
+	_forge_pause_button = Button.new()
+	_forge_pause_button.custom_minimum_size = Vector2(96, 30)
+	_forge_pause_button.pressed.connect(_on_forge_pause_button_pressed.bind(forge), CONNECT_DEFERRED)
+	action_row.add_child(_forge_pause_button)
 	_forge_blueprint_button = Button.new()
 	_forge_blueprint_button.text = "选择蓝图"
 	_forge_blueprint_button.icon = _load_ui_icon(BLUEPRINT_MENU_ICON_PATH)
@@ -388,6 +400,10 @@ func _update_forge_panel(forge: Node, blueprint: UnitBlueprint, resource_defs: A
 		_progress_label.text = _format_forge_progress_text(forge, blueprint)
 	if _progress_bar:
 		_progress_bar.value = float(forge.call("get_progress_ratio")) if forge.has_method("get_progress_ratio") else 0.0
+	if _forge_pause_button:
+		var paused := bool(forge.get("is_paused"))
+		_forge_pause_button.text = "继续生产" if paused else "暂停生产"
+		_forge_pause_button.modulate = Color(1.0, 0.78, 0.34, 1.0) if paused else Color.WHITE
 	_rebuild_resource_stack_list(_cost_list, blueprint.production_cost if blueprint else {}, resource_defs)
 	if _rally_label:
 		_rally_label.text = _format_forge_rally_text(forge)
@@ -575,6 +591,63 @@ func _make_progress_bar(width: float) -> ProgressBar:
 	progress_bar.show_percentage = false
 	return progress_bar
 
+func _make_processor_recipe_icon_button(recipe: RecipeDef) -> Button:
+	var button := Button.new()
+	button.text = ""
+	button.icon = _get_recipe_primary_icon(recipe)
+	button.expand_icon = true
+	button.custom_minimum_size = Vector2(38, 34)
+	button.tooltip_text = _format_recipe_tooltip(recipe)
+	button.set("icon_alignment", HORIZONTAL_ALIGNMENT_CENTER)
+	return button
+
+func _get_recipe_primary_icon(recipe: RecipeDef) -> Texture2D:
+	if recipe == null:
+		return null
+	var output_keys := recipe.outputs.keys()
+	output_keys.sort()
+	if not output_keys.is_empty():
+		var resource_def := _find_resource_def(StringName(str(output_keys[0])))
+		if resource_def != null:
+			return _load_ui_icon(resource_def.icon_path)
+	var input_keys := recipe.inputs.keys()
+	input_keys.sort()
+	if not input_keys.is_empty():
+		var resource_def := _find_resource_def(StringName(str(input_keys[0])))
+		if resource_def != null:
+			return _load_ui_icon(resource_def.icon_path)
+	return null
+
+func _format_recipe_tooltip(recipe: RecipeDef) -> String:
+	if recipe == null:
+		return "未选择配方"
+	var lines: Array[String] = [
+		recipe.display_name,
+		"耗时：%.1fs" % recipe.duration_seconds,
+		"输入：%s" % _format_resource_amounts(recipe.inputs),
+		"输出：%s" % _format_resource_amounts(recipe.outputs),
+	]
+	return "\n".join(lines)
+
+func _format_resource_amounts(resources: Dictionary) -> String:
+	if resources.is_empty():
+		return "无"
+	var keys := resources.keys()
+	keys.sort()
+	var parts: Array[String] = []
+	for key in keys:
+		var resource_id := StringName(str(key))
+		var resource_def := _find_resource_def(resource_id)
+		var display_name := resource_def.display_name if resource_def != null else String(resource_id)
+		parts.append("%s x%d" % [display_name, int(resources[key])])
+	return " / ".join(parts)
+
+func _find_resource_def(resource_id: StringName) -> ResourceDef:
+	for resource_def in _resource_defs:
+		if resource_def != null and resource_def.id == resource_id:
+			return resource_def
+	return null
+
 func _refresh_recipe_button_states(selected_recipe: RecipeDef) -> void:
 	for recipe_id in _recipe_buttons.keys():
 		var button := _recipe_buttons[recipe_id] as Button
@@ -718,6 +791,7 @@ func _clear_content() -> void:
 	_blueprint_parts_row = null
 	_cost_list = null
 	_forge_blueprint_button = null
+	_forge_pause_button = null
 	_cargo_capacity_label = null
 	_cargo_inventory_list = null
 	_cargo_task_list = null
@@ -816,6 +890,9 @@ func _on_debug_kill_button_pressed(target: Node) -> void:
 
 func _on_forge_rally_button_pressed(forge: Node) -> void:
 	forge_rally_point_requested.emit(forge)
+
+func _on_forge_pause_button_pressed(forge: Node) -> void:
+	forge_pause_toggled.emit(forge)
 
 func _on_forge_blueprint_picker_pressed(forge: Node) -> void:
 	forge_blueprint_picker_requested.emit(forge, _blueprints)

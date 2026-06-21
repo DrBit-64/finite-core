@@ -4,20 +4,32 @@ class_name RobotForgeBuilding
 signal forge_state_changed
 signal robot_production_completed(forge: Node, blueprint: UnitBlueprint)
 
+const BuildingStatusMarkerScript := preload("res://Scripts/map/building_status_marker.gd")
+const STATE_NO_BLUEPRINT := &"no_blueprint"
+const STATE_WAITING_BASE := &"waiting_base"
+const STATE_WAITING_RESOURCES := &"waiting_resources"
+const STATE_TARGET_REACHED := &"target_reached"
+const STATE_RUNNING := &"running"
+const STATE_PAUSED := &"paused"
+
 @export var target_alive_count: int = 5
 
 var blueprint: UnitBlueprint = null
 var target_inventory: Variant = null
 var status_text: String = "未绑定蓝图"
+var state_id: StringName = STATE_NO_BLUEPRINT
 var progress_seconds: float = 0.0
+var is_paused: bool = false
 var has_rally_point: bool = false
 var rally_point_cell: Vector2i = Vector2i.ZERO
 var rally_point_position: Vector2 = Vector2.ZERO
 var rally_marker: Node = null
 
 var _tracked_robots: Array[Node] = []
+var _status_marker: Node2D = null
 
 func setup_forge(next_blueprint: UnitBlueprint, inventory: Variant) -> void:
+	_ensure_status_marker()
 	target_inventory = inventory
 	set_blueprint_snapshot(next_blueprint)
 
@@ -26,6 +38,16 @@ func set_blueprint_snapshot(next_blueprint: UnitBlueprint) -> void:
 	progress_seconds = 0.0
 	_update_status()
 	forge_state_changed.emit()
+
+func set_paused(paused: bool) -> void:
+	if is_paused == paused:
+		return
+	is_paused = paused
+	_update_status()
+	forge_state_changed.emit()
+
+func toggle_paused() -> void:
+	set_paused(not is_paused)
 
 func set_rally_point(cell: Vector2i, world_position: Vector2) -> void:
 	rally_point_cell = cell
@@ -87,34 +109,39 @@ func get_inspector_lines() -> Array[String]:
 		lines.append("蓝图快照：%s" % blueprint.get_snapshot_key())
 	lines.append("存活：%s / %s" % [get_alive_count(), target_alive_count])
 	lines.append("状态：%s" % status_text)
+	lines.append("暂停：%s" % ("是" if is_paused else "否"))
 	lines.append("进度：%d%%" % int(get_progress_ratio() * 100.0))
 	lines.append("集结点：%s" % (_format_rally_point() if has_rally_point else "未设置"))
 	return lines
 
 func _process(delta: float) -> void:
+	_ensure_status_marker()
+	if is_paused:
+		_set_status("已暂停", STATE_PAUSED)
+		return
 	if blueprint == null:
-		_set_status("未绑定蓝图")
+		_set_status("未绑定蓝图", STATE_NO_BLUEPRINT)
 		progress_seconds = 0.0
 		return
 	if target_inventory == null:
-		_set_status("等待主基地")
+		_set_status("等待主基地", STATE_WAITING_BASE)
 		progress_seconds = 0.0
 		return
 	if get_alive_count() >= target_alive_count and progress_seconds <= 0.0:
-		_set_status("已达到目标数量")
+		_set_status("已达到目标数量", STATE_TARGET_REACHED)
 		return
 
 	if progress_seconds <= 0.0:
 		if not target_inventory.can_afford(blueprint.production_cost):
-			_set_status("等待资源")
+			_set_status("等待资源", STATE_WAITING_RESOURCES)
 			return
 		if not target_inventory.spend_resources(blueprint.production_cost, "%s 生产 %s" % [get_display_name(), blueprint.display_name]):
-			_set_status("等待资源")
+			_set_status("等待资源", STATE_WAITING_RESOURCES)
 			return
 		forge_state_changed.emit()
 
 	progress_seconds += delta
-	_set_status("生产中")
+	_set_status("生产中", STATE_RUNNING)
 	if progress_seconds < blueprint.production_time_seconds:
 		return
 
@@ -132,6 +159,25 @@ func _prune_robot_list() -> void:
 		elif robot is CanvasItem and not (robot as CanvasItem).visible:
 			_tracked_robots.remove_at(i)
 
+func _ensure_status_marker() -> void:
+	if _status_marker != null and is_instance_valid(_status_marker):
+		return
+	_status_marker = BuildingStatusMarkerScript.new()
+	_status_marker.name = "StatusMarker"
+	_status_marker.z_index = 50
+	_status_marker.position = Vector2(grid_size.x * cell_size - 7.0, 7.0)
+	add_child(_status_marker)
+
+func _refresh_status_marker() -> void:
+	_ensure_status_marker()
+	_status_marker.position = Vector2(grid_size.x * cell_size - 7.0, 7.0)
+	if is_paused:
+		_status_marker.set_marker_type(BuildingStatusMarkerScript.MARKER_PAUSED)
+	elif state_id == STATE_WAITING_RESOURCES:
+		_status_marker.set_marker_type(BuildingStatusMarkerScript.MARKER_MISSING_INPUTS)
+	else:
+		_status_marker.set_marker_type(BuildingStatusMarkerScript.MARKER_NONE)
+
 func _get_current_snapshot_key() -> String:
 	if blueprint == null:
 		return ""
@@ -146,19 +192,23 @@ func _robot_matches_current_snapshot(robot: Node, current_snapshot_key: String) 
 		return false
 	return str(robot.call("get_blueprint_snapshot_key")) == current_snapshot_key
 
-func _set_status(next_status: String) -> void:
-	if status_text == next_status:
+func _set_status(next_status: String, next_state_id: StringName) -> void:
+	if status_text == next_status and state_id == next_state_id:
 		return
 	status_text = next_status
+	state_id = next_state_id
+	_refresh_status_marker()
 	forge_state_changed.emit()
 
 func _update_status() -> void:
-	if blueprint == null:
-		_set_status("未绑定蓝图")
+	if is_paused:
+		_set_status("已暂停", STATE_PAUSED)
+	elif blueprint == null:
+		_set_status("未绑定蓝图", STATE_NO_BLUEPRINT)
 	elif target_inventory == null:
-		_set_status("等待主基地")
+		_set_status("等待主基地", STATE_WAITING_BASE)
 	else:
-		_set_status("等待资源")
+		_set_status("等待资源", STATE_WAITING_RESOURCES)
 
 func _on_robot_lost(robot: Node, _reason: StringName) -> void:
 	_tracked_robots.erase(robot)

@@ -150,6 +150,7 @@ func get_inspector_lines() -> Array[String]:
 	return lines
 
 func _process(delta: float) -> void:
+	_tick_target_lock_overlay()
 	if not is_alive():
 		return
 	time_alive_seconds += delta

@@ -5,6 +5,9 @@ signal building_destroyed(building: Node, reason: StringName)
 
 const HealthComponentScript := preload("res://Scripts/units/health_component.gd")
 const CombatTargetRegistryScript := preload("res://Scripts/map/combat_target_registry.gd")
+const TARGET_LOCK_OVERLAY_TEXTURE := preload("res://Resources/art/map/target_lock_overlay.svg")
+const MISSILE_LOCK_META := &"missile_lock_until_msec"
+const MISSILE_LOCK_SOURCE_META := &"missile_lock_source"
 
 @export var icon_size: Vector2 = Vector2(56, 56)
 @export_enum("Team_A", "Team_B") var team: String = "Team_A"
@@ -23,6 +26,7 @@ var _destroyed: bool = false
 var health_component: HealthComponent
 var hp_bar: ProgressBar
 var collision_shape: CollisionShape2D
+var target_lock_overlay_sprite: Sprite2D = null
 var _combat_target_registry: Node = null
 var _damage_flash_tween: Tween = null
 
@@ -60,6 +64,9 @@ func get_inspector_lines() -> Array[String]:
 func _ready() -> void:
 	_ensure_combat_nodes()
 	_update_visuals()
+
+func _process(_delta: float) -> void:
+	_tick_target_lock_overlay()
 
 func is_alive() -> bool:
 	return not _destroyed and health_component != null and health_component.is_alive()
@@ -128,6 +135,17 @@ func _play_damage_impact_audio(source_payload: Dictionary, multiplier: float) ->
 func get_target_position() -> Vector2:
 	return global_position + Vector2(grid_size.x * cell_size, grid_size.y * cell_size) * 0.5
 
+func apply_missile_target_lock(locker: Node = null, duration_seconds: float = 10.0) -> void:
+	var lock_msec := roundi(maxf(0.25, duration_seconds) * 1000.0)
+	set_meta(MISSILE_LOCK_META, Time.get_ticks_msec() + lock_msec)
+	set_meta(MISSILE_LOCK_SOURCE_META, str(locker.name) if locker != null and is_instance_valid(locker) else "")
+	_tick_target_lock_overlay()
+
+func get_missile_target_lock_remaining_seconds() -> float:
+	if not has_meta(MISSILE_LOCK_META):
+		return 0.0
+	return maxf(0.0, float(int(get_meta(MISSILE_LOCK_META)) - Time.get_ticks_msec()) / 1000.0)
+
 func restore_health_state(next_hp: int, destroyed: bool = false) -> void:
 	_ensure_combat_nodes()
 	var restored_hp := clampi(next_hp, 0, max_hp)
@@ -142,6 +160,7 @@ func restore_health_state(next_hp: int, destroyed: bool = false) -> void:
 			collision_shape.set_deferred("disabled", true)
 		remove_from_group("combat_target")
 		_unregister_combat_target()
+		_clear_target_lock_overlay()
 		set_process(false)
 	else:
 		if collision_shape:
@@ -252,10 +271,52 @@ func _on_health_died(reason: StringName) -> void:
 	_unregister_combat_target()
 	if hp_bar:
 		hp_bar.visible = false
+	_clear_target_lock_overlay()
 	_update_visuals()
 	building_destroyed.emit(self, reason)
 	_on_building_destroyed(reason)
 	set_process(false)
+
+func _tick_target_lock_overlay() -> void:
+	if _destroyed:
+		_clear_target_lock_overlay()
+		return
+	var remaining := get_missile_target_lock_remaining_seconds()
+	if remaining <= 0.0:
+		if has_meta(MISSILE_LOCK_META):
+			remove_meta(MISSILE_LOCK_META)
+		if target_lock_overlay_sprite:
+			target_lock_overlay_sprite.visible = false
+		return
+	_ensure_target_lock_overlay_sprite()
+	if target_lock_overlay_sprite == null:
+		return
+	var pixel_size := Vector2(grid_size.x * cell_size, grid_size.y * cell_size)
+	target_lock_overlay_sprite.position = pixel_size * 0.5
+	target_lock_overlay_sprite.rotation = 0.0
+	var texture_size := TARGET_LOCK_OVERLAY_TEXTURE.get_size()
+	if texture_size.x > 0.0 and texture_size.y > 0.0:
+		var side := maxf(42.0, minf(pixel_size.x, pixel_size.y) * 0.78)
+		target_lock_overlay_sprite.scale = Vector2(side / texture_size.x, side / texture_size.y)
+	target_lock_overlay_sprite.visible = true
+
+func _ensure_target_lock_overlay_sprite() -> void:
+	if target_lock_overlay_sprite != null:
+		return
+	target_lock_overlay_sprite = Sprite2D.new()
+	target_lock_overlay_sprite.name = "TargetLockOverlay"
+	target_lock_overlay_sprite.texture = TARGET_LOCK_OVERLAY_TEXTURE
+	target_lock_overlay_sprite.z_index = 24
+	target_lock_overlay_sprite.visible = false
+	add_child(target_lock_overlay_sprite)
+
+func _clear_target_lock_overlay() -> void:
+	if has_meta(MISSILE_LOCK_META):
+		remove_meta(MISSILE_LOCK_META)
+	if has_meta(MISSILE_LOCK_SOURCE_META):
+		remove_meta(MISSILE_LOCK_SOURCE_META)
+	if target_lock_overlay_sprite:
+		target_lock_overlay_sprite.visible = false
 
 func _flash_damage() -> void:
 	if icon_sprite == null or _destroyed:

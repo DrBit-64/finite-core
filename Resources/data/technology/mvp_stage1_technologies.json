@@ -218,6 +218,29 @@
         "conditions": ["salvage_available", "nearby_enemy_count", "cargo_full", "hp_below_percent"],
         "actions": ["pickup_salvage", "return_to_base", "avoid_hazard"]
       }
+    },
+    {
+      "id": "stage3_remote_lock_strike",
+      "display_name": "阶段3：远程锁定打击",
+      "description": "从残骸数据核心中复原了远程制导协议。解锁目标锁定机器人与巡航导弹机器人：前线单位为高价值目标打上锁定信标，后方导弹平台随后进行超视距打击。",
+      "stage": 3,
+      "duration_seconds": 16.0,
+      "icon_path": "res://Resources/art/modules/cruise_missile_launcher.svg",
+      "tree_column": 5,
+      "tree_row": 2,
+      "key_item_requirements": ["salvage_data_core"],
+      "prerequisites": ["stage3_battlefield_salvage"],
+      "costs": {
+        "targeting_processor": 1,
+        "salvaged_alloy": 8,
+        "recovered_servo_core": 2,
+        "construction_mass": 120
+      },
+      "unlocks": {
+        "resources": ["salvaged_alloy", "recovered_servo_core", "targeting_processor"],
+        "unit_types": ["target_locker_robot", "cruise_missile_robot"],
+        "templates": ["lock_target", "locked_missile_strike"]
+      }
     }
   ]
 }

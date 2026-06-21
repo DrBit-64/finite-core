@@ -7,6 +7,7 @@ signal processor_pause_toggled(processor: Node)
 signal building_demolish_requested(building: Node)
 signal debug_kill_requested(target: Node)
 signal forge_rally_point_requested(forge: Node)
+signal forge_pause_toggled(forge: Node)
 signal blueprint_library_requested
 signal blueprint_save_requested(source_blueprint_id: StringName, display_name: String, unit_type_id: StringName, upgrade_ids: Array[StringName], tactical_templates: Array, embedded_rules: Array, state_flag_defaults: Dictionary, save_as_new: bool)
 signal forge_blueprint_selected(forge: Node, blueprint_id: StringName)
@@ -43,7 +44,8 @@ const TECHNOLOGY_UNLOCK_SLOT_SIZE := Vector2(43.0, 43.0)
 const TECHNOLOGY_TREE_KEY_ITEM_ICONS := {
 	"initial_sensor_coil": "res://Resources/art/resources/initial_sensor_coil.svg",
 	"high_frequency_oscillator": "res://Resources/art/resources/high_frequency_oscillator.svg",
-	"salvage_data_core": "res://Resources/art/modules/salvage_scanner.svg",
+	"salvage_data_core": "res://Resources/art/resources/salvage_data_core.svg",
+	"targeting_processor": "res://Resources/art/resources/targeting_processor.svg",
 }
 
 @onready var current_goal_label: Label = %CurrentGoalLabel
@@ -2318,6 +2320,7 @@ func _ensure_operation_panel() -> void:
 	_building_operation_panel.building_demolish_requested.connect(_on_operation_building_demolish_requested)
 	_building_operation_panel.debug_kill_requested.connect(_on_operation_debug_kill_requested)
 	_building_operation_panel.forge_rally_point_requested.connect(_on_operation_forge_rally_point_requested)
+	_building_operation_panel.forge_pause_toggled.connect(_on_operation_forge_pause_toggled)
 	_building_operation_panel.forge_blueprint_picker_requested.connect(_on_operation_forge_blueprint_picker_requested)
 	_building_operation_panel.technology_panel_requested.connect(_on_operation_technology_panel_requested)
 	root_control.add_child(_building_operation_panel)
@@ -2339,6 +2342,9 @@ func _on_operation_debug_kill_requested(target: Node) -> void:
 
 func _on_operation_forge_rally_point_requested(forge: Node) -> void:
 	forge_rally_point_requested.emit(forge)
+
+func _on_operation_forge_pause_toggled(forge: Node) -> void:
+	forge_pause_toggled.emit(forge)
 
 func _on_operation_forge_blueprint_picker_requested(forge: Node, blueprints: Array[UnitBlueprint]) -> void:
 	_forge_picker_blueprints = blueprints.duplicate()

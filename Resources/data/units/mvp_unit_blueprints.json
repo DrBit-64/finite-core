@@ -96,6 +96,30 @@
       ],
       "state_flag_defaults": {},
       "embedded_rules": []
+    },
+    {
+      "id": "target_locker_robot",
+      "display_name": "目标锁定机器人",
+      "version": 1,
+      "unit_type_id": "target_locker_robot",
+      "upgrade_ids": [],
+      "production_recipe_id": "forge_target_locker_robot",
+      "default_brain_enabled": false,
+      "tactical_templates": [],
+      "state_flag_defaults": {},
+      "embedded_rules": []
+    },
+    {
+      "id": "cruise_missile_robot",
+      "display_name": "巡航导弹机器人",
+      "version": 1,
+      "unit_type_id": "cruise_missile_robot",
+      "upgrade_ids": [],
+      "production_recipe_id": "forge_cruise_missile_robot",
+      "default_brain_enabled": false,
+      "tactical_templates": [],
+      "state_flag_defaults": {},
+      "embedded_rules": []
     }
   ]
 }

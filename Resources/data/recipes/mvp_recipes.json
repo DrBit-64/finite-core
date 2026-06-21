@@ -275,6 +275,83 @@
       "outputs": {
         "armored_salvage_vehicle": 1
       }
+    },
+    {
+      "id": "decompose_wreckage_scrap_to_alloy",
+      "display_name": "拆解残骸碎料为回收合金",
+      "type": "resource",
+      "target_id": "salvaged_alloy",
+      "duration_seconds": 5.0,
+      "inputs": {
+        "wreckage_scrap": 1
+      },
+      "outputs": {
+        "salvaged_alloy": 4
+      }
+    },
+    {
+      "id": "decompose_heavy_wreckage_to_servo",
+      "display_name": "拆解重型残骸为伺服核心",
+      "type": "resource",
+      "target_id": "recovered_servo_core",
+      "duration_seconds": 7.0,
+      "inputs": {
+        "heavy_wreckage": 1,
+        "reinforced_steel_plate": 1
+      },
+      "outputs": {
+        "recovered_servo_core": 3
+      }
+    },
+    {
+      "id": "analyze_salvage_data_core",
+      "display_name": "解析残骸数据核心",
+      "type": "resource",
+      "target_id": "targeting_processor",
+      "duration_seconds": 9.0,
+      "inputs": {
+        "salvage_data_core": 1,
+        "optical_lens": 1,
+        "high_capacity_battery": 1
+      },
+      "outputs": {
+        "targeting_processor": 3
+      }
+    },
+    {
+      "id": "forge_target_locker_robot",
+      "display_name": "生产目标锁定机器人",
+      "type": "unit",
+      "target_id": "target_locker_robot",
+      "duration_seconds": 16.0,
+      "inputs": {
+        "salvaged_alloy": 4,
+        "targeting_processor": 1,
+        "optical_lens": 2,
+        "high_capacity_battery": 1,
+        "construction_mass": 12
+      },
+      "outputs": {
+        "target_locker_robot": 1
+      }
+    },
+    {
+      "id": "forge_cruise_missile_robot",
+      "display_name": "生产巡航导弹机器人",
+      "type": "unit",
+      "target_id": "cruise_missile_robot",
+      "duration_seconds": 22.0,
+      "inputs": {
+        "salvaged_alloy": 8,
+        "recovered_servo_core": 2,
+        "targeting_processor": 1,
+        "high_capacity_battery": 2,
+        "reinforced_steel_plate": 6,
+        "construction_mass": 20
+      },
+      "outputs": {
+        "cruise_missile_robot": 1
+      }
     }
   ]
 }

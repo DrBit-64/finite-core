@@ -121,6 +121,45 @@
       "drops": [
         {"resource_id": "wreckage_scrap", "amount": 8, "value": 12, "salvage_type": "enemy_wreckage"}
       ]
+    },
+    {
+      "id": "boss_guard_drone",
+      "display_name": "Boss Guard Drone",
+      "icon_path": "res://Resources/art/enemies/boss_guard_drone.svg",
+      "max_hp": 150,
+      "speed": 128.0,
+      "tags": ["frontline", "summoned"],
+      "visual_size": [38, 38],
+      "armor_type": "armored",
+      "damage_type": "melee",
+      "melee_damage": 18,
+      "melee_range": 34.0,
+      "melee_cooldown_seconds": 1.05,
+      "guard_aggro_radius": 420.0,
+      "hound_follow_up_radius": 260.0,
+      "pool_name": "boss_guard_drone",
+      "drops": [
+        {"resource_id": "wreckage_scrap", "amount": 5, "value": 10, "salvage_type": "enemy_wreckage"}
+      ]
+    },
+    {
+      "id": "wreckage_titan",
+      "display_name": "Wreckage Titan",
+      "icon_path": "res://Resources/art/enemies/wreckage_titan.svg",
+      "max_hp": 16000,
+      "speed": 28.0,
+      "tags": ["boss", "high_value", "jammer", "frontline"],
+      "visual_size": [128, 128],
+      "armor_type": "boss_armor",
+      "damage_type": "boss",
+      "attack_mode": "boss",
+      "guard_aggro_radius": 900.0,
+      "hound_follow_up_radius": 900.0,
+      "pool_name": "wreckage_titan",
+      "drops": [
+        {"resource_id": "salvage_data_core", "amount": 1, "value": 240, "salvage_type": "key_drop", "strategic_reward": true, "requires_tether": false},
+        {"resource_id": "targeting_processor", "amount": 6, "value": 180, "salvage_type": "rare_drop", "strategic_reward": true}
+      ]
     }
   ],
   "nest_types": [

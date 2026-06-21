@@ -12,6 +12,8 @@ const TEMPLATE_TARGET_BACKLINE_NEAR_CURRENT := "target_backline_near_current"
 const TEMPLATE_SALVAGE_AND_RETURN := "salvage_and_return"
 const TEMPLATE_SUPPLY_RUN := "supply_run"
 const TEMPLATE_HAZARD_AVOIDANCE := "hazard_avoidance"
+const TEMPLATE_LOCK_TARGET := "lock_target"
+const TEMPLATE_LOCKED_MISSILE_STRIKE := "locked_missile_strike"
 
 const DEFAULT_ARRIVAL_DISTANCE := 20.0
 const DEFAULT_RALLY_RADIUS := 90.0
@@ -100,6 +102,18 @@ static func get_template_defs() -> Array[Dictionary]:
 				{"id": "enemy_count", "display_name": "敌人数量", "type": "int", "default": 2},
 				{"id": "return_hp_percent", "display_name": "返航血量%", "type": "float", "default": 0.45},
 			],
+		},
+		{
+			"id": TEMPLATE_LOCK_TARGET,
+			"display_name": "专属脑干：目标锁定",
+			"intent": "目标锁定机器人的专属脑干说明。实际行为由锁定机器人脑干执行：前线引导高价值目标并挂上锁定信标，供巡航导弹机器人打击。",
+			"parameters": [],
+		},
+		{
+			"id": TEMPLATE_LOCKED_MISSILE_STRIKE,
+			"display_name": "专属脑干：锁定导弹打击",
+			"intent": "巡航导弹机器人的专属脑干说明。实际行为由导弹机器人脑干执行：后方待机，只选择已被锁定的 Boss、干扰源或高价值目标发射导弹。",
+			"parameters": [],
 		},
 	]
 
