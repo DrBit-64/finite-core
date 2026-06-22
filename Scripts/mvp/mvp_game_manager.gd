@@ -744,9 +744,9 @@ func _get_recipe_upgrade_cost_ingredients(resource_id: StringName) -> Array[Stri
 		MvpDataDefaults.RES_SALVAGED_ALLOY:
 			return [MvpDataDefaults.RES_REINFORCED_STEEL_PLATE, MvpDataDefaults.RES_COAL, MvpDataDefaults.RES_HIGH_CAPACITY_BATTERY]
 		MvpDataDefaults.RES_RECOVERED_SERVO_CORE:
-			return [MvpDataDefaults.RES_REINFORCED_STEEL_PLATE, MvpDataDefaults.RES_HIGH_CAPACITY_BATTERY, MvpDataDefaults.RES_HIGH_FREQUENCY_OSCILLATOR]
+			return [MvpDataDefaults.RES_REINFORCED_STEEL_PLATE, MvpDataDefaults.RES_HIGH_CAPACITY_BATTERY, MvpDataDefaults.RES_OPTICAL_LENS, MvpDataDefaults.RES_COPPER_WIRE]
 		MvpDataDefaults.RES_TARGETING_PROCESSOR:
-			return [MvpDataDefaults.RES_OPTICAL_LENS, MvpDataDefaults.RES_HIGH_CAPACITY_BATTERY, MvpDataDefaults.RES_HIGH_FREQUENCY_OSCILLATOR, MvpDataDefaults.RES_COPPER_WIRE]
+			return [MvpDataDefaults.RES_OPTICAL_LENS, MvpDataDefaults.RES_HIGH_CAPACITY_BATTERY, MvpDataDefaults.RES_COPPER_WIRE, MvpDataDefaults.RES_REINFORCED_STEEL_PLATE]
 		_:
 			return _get_recipe_upgrade_recipe_ingredients(resource_id)
 
@@ -5156,13 +5156,18 @@ func _is_active_salvage_pickup(pickup: Variant) -> bool:
 
 func _get_stage17_salvage_score(robot: Node, pickup: Node, amount: int) -> float:
 	var value := float(pickup.call("get_salvage_value") if pickup.has_method("get_salvage_value") else pickup.get("value"))
+	var resource_id := StringName(str(pickup.get("resource_id")))
+	if resource_id == MvpDataDefaults.RES_WRECKAGE_SCRAP or resource_id == MvpDataDefaults.RES_HEAVY_WRECKAGE:
+		value = 12.0
 	var distance_cost := _get_stage14_route_cost(robot, pickup, main_base)
 	var risk_penalty := 0.0
 	if pickup is Node2D:
 		risk_penalty = float(_count_enemy_units_near((pickup as Node2D).global_position, 300.0)) * 220.0
-	var strategic_bonus := 1800.0 if bool(pickup.get("strategic_reward")) else 0.0
-	var tether_bonus := 500.0 if bool(pickup.get("requires_tether")) else 0.0
-	return 6000.0 + value * 100.0 + float(amount) * 16.0 + strategic_bonus + tether_bonus - distance_cost - risk_penalty
+	var key_item_id := StringName(str(pickup.get("key_item_id")))
+	var salvage_type := str(pickup.get("salvage_type"))
+	var is_key_pickup := resource_id == MvpDataDefaults.RES_SALVAGE_DATA_CORE or not String(key_item_id).is_empty() or salvage_type == "key_drop"
+	var strategic_bonus := 1800.0 if bool(pickup.get("strategic_reward")) and is_key_pickup else 0.0
+	return 6000.0 + value * 100.0 + float(amount) * 16.0 + strategic_bonus - distance_cost - risk_penalty
 
 func _build_stage14_urgent_supply_candidates(robot: Node) -> Array:
 	var candidates: Array = []

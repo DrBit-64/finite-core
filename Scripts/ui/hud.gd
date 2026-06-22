@@ -42,6 +42,10 @@ const TECHNOLOGY_TREE_GRID_GAP := Vector2(178.0, 116.0)
 const TECHNOLOGY_TREE_MARGIN := Vector2(30.0, 28.0)
 const TECHNOLOGY_UNLOCK_SLOT_SIZE := Vector2(43.0, 43.0)
 const TOP_RESOURCE_SLOT_SIZE := Vector2(32.0, 32.0)
+const TOP_RESOURCE_SUMMARY_HIDDEN_IDS := {
+	"high_frequency_oscillator": true,
+	"salvage_data_core": true,
+}
 const TECHNOLOGY_TREE_KEY_ITEM_ICONS := {
 	"initial_sensor_coil": "res://Resources/art/resources/initial_sensor_coil.svg",
 	"high_frequency_oscillator": "res://Resources/art/resources/high_frequency_oscillator.svg",
@@ -353,6 +357,8 @@ func _refresh_top_resource_slots(resource_defs: Array[ResourceDef], amounts: Dic
 	var visible_defs: Array[ResourceDef] = []
 	for resource_def in resource_defs:
 		if resource_def == null:
+			continue
+		if TOP_RESOURCE_SUMMARY_HIDDEN_IDS.has(String(resource_def.id)):
 			continue
 		if resource_def.id == &"initial_sensor_coil" and not _has_resource_amount_key(amounts, resource_def.id):
 			continue
